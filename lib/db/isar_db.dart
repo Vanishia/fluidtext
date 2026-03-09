@@ -21,9 +21,9 @@ class IsarDb {
     final opened = await Isar.open(
       [BookSchema, BookCardSchema],
       directory: dir.path,
+      inspector: true,
     );
     _isar = opened;
     return opened;
   }
 }
-
