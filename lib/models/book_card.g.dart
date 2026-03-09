@@ -1,0 +1,1024 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
+part of 'book_card.dart';
+
+// **************************************************************************
+// IsarCollectionGenerator
+// **************************************************************************
+
+// coverage:ignore-file
+// ignore_for_file: duplicate_ignore, non_constant_identifier_names, constant_identifier_names, invalid_use_of_protected_member, unnecessary_cast, prefer_const_constructors, lines_longer_than_80_chars, require_trailing_commas, inference_failure_on_function_invocation, unnecessary_parenthesis, unnecessary_raw_strings, unnecessary_null_checks, join_return_with_assignment, prefer_final_locals, avoid_js_rounded_ints, avoid_positional_boolean_parameters, always_specify_types
+
+extension GetBookCardCollection on Isar {
+  IsarCollection<BookCard> get bookCards => this.collection();
+}
+
+const BookCardSchema = CollectionSchema(
+  name: r'BookCard',
+  id: 182107340746379131,
+  properties: {
+    r'bookId': PropertySchema(
+      id: 0,
+      name: r'bookId',
+      type: IsarType.long,
+    ),
+    r'bookTitle': PropertySchema(
+      id: 1,
+      name: r'bookTitle',
+      type: IsarType.string,
+    ),
+    r'cardIndex': PropertySchema(
+      id: 2,
+      name: r'cardIndex',
+      type: IsarType.long,
+    ),
+    r'content': PropertySchema(
+      id: 3,
+      name: r'content',
+      type: IsarType.string,
+    )
+  },
+  estimateSize: _bookCardEstimateSize,
+  serialize: _bookCardSerialize,
+  deserialize: _bookCardDeserialize,
+  deserializeProp: _bookCardDeserializeProp,
+  idName: r'id',
+  indexes: {
+    r'bookId': IndexSchema(
+      id: 3567540928881766442,
+      name: r'bookId',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'bookId',
+          type: IndexType.value,
+          caseSensitive: false,
+        )
+      ],
+    ),
+    r'cardIndex': IndexSchema(
+      id: 4785797719349665350,
+      name: r'cardIndex',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'cardIndex',
+          type: IndexType.value,
+          caseSensitive: false,
+        )
+      ],
+    )
+  },
+  links: {},
+  embeddedSchemas: {},
+  getId: _bookCardGetId,
+  getLinks: _bookCardGetLinks,
+  attach: _bookCardAttach,
+  version: '3.1.0+1',
+);
+
+int _bookCardEstimateSize(
+  BookCard object,
+  List<int> offsets,
+  Map<Type, List<int>> allOffsets,
+) {
+  var bytesCount = offsets.last;
+  bytesCount += 3 + object.bookTitle.length * 3;
+  bytesCount += 3 + object.content.length * 3;
+  return bytesCount;
+}
+
+void _bookCardSerialize(
+  BookCard object,
+  IsarWriter writer,
+  List<int> offsets,
+  Map<Type, List<int>> allOffsets,
+) {
+  writer.writeLong(offsets[0], object.bookId);
+  writer.writeString(offsets[1], object.bookTitle);
+  writer.writeLong(offsets[2], object.cardIndex);
+  writer.writeString(offsets[3], object.content);
+}
+
+BookCard _bookCardDeserialize(
+  Id id,
+  IsarReader reader,
+  List<int> offsets,
+  Map<Type, List<int>> allOffsets,
+) {
+  final object = BookCard();
+  object.bookId = reader.readLong(offsets[0]);
+  object.bookTitle = reader.readString(offsets[1]);
+  object.cardIndex = reader.readLong(offsets[2]);
+  object.content = reader.readString(offsets[3]);
+  object.id = id;
+  return object;
+}
+
+P _bookCardDeserializeProp<P>(
+  IsarReader reader,
+  int propertyId,
+  int offset,
+  Map<Type, List<int>> allOffsets,
+) {
+  switch (propertyId) {
+    case 0:
+      return (reader.readLong(offset)) as P;
+    case 1:
+      return (reader.readString(offset)) as P;
+    case 2:
+      return (reader.readLong(offset)) as P;
+    case 3:
+      return (reader.readString(offset)) as P;
+    default:
+      throw IsarError('Unknown property with id $propertyId');
+  }
+}
+
+Id _bookCardGetId(BookCard object) {
+  return object.id;
+}
+
+List<IsarLinkBase<dynamic>> _bookCardGetLinks(BookCard object) {
+  return [];
+}
+
+void _bookCardAttach(IsarCollection<dynamic> col, Id id, BookCard object) {
+  object.id = id;
+}
+
+extension BookCardQueryWhereSort on QueryBuilder<BookCard, BookCard, QWhere> {
+  QueryBuilder<BookCard, BookCard, QAfterWhere> anyId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(const IdWhereClause.any());
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhere> anyBookId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'bookId'),
+      );
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhere> anyCardIndex() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        const IndexWhereClause.any(indexName: r'cardIndex'),
+      );
+    });
+  }
+}
+
+extension BookCardQueryWhere on QueryBuilder<BookCard, BookCard, QWhereClause> {
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> idEqualTo(Id id) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IdWhereClause.between(
+        lower: id,
+        upper: id,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> idNotEqualTo(Id id) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(
+              IdWhereClause.lessThan(upper: id, includeUpper: false),
+            )
+            .addWhereClause(
+              IdWhereClause.greaterThan(lower: id, includeLower: false),
+            );
+      } else {
+        return query
+            .addWhereClause(
+              IdWhereClause.greaterThan(lower: id, includeLower: false),
+            )
+            .addWhereClause(
+              IdWhereClause.lessThan(upper: id, includeUpper: false),
+            );
+      }
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> idGreaterThan(Id id,
+      {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IdWhereClause.greaterThan(lower: id, includeLower: include),
+      );
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> idLessThan(Id id,
+      {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IdWhereClause.lessThan(upper: id, includeUpper: include),
+      );
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> idBetween(
+    Id lowerId,
+    Id upperId, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IdWhereClause.between(
+        lower: lowerId,
+        includeLower: includeLower,
+        upper: upperId,
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> bookIdEqualTo(
+      int bookId) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'bookId',
+        value: [bookId],
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> bookIdNotEqualTo(
+      int bookId) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'bookId',
+              lower: [],
+              upper: [bookId],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'bookId',
+              lower: [bookId],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'bookId',
+              lower: [bookId],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'bookId',
+              lower: [],
+              upper: [bookId],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> bookIdGreaterThan(
+    int bookId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'bookId',
+        lower: [bookId],
+        includeLower: include,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> bookIdLessThan(
+    int bookId, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'bookId',
+        lower: [],
+        upper: [bookId],
+        includeUpper: include,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> bookIdBetween(
+    int lowerBookId,
+    int upperBookId, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'bookId',
+        lower: [lowerBookId],
+        includeLower: includeLower,
+        upper: [upperBookId],
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> cardIndexEqualTo(
+      int cardIndex) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'cardIndex',
+        value: [cardIndex],
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> cardIndexNotEqualTo(
+      int cardIndex) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'cardIndex',
+              lower: [],
+              upper: [cardIndex],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'cardIndex',
+              lower: [cardIndex],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'cardIndex',
+              lower: [cardIndex],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'cardIndex',
+              lower: [],
+              upper: [cardIndex],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> cardIndexGreaterThan(
+    int cardIndex, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'cardIndex',
+        lower: [cardIndex],
+        includeLower: include,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> cardIndexLessThan(
+    int cardIndex, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'cardIndex',
+        lower: [],
+        upper: [cardIndex],
+        includeUpper: include,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterWhereClause> cardIndexBetween(
+    int lowerCardIndex,
+    int upperCardIndex, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'cardIndex',
+        lower: [lowerCardIndex],
+        includeLower: includeLower,
+        upper: [upperCardIndex],
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+}
+
+extension BookCardQueryFilter
+    on QueryBuilder<BookCard, BookCard, QFilterCondition> {
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> bookIdEqualTo(
+      int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'bookId',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> bookIdGreaterThan(
+    int value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'bookId',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> bookIdLessThan(
+    int value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'bookId',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> bookIdBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'bookId',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> bookTitleEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'bookTitle',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> bookTitleGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'bookTitle',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> bookTitleLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'bookTitle',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> bookTitleBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'bookTitle',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> bookTitleStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'bookTitle',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> bookTitleEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'bookTitle',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> bookTitleContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'bookTitle',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> bookTitleMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'bookTitle',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> bookTitleIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'bookTitle',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition>
+      bookTitleIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'bookTitle',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> cardIndexEqualTo(
+      int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'cardIndex',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> cardIndexGreaterThan(
+    int value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'cardIndex',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> cardIndexLessThan(
+    int value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'cardIndex',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> cardIndexBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'cardIndex',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> contentEqualTo(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'content',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> contentGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'content',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> contentLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'content',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> contentBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'content',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> contentStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'content',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> contentEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'content',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> contentContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'content',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> contentMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'content',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> contentIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'content',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> contentIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'content',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> idEqualTo(Id value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'id',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> idGreaterThan(
+    Id value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'id',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> idLessThan(
+    Id value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'id',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> idBetween(
+    Id lower,
+    Id upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'id',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+}
+
+extension BookCardQueryObject
+    on QueryBuilder<BookCard, BookCard, QFilterCondition> {}
+
+extension BookCardQueryLinks
+    on QueryBuilder<BookCard, BookCard, QFilterCondition> {}
+
+extension BookCardQuerySortBy on QueryBuilder<BookCard, BookCard, QSortBy> {
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByBookId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'bookId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByBookIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'bookId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByBookTitle() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'bookTitle', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByBookTitleDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'bookTitle', Sort.desc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByCardIndex() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'cardIndex', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByCardIndexDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'cardIndex', Sort.desc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByContent() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'content', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByContentDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'content', Sort.desc);
+    });
+  }
+}
+
+extension BookCardQuerySortThenBy
+    on QueryBuilder<BookCard, BookCard, QSortThenBy> {
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByBookId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'bookId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByBookIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'bookId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByBookTitle() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'bookTitle', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByBookTitleDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'bookTitle', Sort.desc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByCardIndex() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'cardIndex', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByCardIndexDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'cardIndex', Sort.desc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByContent() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'content', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByContentDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'content', Sort.desc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenById() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'id', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'id', Sort.desc);
+    });
+  }
+}
+
+extension BookCardQueryWhereDistinct
+    on QueryBuilder<BookCard, BookCard, QDistinct> {
+  QueryBuilder<BookCard, BookCard, QDistinct> distinctByBookId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'bookId');
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QDistinct> distinctByBookTitle(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'bookTitle', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QDistinct> distinctByCardIndex() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'cardIndex');
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QDistinct> distinctByContent(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'content', caseSensitive: caseSensitive);
+    });
+  }
+}
+
+extension BookCardQueryProperty
+    on QueryBuilder<BookCard, BookCard, QQueryProperty> {
+  QueryBuilder<BookCard, int, QQueryOperations> idProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'id');
+    });
+  }
+
+  QueryBuilder<BookCard, int, QQueryOperations> bookIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'bookId');
+    });
+  }
+
+  QueryBuilder<BookCard, String, QQueryOperations> bookTitleProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'bookTitle');
+    });
+  }
+
+  QueryBuilder<BookCard, int, QQueryOperations> cardIndexProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'cardIndex');
+    });
+  }
+
+  QueryBuilder<BookCard, String, QQueryOperations> contentProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'content');
+    });
+  }
+}
