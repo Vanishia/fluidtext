@@ -5,15 +5,19 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fluidtext/main.dart';
 
 void main() {
-  testWidgets('App shows import entrypoint', (WidgetTester tester) async {
+  testWidgets('App shows bookshelf and drawer import', (WidgetTester tester) async {
     await tester.pumpWidget(const MyApp());
 
-    expect(find.text('导入 EPUB'), findsWidgets);
+    expect(find.text('书架'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Open navigation menu'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('导入 EPUB'), findsOneWidget);
   });
 }
