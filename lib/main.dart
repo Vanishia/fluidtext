@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +11,10 @@ import 'models/book_card.dart';
 import 'services/book_import_service.dart';
 
 void main() => runApp(const MyApp());
+
+enum ReadingOrder { sequential, random }
+
+final readingOrderSetting = ValueNotifier(ReadingOrder.sequential);
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -192,6 +198,8 @@ class _BookshelfPageState extends State<BookshelfPage> {
       drawer: _AppDrawer(
         isImporting: _isImporting,
         onImport: _pickAndImportEpub,
+        readingOrder: readingOrderSetting.value,
+        onReadingOrderChanged: (order) => readingOrderSetting.value = order,
       ),
       body: Stack(
         children: [
@@ -283,16 +291,21 @@ class BookCardsPage extends StatefulWidget {
 class _BookCardsPageState extends State<BookCardsPage> {
   final _importService = const BookImportService();
   final _scrollController = ScrollController();
+  final _random = Random();
 
   Isar? _isar;
 
   bool _isImporting = false;
   String? _importStatus;
+  ReadingOrder _readingOrder = readingOrderSetting.value;
 
   final _cards = <BookCard>[];
   var _hasMore = true;
   var _isLoadingMore = false;
   var _offset = 0;
+  final _orderedCardIds = <int>[];
+  final _shuffledCardIds = <int>[];
+  var _randomOffset = 0;
   static const _pageSize = 60;
 
   @override
@@ -300,10 +313,12 @@ class _BookCardsPageState extends State<BookCardsPage> {
     super.initState();
     _init();
     _scrollController.addListener(_maybeLoadMore);
+    readingOrderSetting.addListener(_onReadingOrderChanged);
   }
 
   @override
   void dispose() {
+    readingOrderSetting.removeListener(_onReadingOrderChanged);
     _scrollController.dispose();
     super.dispose();
   }
@@ -313,6 +328,14 @@ class _BookCardsPageState extends State<BookCardsPage> {
     if (!mounted) return;
     setState(() => _isar = isar);
     await _reloadCards();
+  }
+
+  void _onReadingOrderChanged() {
+    final next = readingOrderSetting.value;
+    if (next == _readingOrder) return;
+    if (!mounted) return;
+    setState(() => _readingOrder = next);
+    _reloadCards();
   }
 
   Future<void> _pickAndImportEpub() async {
@@ -375,10 +398,27 @@ class _BookCardsPageState extends State<BookCardsPage> {
     final isar = _isar;
     if (isar == null) return;
 
+    final ids = await isar.bookCards
+        .filter()
+        .bookIdEqualTo(widget.bookId)
+        .sortByCardIndex()
+        .idProperty()
+        .findAll();
+
     setState(() {
       _cards.clear();
       _offset = 0;
-      _hasMore = true;
+      _orderedCardIds
+        ..clear()
+        ..addAll(ids);
+      _shuffledCardIds
+        ..clear()
+        ..addAll(ids);
+      _randomOffset = 0;
+      if (_readingOrder == ReadingOrder.random) {
+        _shuffledCardIds.shuffle(_random);
+      }
+      _hasMore = ids.isNotEmpty;
     });
 
     await _loadMore();
@@ -395,31 +435,58 @@ class _BookCardsPageState extends State<BookCardsPage> {
 
   Future<void> _loadMore() async {
     final isar = _isar;
-    final bookId = widget.bookId;
     if (isar == null) return;
     if (_isLoadingMore || !_hasMore) return;
 
     setState(() => _isLoadingMore = true);
     try {
-      final page = await isar.bookCards
+      final pageIds = _nextPageIds();
+      if (pageIds.isEmpty) {
+        if (!mounted) return;
+        setState(() => _hasMore = false);
+        return;
+      }
+
+      final fetched = await isar.bookCards
           .filter()
-          .bookIdEqualTo(bookId)
-          .sortByCardIndex()
-          .offset(_offset)
-          .limit(_pageSize)
+          .anyOf(pageIds, (query, id) => query.idEqualTo(id))
           .findAll();
+      final mapById = {for (final card in fetched) card.id: card};
+      final page = pageIds.map((id) => mapById[id]).whereType<BookCard>().toList();
 
       if (!mounted) return;
       setState(() {
         _cards.addAll(page);
-        _offset += page.length;
-        _hasMore = page.length == _pageSize;
+        _hasMore = _hasMoreAfterCurrentPage();
       });
     } finally {
       if (mounted) {
         setState(() => _isLoadingMore = false);
       }
     }
+  }
+
+  List<int> _nextPageIds() {
+    if (_readingOrder == ReadingOrder.sequential) {
+      final start = _offset;
+      if (start >= _orderedCardIds.length) return const [];
+      final end = min(start + _pageSize, _orderedCardIds.length);
+      _offset = end;
+      return _orderedCardIds.sublist(start, end);
+    }
+
+    final start = _randomOffset;
+    if (start >= _shuffledCardIds.length) return const [];
+    final end = min(start + _pageSize, _shuffledCardIds.length);
+    _randomOffset = end;
+    return _shuffledCardIds.sublist(start, end);
+  }
+
+  bool _hasMoreAfterCurrentPage() {
+    if (_readingOrder == ReadingOrder.sequential) {
+      return _offset < _orderedCardIds.length;
+    }
+    return _randomOffset < _shuffledCardIds.length;
   }
 
   @override
@@ -431,6 +498,8 @@ class _BookCardsPageState extends State<BookCardsPage> {
       drawer: _AppDrawer(
         isImporting: _isImporting,
         onImport: _pickAndImportEpub,
+        readingOrder: _readingOrder,
+        onReadingOrderChanged: (order) => readingOrderSetting.value = order,
       ),
       body: Stack(
         children: [
@@ -503,10 +572,14 @@ class _AppDrawer extends StatelessWidget {
   const _AppDrawer({
     required this.isImporting,
     required this.onImport,
+    required this.readingOrder,
+    required this.onReadingOrderChanged,
   });
 
   final bool isImporting;
   final VoidCallback onImport;
+  final ReadingOrder readingOrder;
+  final ValueChanged<ReadingOrder> onReadingOrderChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -537,6 +610,29 @@ class _AppDrawer extends StatelessWidget {
               onTap: () {
                 Navigator.of(context).pop();
                 onImport();
+              },
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.format_list_numbered),
+              title: const Text('顺序阅读'),
+              trailing: readingOrder == ReadingOrder.sequential
+                  ? const Icon(Icons.check)
+                  : null,
+              onTap: () {
+                onReadingOrderChanged(ReadingOrder.sequential);
+                Navigator.of(context).pop();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.shuffle),
+              title: const Text('乱序阅读'),
+              trailing: readingOrder == ReadingOrder.random
+                  ? const Icon(Icons.check)
+                  : null,
+              onTap: () {
+                onReadingOrderChanged(ReadingOrder.random);
+                Navigator.of(context).pop();
               },
             ),
           ],

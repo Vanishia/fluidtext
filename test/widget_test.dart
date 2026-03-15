@@ -10,7 +10,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluidtext/main.dart';
 
 void main() {
-  testWidgets('App shows bookshelf and drawer import', (WidgetTester tester) async {
+  testWidgets('App shows drawer import and reading order settings', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const MyApp());
 
     expect(find.text('书架'), findsOneWidget);
@@ -19,5 +21,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('导入 EPUB'), findsOneWidget);
+    expect(find.text('顺序阅读'), findsOneWidget);
+    expect(find.text('乱序阅读'), findsOneWidget);
   });
 }
