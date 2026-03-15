@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:ui';
 
 import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
@@ -15,19 +16,59 @@ void main() => runApp(const MyApp());
 enum ReadingOrder { sequential, random }
 
 final readingOrderSetting = ValueNotifier(ReadingOrder.sequential);
+final themeModeSetting = ValueNotifier(ThemeMode.system);
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
+  ThemeData _buildTheme({
+    required Brightness brightness,
+  }) {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF60A5FA), // light blue
+      brightness: brightness,
+    );
+
+    return ThemeData(
+      colorScheme: scheme,
+      useMaterial3: true,
+      scaffoldBackgroundColor:
+          brightness == Brightness.light ? const Color(0xFFF5FAFF) : null,
+      appBarTheme: AppBarTheme(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+      ),
+      cardTheme: CardThemeData(
+        elevation: 0,
+        color: scheme.surface.withValues(
+          alpha: brightness == Brightness.light ? 0.7 : 0.6,
+        ),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      dividerTheme: DividerThemeData(
+        color: scheme.outlineVariant.withValues(alpha: 0.6),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'FluidText',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
-      home: const BookshelfPage(),
+    return ValueListenableBuilder(
+      valueListenable: themeModeSetting,
+      builder: (context, themeMode, _) {
+        return MaterialApp(
+          title: 'FluidText',
+          theme: _buildTheme(brightness: Brightness.light),
+          darkTheme: _buildTheme(brightness: Brightness.dark),
+          themeMode: themeMode,
+          home: const BookshelfPage(),
+        );
+      },
     );
   }
 }
@@ -194,12 +235,16 @@ class _BookshelfPageState extends State<BookshelfPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawerEdgeDragWidth: 120,
+      drawerScrimColor: Colors.black.withValues(alpha: 0.18),
       appBar: AppBar(title: const Text('书架')),
       drawer: _AppDrawer(
         isImporting: _isImporting,
         onImport: _pickAndImportEpub,
         readingOrder: readingOrderSetting.value,
         onReadingOrderChanged: (order) => readingOrderSetting.value = order,
+        themeMode: themeModeSetting.value,
+        onThemeModeChanged: (mode) => themeModeSetting.value = mode,
       ),
       body: Stack(
         children: [
@@ -492,6 +537,8 @@ class _BookCardsPageState extends State<BookCardsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      drawerEdgeDragWidth: 120,
+      drawerScrimColor: Colors.black.withValues(alpha: 0.18),
       appBar: AppBar(
         title: Text(widget.bookTitle),
       ),
@@ -500,6 +547,8 @@ class _BookCardsPageState extends State<BookCardsPage> {
         onImport: _pickAndImportEpub,
         readingOrder: _readingOrder,
         onReadingOrderChanged: (order) => readingOrderSetting.value = order,
+        themeMode: themeModeSetting.value,
+        onThemeModeChanged: (mode) => themeModeSetting.value = mode,
       ),
       body: Stack(
         children: [
@@ -574,68 +623,161 @@ class _AppDrawer extends StatelessWidget {
     required this.onImport,
     required this.readingOrder,
     required this.onReadingOrderChanged,
+    required this.themeMode,
+    required this.onThemeModeChanged,
   });
 
   final bool isImporting;
   final VoidCallback onImport;
   final ReadingOrder readingOrder;
   final ValueChanged<ReadingOrder> onReadingOrderChanged;
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final glass = cs.surface.withValues(alpha: isDark ? 0.55 : 0.72);
+
     return Drawer(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
       child: SafeArea(
-        child: ListView(
-          children: [
-            const ListTile(
-              title: Text('FluidText'),
-              subtitle: Text('书架 / 导入'),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: _Glass(
+            color: glass,
+            borderColor: cs.outlineVariant.withValues(
+              alpha: isDark ? 0.28 : 0.55,
             ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.library_books_outlined),
-              title: const Text('书架'),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const BookshelfPage()),
-                  (_) => false,
-                );
-              },
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'FluidText',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Bookshelf • Import • Reading',
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelLarge
+                            ?.copyWith(color: cs.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.library_books_outlined),
+                  title: const Text('书架'),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const BookshelfPage()),
+                      (_) => false,
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.file_upload_outlined),
+                  title: const Text('导入 EPUB'),
+                  enabled: !isImporting,
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    onImport();
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.format_list_numbered),
+                  title: const Text('顺序阅读'),
+                  trailing: readingOrder == ReadingOrder.sequential
+                      ? const Icon(Icons.check)
+                      : null,
+                  onTap: () {
+                    onReadingOrderChanged(ReadingOrder.sequential);
+                    Navigator.of(context).pop();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.shuffle),
+                  title: const Text('乱序阅读'),
+                  trailing: readingOrder == ReadingOrder.random
+                      ? const Icon(Icons.check)
+                      : null,
+                  onTap: () {
+                    onReadingOrderChanged(ReadingOrder.random);
+                    Navigator.of(context).pop();
+                  },
+                ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  secondary: const Icon(Icons.dark_mode_outlined),
+                  title: const Text('夜间模式'),
+                  subtitle: Text(themeMode == ThemeMode.system ? '跟随系统' : ''),
+                  value: themeMode == ThemeMode.dark,
+                  onChanged: (v) {
+                    onThemeModeChanged(v ? ThemeMode.dark : ThemeMode.light);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.settings_suggest_outlined),
+                  title: const Text('跟随系统主题'),
+                  trailing: themeMode == ThemeMode.system
+                      ? const Icon(Icons.check)
+                      : null,
+                  onTap: () => onThemeModeChanged(ThemeMode.system),
+                ),
+              ],
             ),
-            ListTile(
-              leading: const Icon(Icons.file_upload_outlined),
-              title: const Text('导入 EPUB'),
-              enabled: !isImporting,
-              onTap: () {
-                Navigator.of(context).pop();
-                onImport();
-              },
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.format_list_numbered),
-              title: const Text('顺序阅读'),
-              trailing: readingOrder == ReadingOrder.sequential
-                  ? const Icon(Icons.check)
-                  : null,
-              onTap: () {
-                onReadingOrderChanged(ReadingOrder.sequential);
-                Navigator.of(context).pop();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.shuffle),
-              title: const Text('乱序阅读'),
-              trailing: readingOrder == ReadingOrder.random
-                  ? const Icon(Icons.check)
-                  : null,
-              onTap: () {
-                onReadingOrderChanged(ReadingOrder.random);
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Glass extends StatelessWidget {
+  const _Glass({
+    required this.child,
+    required this.color,
+    required this.borderColor,
+  });
+
+  final Widget child;
+  final Color color;
+  final Color borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: color,
+            border: Border.all(color: borderColor),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 20,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: child,
         ),
       ),
     );
