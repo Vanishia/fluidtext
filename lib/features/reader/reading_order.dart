@@ -1,0 +1,1 @@
+﻿enum ReadingOrder { sequential, random }

@@ -36,6 +36,21 @@ const BookCardSchema = CollectionSchema(
       id: 3,
       name: r'content',
       type: IsarType.string,
+    ),
+    r'isFavorite': PropertySchema(
+      id: 4,
+      name: r'isFavorite',
+      type: IsarType.bool,
+    ),
+    r'isRead': PropertySchema(
+      id: 5,
+      name: r'isRead',
+      type: IsarType.bool,
+    ),
+    r'readAt': PropertySchema(
+      id: 6,
+      name: r'readAt',
+      type: IsarType.dateTime,
     )
   },
   estimateSize: _bookCardEstimateSize,
@@ -100,6 +115,9 @@ void _bookCardSerialize(
   writer.writeString(offsets[1], object.bookTitle);
   writer.writeLong(offsets[2], object.cardIndex);
   writer.writeString(offsets[3], object.content);
+  writer.writeBool(offsets[4], object.isFavorite);
+  writer.writeBool(offsets[5], object.isRead);
+  writer.writeDateTime(offsets[6], object.readAt);
 }
 
 BookCard _bookCardDeserialize(
@@ -114,6 +132,9 @@ BookCard _bookCardDeserialize(
   object.cardIndex = reader.readLong(offsets[2]);
   object.content = reader.readString(offsets[3]);
   object.id = id;
+  object.isFavorite = reader.readBool(offsets[4]);
+  object.isRead = reader.readBool(offsets[5]);
+  object.readAt = reader.readDateTimeOrNull(offsets[6]);
   return object;
 }
 
@@ -132,6 +153,12 @@ P _bookCardDeserializeProp<P>(
       return (reader.readLong(offset)) as P;
     case 3:
       return (reader.readString(offset)) as P;
+    case 4:
+      return (reader.readBool(offset)) as P;
+    case 5:
+      return (reader.readBool(offset)) as P;
+    case 6:
+      return (reader.readDateTimeOrNull(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
@@ -840,6 +867,95 @@ extension BookCardQueryFilter
       ));
     });
   }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> isFavoriteEqualTo(
+      bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'isFavorite',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> isReadEqualTo(
+      bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'isRead',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> readAtIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'readAt',
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> readAtIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'readAt',
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> readAtEqualTo(
+      DateTime? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'readAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> readAtGreaterThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'readAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> readAtLessThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'readAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterFilterCondition> readAtBetween(
+    DateTime? lower,
+    DateTime? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'readAt',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+      ));
+    });
+  }
 }
 
 extension BookCardQueryObject
@@ -894,6 +1010,42 @@ extension BookCardQuerySortBy on QueryBuilder<BookCard, BookCard, QSortBy> {
   QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByContentDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'content', Sort.desc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByIsFavorite() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isFavorite', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByIsFavoriteDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isFavorite', Sort.desc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByIsRead() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isRead', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByIsReadDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isRead', Sort.desc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByReadAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> sortByReadAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readAt', Sort.desc);
     });
   }
 }
@@ -959,6 +1111,42 @@ extension BookCardQuerySortThenBy
       return query.addSortBy(r'id', Sort.desc);
     });
   }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByIsFavorite() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isFavorite', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByIsFavoriteDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isFavorite', Sort.desc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByIsRead() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isRead', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByIsReadDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isRead', Sort.desc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByReadAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QAfterSortBy> thenByReadAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readAt', Sort.desc);
+    });
+  }
 }
 
 extension BookCardQueryWhereDistinct
@@ -986,6 +1174,24 @@ extension BookCardQueryWhereDistinct
       {bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'content', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QDistinct> distinctByIsFavorite() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'isFavorite');
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QDistinct> distinctByIsRead() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'isRead');
+    });
+  }
+
+  QueryBuilder<BookCard, BookCard, QDistinct> distinctByReadAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'readAt');
     });
   }
 }
@@ -1019,6 +1225,24 @@ extension BookCardQueryProperty
   QueryBuilder<BookCard, String, QQueryOperations> contentProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'content');
+    });
+  }
+
+  QueryBuilder<BookCard, bool, QQueryOperations> isFavoriteProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'isFavorite');
+    });
+  }
+
+  QueryBuilder<BookCard, bool, QQueryOperations> isReadProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'isRead');
+    });
+  }
+
+  QueryBuilder<BookCard, DateTime?, QQueryOperations> readAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'readAt');
     });
   }
 }

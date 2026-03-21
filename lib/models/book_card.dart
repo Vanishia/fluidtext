@@ -15,5 +15,11 @@ class BookCard {
   late int cardIndex;
 
   late String content;
+
+  bool isRead = false;
+
+  DateTime? readAt;
+
+  bool isFavorite = false;
 }
 
