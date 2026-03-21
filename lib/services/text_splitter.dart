@@ -1,20 +1,30 @@
-class TextSplitter {
+﻿class TextSplitter {
   TextSplitter({
     this.targetChars = 300,
   });
 
   final int targetChars;
 
+  static const Set<String> _sentenceBoundaries = {
+    '。',
+    '！',
+    '？',
+    '.',
+    '!',
+    '?',
+    '\n',
+  };
+
   Iterable<String> split(String text) sync* {
     if (text.isEmpty) return;
 
     final bucket = StringBuffer();
 
-    for (var i = 0; i < text.length; i++) {
-      final ch = text[i];
-      bucket.write(ch);
+    for (var index = 0; index < text.length; index++) {
+      final character = text[index];
+      bucket.write(character);
 
-      if (bucket.length >= targetChars && _isBoundary(ch)) {
+      if (bucket.length >= targetChars && _isBoundary(character)) {
         yield bucket.toString();
         bucket.clear();
       }
@@ -25,14 +35,7 @@ class TextSplitter {
     }
   }
 
-  bool _isBoundary(String ch) {
-    return ch == '。' ||
-        ch == '！' ||
-        ch == '？' ||
-        ch == '.' ||
-        ch == '!' ||
-        ch == '?' ||
-        ch == '\n';
+  bool _isBoundary(String character) {
+    return _sentenceBoundaries.contains(character);
   }
 }
-
