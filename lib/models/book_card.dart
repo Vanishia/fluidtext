@@ -14,6 +14,12 @@ class BookCard {
   @Index()
   late int cardIndex;
 
+  late int chapterIndex;
+
+  late int chapterCardIndex;
+
+  String? chapterTitle;
+
   late String content;
 
   bool isRead = false;
@@ -21,5 +27,6 @@ class BookCard {
   DateTime? readAt;
 
   bool isFavorite = false;
-}
 
+  DateTime? favoritedAt;
+}

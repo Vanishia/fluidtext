@@ -1,6 +1,7 @@
-﻿import 'dart:math';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+
 import '../../models/book_card.dart';
 import '../../repositories/book_card_repository.dart';
 import 'reading_order.dart';
@@ -8,12 +9,12 @@ import 'reading_order.dart';
 class ReaderController extends ChangeNotifier {
   ReaderController({
     required this.repository,
-    required this.bookId,
+    required this.bookIds,
     this.initialReadingOrder = ReadingOrder.sequential,
   }) : _readingOrder = initialReadingOrder;
 
   final BookCardRepository repository;
-  final int bookId;
+  final List<int> bookIds;
   final ReadingOrder initialReadingOrder;
   final Random _random = Random();
 
@@ -23,6 +24,7 @@ class ReaderController extends ChangeNotifier {
   final List<BookCard> _cards = <BookCard>[];
   final List<int> _orderedCardIds = <int>[];
   final List<int> _shuffledCardIds = <int>[];
+  bool _showUnreadOnly = false;
 
   bool _hasMore = true;
   bool _isLoadingInitial = true;
@@ -32,6 +34,7 @@ class ReaderController extends ChangeNotifier {
 
   List<BookCard> get cards => List.unmodifiable(_cards);
   ReadingOrder get readingOrder => _readingOrder;
+  bool get showUnreadOnly => _showUnreadOnly;
   bool get hasMore => _hasMore;
   bool get isLoadingInitial => _isLoadingInitial;
   bool get isLoadingMore => _isLoadingMore;
@@ -40,7 +43,9 @@ class ReaderController extends ChangeNotifier {
     _isLoadingInitial = true;
     notifyListeners();
 
-    final ids = await repository.loadOrderedCardIds(bookId);
+    final ids = _showUnreadOnly
+        ? await repository.loadUnreadOrderedCardIds(bookIds)
+        : await repository.loadOrderedCardIds(bookIds);
 
     _cards.clear();
     _offset = 0;
@@ -92,7 +97,22 @@ class ReaderController extends ChangeNotifier {
     await reloadCards();
   }
 
+  Future<void> setShowUnreadOnly(bool value) async {
+    if (_showUnreadOnly == value) return;
+    _showUnreadOnly = value;
+    await reloadCards();
+  }
+
   Future<void> refreshCard(BookCard card) async {
+    if (_showUnreadOnly && card.isRead) {
+      _cards.removeWhere((item) => item.id == card.id);
+      _orderedCardIds.remove(card.id);
+      _shuffledCardIds.remove(card.id);
+      _hasMore = _hasMoreAfterCurrentPage();
+      notifyListeners();
+      return;
+    }
+
     final index = _cards.indexWhere((item) => item.id == card.id);
     if (index == -1) return;
     _cards[index] = card;

@@ -7,12 +7,14 @@ class ContextCardTile extends StatelessWidget {
     super.key,
     required this.card,
     required this.isCenter,
+    required this.onToggleRead,
     required this.onToggleFavorite,
     required this.onShowContext,
   });
 
   final BookCard card;
   final bool isCenter;
+  final VoidCallback onToggleRead;
   final VoidCallback onToggleFavorite;
   final VoidCallback onShowContext;
 
@@ -66,6 +68,15 @@ class ContextCardTile extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    card.isRead ? Icons.check_circle : Icons.radio_button_unchecked,
+                    color: card.isRead ? Colors.green : colorScheme.onSurfaceVariant,
+                  ),
+                  tooltip: card.isRead ? '取消已读' : '标记已读',
+                  onPressed: onToggleRead,
+                ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   icon: Icon(

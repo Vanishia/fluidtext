@@ -4,7 +4,11 @@ import 'package:flutter/services.dart';
 import 'app_settings.dart';
 import 'features/bookshelf/bookshelf_page.dart';
 
-void main() => runApp(const MyApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializeAppSettings();
+  runApp(const MyApp());
+}
 
 SystemUiOverlayStyle _systemUiStyleForTheme(ThemeData theme) {
   final isDark = theme.brightness == Brightness.dark;
@@ -13,8 +17,9 @@ SystemUiOverlayStyle _systemUiStyleForTheme(ThemeData theme) {
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: theme.colorScheme.surface,
         systemNavigationBarDividerColor: Colors.transparent,
-        systemNavigationBarIconBrightness:
-            isDark ? Brightness.light : Brightness.dark,
+        systemNavigationBarIconBrightness: isDark
+            ? Brightness.light
+            : Brightness.dark,
         systemNavigationBarContrastEnforced: false,
       );
 }
@@ -22,9 +27,7 @@ SystemUiOverlayStyle _systemUiStyleForTheme(ThemeData theme) {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  ThemeData _buildTheme({
-    required Brightness brightness,
-  }) {
+  ThemeData _buildTheme({required Brightness brightness}) {
     final scheme = ColorScheme.fromSeed(
       seedColor: const Color(0xFF60A5FA),
       brightness: brightness,
@@ -33,8 +36,9 @@ class MyApp extends StatelessWidget {
     return ThemeData(
       colorScheme: scheme,
       useMaterial3: true,
-      scaffoldBackgroundColor:
-          brightness == Brightness.light ? const Color(0xFFF5FAFF) : null,
+      scaffoldBackgroundColor: brightness == Brightness.light
+          ? const Color(0xFFF5FAFF)
+          : null,
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -47,9 +51,7 @@ class MyApp extends StatelessWidget {
           alpha: brightness == Brightness.light ? 0.7 : 0.6,
         ),
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       dividerTheme: DividerThemeData(
         color: scheme.outlineVariant.withValues(alpha: 0.6),

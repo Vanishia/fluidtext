@@ -1,45 +1,49 @@
-﻿import 'package:collection/collection.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:isar/isar.dart';
 
 import '../../app_settings.dart';
 import '../../db/isar_db.dart';
+import '../../models/book.dart';
 import '../../models/book_card.dart';
 import '../../repositories/book_card_repository.dart';
-import '../../services/book_import_service.dart';
-import '../../widgets/blocking_loader.dart';
+import '../../services/reader_session_service.dart';
+import '../bookshelf/bookshelf_page.dart';
+import '../bookshelf/bookshelf_sheet.dart';
 import '../context/context_controller.dart';
 import '../context/context_settings.dart';
 import '../context/context_sheet.dart';
+import '../settings/reader_background_sheet.dart';
 import '../settings/app_drawer.dart';
+import 'favorite_cards_page.dart';
+import 'read_cards_page.dart';
+import 'reader_background_settings.dart';
 import 'reader_controller.dart';
 import 'widgets/book_card_tile.dart';
+import 'widgets/reader_background_surface.dart';
 
 class BookCardsPage extends StatefulWidget {
-  const BookCardsPage({
-    super.key,
-    required this.bookId,
-    required this.bookTitle,
-  });
+  BookCardsPage({super.key, required List<Book> books})
+    : books = List<Book>.unmodifiable(books);
 
-  final int bookId;
-  final String bookTitle;
+  final List<Book> books;
+
+  List<int> get bookIds => books.map((book) => book.id).toList(growable: false);
+
+  String get shelfTitle {
+    if (books.isEmpty) return '阅读';
+    if (books.length == 1) return books.first.title;
+    return '混合阅读 · ${books.length} 本';
+  }
 
   @override
   State<BookCardsPage> createState() => _BookCardsPageState();
 }
 
 class _BookCardsPageState extends State<BookCardsPage> {
-  final _importService = const BookImportService();
   final _scrollController = ScrollController();
 
-  Isar? _isar;
   BookCardRepository? _repository;
   ReaderController? _controller;
-
-  bool _isImporting = false;
-  String? _importStatus;
+  late final List<Book> _books = List<Book>.from(widget.books);
   ContextSettings _contextSettings = const ContextSettings();
 
   @override
@@ -57,11 +61,14 @@ class _BookCardsPageState extends State<BookCardsPage> {
   }
 
   Future<void> _init() async {
+    await ReaderSessionService.instance.saveLastOpenedBookIds(widget.bookIds);
+
     final isar = await IsarDb.instance.isar;
     final repository = BookCardRepository(isar);
     final controller = ReaderController(
       repository: repository,
-      bookId: widget.bookId,
+      bookIds: widget.bookIds,
+      initialReadingOrder: readingOrderSetting.value,
     );
     await controller.reloadCards();
 
@@ -71,7 +78,6 @@ class _BookCardsPageState extends State<BookCardsPage> {
     }
 
     setState(() {
-      _isar = isar;
       _repository = repository;
       _controller = controller;
     });
@@ -89,69 +95,95 @@ class _BookCardsPageState extends State<BookCardsPage> {
     }
   }
 
-  Future<void> _pickAndImportEpub() async {
-    final isar = _isar;
-    if (isar == null || _isImporting) return;
-
-    setState(() {
-      _isImporting = true;
-      _importStatus = '正在导入…';
-    });
-
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['epub'],
-        withData: true,
-      );
-      final file = result?.files.firstOrNull;
-      final bytes = file?.bytes;
-      if (bytes == null) {
-        if (!mounted) return;
-        setState(() => _importStatus = '未选择文件');
-        return;
-      }
-
-      setState(() => _importStatus = '解析与切分中…');
-
-      final imported = await _importService.importEpubBytes(
-        isar: isar,
-        bytes: bytes,
-      );
-
-      if (!mounted) return;
-      setState(() => _importStatus = '完成：写入 ${imported.insertedCards} 张卡片');
-
-      if (imported.bookId == widget.bookId) {
-        await _controller?.reloadCards();
-      } else {
-        if (!mounted) return;
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => BookCardsPage(
-              bookId: imported.bookId,
-              bookTitle: imported.bookTitle,
-            ),
-          ),
-        );
-      }
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _importStatus = '导入失败：$error');
-    } finally {
-      if (mounted) {
-        setState(() => _isImporting = false);
-      }
-    }
-  }
-
   Future<void> _toggleFavorite(BookCard card) async {
     final repository = _repository;
     if (repository == null) return;
 
     await repository.toggleFavorite(card);
-
     await _controller?.refreshCard(card);
+  }
+
+  Future<void> _toggleRead(BookCard card) async {
+    final repository = _repository;
+    if (repository == null) return;
+
+    await repository.toggleRead(card);
+    await _controller?.refreshCard(card);
+  }
+
+  void _openReadList() {
+    final repository = _repository;
+    if (repository == null) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ReadCardsPage(
+          bookIds: _books.map((book) => book.id).toList(),
+          shelfTitle: widget.shelfTitle,
+          repository: repository,
+        ),
+      ),
+    );
+  }
+
+  void _openFavoriteList() {
+    final repository = _repository;
+    if (repository == null) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FavoriteCardsPage(
+          bookIds: _books.map((book) => book.id).toList(),
+          shelfTitle: widget.shelfTitle,
+          repository: repository,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openBookshelf() async {
+    final selected = await showBookshelfSheet(
+      context,
+      initialSelectedBookIds: _books.map((book) => book.id).toList(),
+    );
+    if (!mounted || selected == null) return;
+
+    await ReaderSessionService.instance.saveLastOpenedBookIds(
+      selected.map((book) => book.id).toList(),
+    );
+
+    if (selected.isEmpty) {
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const BookshelfPage()),
+        (route) => false,
+      );
+      return;
+    }
+
+    if (!_sameBookSelection(selected)) {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => BookCardsPage(books: selected)),
+      );
+      return;
+    }
+
+    setState(() {
+      _books
+        ..clear()
+        ..addAll(selected);
+    });
+  }
+
+  bool _sameBookSelection(List<Book> nextBooks) {
+    final currentIds = _books.map((book) => book.id).toList();
+    final nextIds = nextBooks.map((book) => book.id).toList();
+    if (currentIds.length != nextIds.length) return false;
+    for (var index = 0; index < currentIds.length; index += 1) {
+      if (currentIds[index] != nextIds[index]) return false;
+    }
+    return true;
   }
 
   Future<void> _showContext(BookCard card) async {
@@ -160,7 +192,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
 
     final contextController = ContextController(
       repository: repository,
-      bookId: widget.bookId,
+      bookId: card.bookId,
       initialCard: card,
       initialSettings: _contextSettings,
     );
@@ -177,7 +209,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
       backgroundColor: Colors.transparent,
       builder: (context) => ContextSheet(
         controller: contextController,
-        bookTitle: widget.bookTitle,
+        bookTitle: card.bookTitle,
       ),
     );
 
@@ -189,89 +221,103 @@ class _BookCardsPageState extends State<BookCardsPage> {
     contextController.dispose();
   }
 
+  Future<void> _openReaderBackgroundSettings() async {
+    await showReaderBackgroundSheet(
+      context,
+      initialSettings: readerBackgroundSetting.value,
+      onChanged: saveReaderBackgroundSettings,
+      onImportImage: importReaderBackgroundImage,
+      onClearImage: clearReaderBackgroundImage,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
     if (controller == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
-        return Scaffold(
-          drawerEdgeDragWidth: 120,
-          drawerScrimColor: Colors.black.withValues(alpha: 0.18),
-          appBar: AppBar(
-            title: Text(widget.bookTitle),
-          ),
-          drawer: AppDrawer(
-            isImporting: _isImporting,
-            onImport: _pickAndImportEpub,
-            onOpenBookshelf: () => Navigator.of(context).popUntil((route) => route.isFirst),
-            readingOrder: controller.readingOrder,
-            onReadingOrderChanged: controller.setReadingOrder,
-            themeMode: themeModeSetting.value,
-            onThemeModeChanged: (mode) => themeModeSetting.value = mode,
-            contextBefore: _contextSettings.before,
-            contextAfter: _contextSettings.after,
-            onContextBeforeChanged: (value) {
-              setState(() {
-                _contextSettings = _contextSettings.copyWith(before: value);
-              });
-            },
-            onContextAfterChanged: (value) {
-              setState(() {
-                _contextSettings = _contextSettings.copyWith(after: value);
-              });
-            },
-          ),
-          body: Stack(
-            children: [
-              controller.isLoadingInitial && controller.cards.isEmpty
-                  ? const Center(child: Text('加载中…'))
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: EdgeInsets.only(
-                        bottom: bottomInset + (_importStatus == null ? 20 : 88),
-                      ),
-                      itemCount: controller.cards.length + (controller.hasMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index >= controller.cards.length) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-
-                        final card = controller.cards[index];
-                        return BookCardTile(
-                          card: card,
-                          onToggleFavorite: () => _toggleFavorite(card),
-                          onShowContext: () => _showContext(card),
-                        );
-                      },
-                    ),
-              if (_isImporting) const BlockingLoader(),
-            ],
-          ),
-          bottomNavigationBar: _importStatus == null
-              ? null
-              : SafeArea(
-                  maintainBottomViewPadding: true,
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
+        return ValueListenableBuilder<ReaderBackgroundSettings>(
+          valueListenable: readerBackgroundSetting,
+          builder: (context, backgroundSettings, _) {
+            final body = controller.isLoadingInitial && controller.cards.isEmpty
+                ? const Center(child: Text('加载中…'))
+                : !controller.isLoadingInitial && controller.cards.isEmpty
+                ? Center(
                     child: Text(
-                      _importStatus!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                      '当前书单没有可显示的卡片',
+                      style: Theme.of(context).textTheme.bodyLarge,
                     ),
-                  ),
-                ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: EdgeInsets.only(
+                      top: MediaQuery.paddingOf(context).top + 2,
+                      bottom: 20,
+                    ),
+                    itemCount:
+                        controller.cards.length + (controller.hasMore ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index >= controller.cards.length) {
+                        return const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+
+                      final card = controller.cards[index];
+                      return BookCardTile(
+                        card: card,
+                        onToggleRead: () => _toggleRead(card),
+                        onToggleFavorite: () => _toggleFavorite(card),
+                        onShowContext: () => _showContext(card),
+                        showBookTitle: _books.length > 1,
+                      );
+                    },
+                  );
+
+            return Scaffold(
+              backgroundColor: backgroundSettings.palette.color,
+              drawerEdgeDragWidth: 120,
+              drawerScrimColor: Colors.black.withValues(alpha: 0.18),
+              drawer: AppDrawer(
+                onOpenBookshelf: _openBookshelf,
+                readingOrder: controller.readingOrder,
+                onReadingOrderChanged: (order) {
+                  readingOrderSetting.value = order;
+                  controller.setReadingOrder(order);
+                },
+                themeMode: themeModeSetting.value,
+                onThemeModeChanged: (mode) => themeModeSetting.value = mode,
+                showUnreadOnly: controller.showUnreadOnly,
+                onShowUnreadOnlyChanged: controller.setShowUnreadOnly,
+                onOpenReadList: _openReadList,
+                onOpenFavoriteList: _openFavoriteList,
+                onOpenReaderBackgroundSettings: _openReaderBackgroundSettings,
+                contextBefore: _contextSettings.before,
+                contextAfter: _contextSettings.after,
+                onContextBeforeChanged: (value) {
+                  setState(() {
+                    _contextSettings = _contextSettings.copyWith(before: value);
+                  });
+                },
+                onContextAfterChanged: (value) {
+                  setState(() {
+                    _contextSettings = _contextSettings.copyWith(after: value);
+                  });
+                },
+              ),
+              body: ReaderBackgroundSurface(
+                settings: backgroundSettings,
+                child: body,
+              ),
+            );
+          },
         );
       },
     );

@@ -60,4 +60,9 @@ class ContextController extends ChangeNotifier {
     await repository.toggleFavorite(card);
     notifyListeners();
   }
+
+  Future<void> toggleRead(BookCard card) async {
+    await repository.toggleRead(card);
+    notifyListeners();
+  }
 }
