@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(magick --version:*)",
+      "Bash(python3:*)",
+      "Bash(pip install:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(flutter pub run:*)",
+      "Bash(E:)",
+      "Bash(flutter analyze:*)"
+    ]
+  }
+}

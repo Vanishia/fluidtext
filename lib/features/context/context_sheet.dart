@@ -103,6 +103,7 @@ class ContextSheet extends StatelessWidget {
                                 return ContextCardTile(
                                   card: card,
                                   isCenter: card.id == controller.centerCard.id,
+                                  onToggleRead: () => controller.toggleRead(card),
                                   onToggleFavorite: () => controller.toggleFavorite(card),
                                   onShowContext: () => controller.focusOn(card),
                                 );

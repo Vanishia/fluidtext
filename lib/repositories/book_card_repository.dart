@@ -12,12 +12,72 @@ class BookCardRepository {
     return isar.books.where().sortByCreatedAtDesc().findAll();
   }
 
-  Future<List<int>> loadOrderedCardIds(int bookId) {
+  Future<List<Book>> loadBooksByIds(List<int> ids) async {
+    if (ids.isEmpty) return const <Book>[];
+
+    final fetched = await isar.books
+        .filter()
+        .anyOf(ids, (query, id) => query.idEqualTo(id))
+        .findAll();
+    final booksById = {for (final book in fetched) book.id: book};
+    return ids.map((id) => booksById[id]).whereType<Book>().toList();
+  }
+
+  Future<List<int>> loadOrderedCardIds(List<int> bookIds) async {
+    if (bookIds.isEmpty) return const <int>[];
+
+    final orderedIds = <int>[];
+    for (final bookId in bookIds) {
+      final ids = await isar.bookCards
+          .filter()
+          .bookIdEqualTo(bookId)
+          .sortByCardIndex()
+          .idProperty()
+          .findAll();
+      orderedIds.addAll(ids);
+    }
+    return orderedIds;
+  }
+
+  Future<List<int>> loadUnreadOrderedCardIds(List<int> bookIds) async {
+    if (bookIds.isEmpty) return const <int>[];
+
+    final orderedIds = <int>[];
+    for (final bookId in bookIds) {
+      final ids = await isar.bookCards
+          .filter()
+          .bookIdEqualTo(bookId)
+          .and()
+          .isReadEqualTo(false)
+          .sortByCardIndex()
+          .idProperty()
+          .findAll();
+      orderedIds.addAll(ids);
+    }
+    return orderedIds;
+  }
+
+  Future<List<BookCard>> loadReadCards(List<int> bookIds) {
+    if (bookIds.isEmpty) return Future.value(const <BookCard>[]);
+
     return isar.bookCards
         .filter()
-        .bookIdEqualTo(bookId)
-        .sortByCardIndex()
-        .idProperty()
+        .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
+        .and()
+        .isReadEqualTo(true)
+        .sortByReadAtDesc()
+        .findAll();
+  }
+
+  Future<List<BookCard>> loadFavoriteCards(List<int> bookIds) {
+    if (bookIds.isEmpty) return Future.value(const <BookCard>[]);
+
+    return isar.bookCards
+        .filter()
+        .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
+        .and()
+        .isFavoriteEqualTo(true)
+        .sortByFavoritedAtDesc()
         .findAll();
   }
 
@@ -51,6 +111,15 @@ class BookCardRepository {
   Future<void> toggleFavorite(BookCard card) {
     return isar.writeTxn(() async {
       card.isFavorite = !card.isFavorite;
+      card.favoritedAt = card.isFavorite ? DateTime.now() : null;
+      await isar.bookCards.put(card);
+    });
+  }
+
+  Future<void> toggleRead(BookCard card) {
+    return isar.writeTxn(() async {
+      card.isRead = !card.isRead;
+      card.readAt = card.isRead ? DateTime.now() : null;
       await isar.bookCards.put(card);
     });
   }

@@ -1,18 +1,19 @@
-import 'package:collection/collection.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:isar/isar.dart';
 
 import '../../app_settings.dart';
 import '../../db/isar_db.dart';
-import '../../features/context/context_settings.dart';
-import '../../features/reader/reader_page.dart';
-import '../../features/reader/reading_order.dart';
-import '../../features/settings/app_drawer.dart';
 import '../../models/book.dart';
 import '../../repositories/book_card_repository.dart';
-import '../../services/book_import_service.dart';
-import '../../widgets/blocking_loader.dart';
+import '../../services/reader_session_service.dart';
+import '../../widgets/shelf_glyph.dart';
+import '../reader/favorite_cards_page.dart';
+import '../reader/read_cards_page.dart';
+import '../reader/reader_page.dart';
+import '../reader/reader_background_settings.dart';
+import '../reader/widgets/reader_background_surface.dart';
+import '../settings/app_drawer.dart';
+import '../settings/reader_background_sheet.dart';
+import 'bookshelf_sheet.dart';
 
 class BookshelfPage extends StatefulWidget {
   const BookshelfPage({super.key});
@@ -22,17 +23,10 @@ class BookshelfPage extends StatefulWidget {
 }
 
 class _BookshelfPageState extends State<BookshelfPage> {
-  final _importService = const BookImportService();
-
-  Isar? _isar;
   BookCardRepository? _repository;
-
-  bool _isImporting = false;
-  String? _importStatus;
-  var _readingOrder = ReadingOrder.sequential;
-  var _contextSettings = const ContextSettings();
-
-  final _books = <Book>[];
+  final _selectedBooks = <Book>[];
+  bool _isLoading = true;
+  bool _didAutoOpen = false;
 
   @override
   void initState() {
@@ -42,230 +36,187 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   Future<void> _init() async {
     final isar = await IsarDb.instance.isar;
+    final repository = BookCardRepository(isar);
+    final savedBookIds = await ReaderSessionService.instance
+        .loadLastOpenedBookIds();
+    final savedBooks = await repository.loadBooksByIds(savedBookIds);
 
     if (!mounted) return;
     setState(() {
-      _isar = isar;
-      _repository = BookCardRepository(isar);
+      _repository = repository;
+      _selectedBooks
+        ..clear()
+        ..addAll(savedBooks);
+      _isLoading = false;
     });
 
-    await _reloadBooks();
-  }
-
-  Future<void> _pickAndImportEpub() async {
-    final isar = _isar;
-    if (isar == null || _isImporting) return;
-
-    setState(() {
-      _isImporting = true;
-      _importStatus = '正在导入…';
-    });
-
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['epub'],
-        withData: true,
-      );
-      final file = result?.files.firstOrNull;
-      final bytes = file?.bytes;
-      if (bytes == null) {
+    if (savedBooks.isNotEmpty && !_didAutoOpen) {
+      _didAutoOpen = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        setState(() => _importStatus = '未选择文件');
-        return;
-      }
-
-      setState(() => _importStatus = '解析与切分中…');
-
-      final imported = await _importService.importEpubBytes(
-        isar: isar,
-        bytes: bytes,
-      );
-
-      if (!mounted) return;
-      setState(() {
-        _importStatus = '完成：写入 ${imported.insertedCards} 张卡片';
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => BookCardsPage(books: savedBooks)),
+        );
       });
-
-      await _reloadBooks();
-      if (!mounted) return;
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => BookCardsPage(
-            bookId: imported.bookId,
-            bookTitle: imported.bookTitle,
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _importStatus = '导入失败：$error');
-    } finally {
-      if (mounted) {
-        setState(() => _isImporting = false);
-      }
     }
   }
 
-  Future<void> _reloadBooks() async {
-    final repository = _repository;
-    if (repository == null) return;
+  String _selectionTitle() {
+    if (_selectedBooks.isEmpty) return '还没有上次阅读';
+    if (_selectedBooks.length == 1) return _selectedBooks.first.title;
+    return '上次阅读 · ${_selectedBooks.length} 本';
+  }
 
-    final books = await repository.loadBooks();
+  String _selectionSummary() {
+    if (_selectedBooks.isEmpty) {
+      return '前往书架管理书籍，选好后会直接进入阅读。';
+    }
+    return _selectedBooks.map((book) => book.title).join('、');
+  }
 
+  Future<void> _applySelection(List<Book> selected) async {
+    await ReaderSessionService.instance.saveLastOpenedBookIds(
+      selected.map((book) => book.id).toList(),
+    );
     if (!mounted) return;
+
     setState(() {
-      _books
+      _selectedBooks
         ..clear()
-        ..addAll(books);
+        ..addAll(selected);
     });
   }
 
-  Future<void> _deleteBook(Book book) async {
-    final repository = _repository;
-    if (repository == null || _isImporting) return;
+  Future<void> _openBookshelf() async {
+    final selected = await showBookshelfSheet(
+      context,
+      initialSelectedBookIds: _selectedBooks.map((book) => book.id).toList(),
+    );
+    if (selected == null || !mounted) return;
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('删除书籍'),
-        content: Text('将删除《${book.title}》及其所有卡片，是否继续？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('删除'),
-          ),
-        ],
+    await _applySelection(selected);
+    if (!mounted || selected.isEmpty) return;
+
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => BookCardsPage(books: selected)));
+  }
+
+  void _openReadList() {
+    final repository = _repository;
+    if (repository == null || _selectedBooks.isEmpty) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ReadCardsPage(
+          bookIds: _selectedBooks.map((book) => book.id).toList(),
+          shelfTitle: _selectionTitle(),
+          repository: repository,
+        ),
       ),
     );
-    if (ok != true) return;
+  }
 
-    setState(() {
-      _isImporting = true;
-      _importStatus = '正在删除…';
-    });
+  void _openFavoriteList() {
+    final repository = _repository;
+    if (repository == null || _selectedBooks.isEmpty) return;
 
-    try {
-      await repository.deleteBook(book.id);
-      await _reloadBooks();
-      if (!mounted) return;
-      setState(() => _importStatus = '已删除：《${book.title}》');
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _importStatus = '删除失败：$error');
-    } finally {
-      if (mounted) {
-        setState(() => _isImporting = false);
-      }
-    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FavoriteCardsPage(
+          bookIds: _selectedBooks.map((book) => book.id).toList(),
+          shelfTitle: _selectionTitle(),
+          repository: repository,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openReaderBackgroundSettings() async {
+    await showReaderBackgroundSheet(
+      context,
+      initialSettings: readerBackgroundSetting.value,
+      onChanged: saveReaderBackgroundSettings,
+      onImportImage: importReaderBackgroundImage,
+      onClearImage: clearReaderBackgroundImage,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
-
-    return Scaffold(
-      drawerEdgeDragWidth: 120,
-      drawerScrimColor: Colors.black.withValues(alpha: 0.18),
-      appBar: AppBar(title: const Text('书架')),
-      drawer: AppDrawer(
-        isImporting: _isImporting,
-        onImport: _pickAndImportEpub,
-        onOpenBookshelf: () {},
-        readingOrder: _readingOrder,
-        onReadingOrderChanged: (order) => setState(() => _readingOrder = order),
-        themeMode: themeModeSetting.value,
-        onThemeModeChanged: (mode) => themeModeSetting.value = mode,
-        contextBefore: _contextSettings.before,
-        contextAfter: _contextSettings.after,
-        onContextBeforeChanged: (value) {
-          setState(() {
-            _contextSettings = _contextSettings.copyWith(before: value);
-          });
-        },
-        onContextAfterChanged: (value) {
-          setState(() {
-            _contextSettings = _contextSettings.copyWith(after: value);
-          });
-        },
-      ),
-      body: Stack(
-        children: [
-          _books.isEmpty
-              ? const Center(child: Text('还没有书籍，去侧边栏导入一本 EPUB'))
-              : ListView.separated(
-                  padding: EdgeInsets.only(
-                    bottom: bottomInset + (_importStatus == null ? 20 : 88),
-                  ),
-                  itemCount: _books.length,
-                  separatorBuilder: (_, index) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final book = _books[index];
-                    return ListTile(
-                      title: Text(book.title),
-                      subtitle: Text('ID: ${book.id}'),
-                      trailing: PopupMenuButton<String>(
-                        onSelected: (value) {
-                          switch (value) {
-                            case 'open':
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => BookCardsPage(
-                                    bookId: book.id,
-                                    bookTitle: book.title,
-                                  ),
-                                ),
-                              );
-                              break;
-                            case 'delete':
-                              _deleteBook(book);
-                              break;
-                          }
-                        },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(
-                            value: 'open',
-                            child: Text('打开'),
-                          ),
-                          PopupMenuItem(
-                            value: 'delete',
-                            child: Text('删除'),
-                          ),
-                        ],
-                      ),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => BookCardsPage(
-                              bookId: book.id,
-                              bookTitle: book.title,
+    return ValueListenableBuilder<ReaderBackgroundSettings>(
+      valueListenable: readerBackgroundSetting,
+      builder: (context, backgroundSettings, _) {
+        return Scaffold(
+          backgroundColor: backgroundSettings.palette.color,
+          drawerEdgeDragWidth: 120,
+          drawerScrimColor: Colors.black.withValues(alpha: 0.18),
+          appBar: AppBar(title: const Text('FluidText')),
+          drawer: AppDrawer(
+            onOpenBookshelf: _openBookshelf,
+            readingOrder: readingOrderSetting.value,
+            onReadingOrderChanged: (order) => readingOrderSetting.value = order,
+            themeMode: themeModeSetting.value,
+            onThemeModeChanged: (mode) => themeModeSetting.value = mode,
+            onOpenReadList: _selectedBooks.isEmpty ? null : _openReadList,
+            onOpenFavoriteList: _selectedBooks.isEmpty
+                ? null
+                : _openFavoriteList,
+            onOpenReaderBackgroundSettings: _openReaderBackgroundSettings,
+          ),
+          body: ReaderBackgroundSurface(
+            settings: backgroundSettings,
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ShelfGlyph(
+                              size: 34,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                              strokeWidth: 2.2,
                             ),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-          if (_isImporting) const BlockingLoader(),
-        ],
-      ),
-      bottomNavigationBar: _importStatus == null
-          ? null
-          : SafeArea(
-              maintainBottomViewPadding: true,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(
-                  _importStatus!,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
+                            const SizedBox(height: 18),
+                            Text(
+                              _selectionTitle(),
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.headlineSmall
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              _selectionSummary(),
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyLarge
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                            const SizedBox(height: 22),
+                            FilledButton.tonalIcon(
+                              onPressed: _openBookshelf,
+                              icon: const Icon(Icons.arrow_forward_rounded),
+                              label: Text(
+                                _selectedBooks.isEmpty ? '前往书架管理书籍' : '打开当前书单',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+        );
+      },
     );
   }
 }
