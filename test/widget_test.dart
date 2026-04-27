@@ -39,7 +39,7 @@ void main() {
     expect(find.text('书架'), findsOneWidget);
     expect(find.text('顺序阅读'), findsOneWidget);
     expect(find.text('乱序阅读'), findsOneWidget);
-    expect(find.text('只看未读'), findsOneWidget);
+    expect(find.text('过滤已读'), findsOneWidget);
     expect(find.byTooltip('阅读背景'), findsOneWidget);
     expect(find.byTooltip('收藏'), findsOneWidget);
     expect(find.byTooltip('已读'), findsOneWidget);

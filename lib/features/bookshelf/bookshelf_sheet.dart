@@ -8,6 +8,7 @@ import 'package:isar/isar.dart';
 import '../../db/isar_db.dart';
 import '../../models/book.dart';
 import '../../repositories/book_card_repository.dart';
+import '../../services/book_remark_service.dart';
 import '../../services/book_import_service.dart';
 import '../../widgets/blocking_loader.dart';
 import '../../widgets/glass.dart';
@@ -42,6 +43,7 @@ class BookshelfSheet extends StatefulWidget {
 class _BookshelfSheetState extends State<BookshelfSheet> {
   final _importService = const BookImportService();
   final _books = <Book>[];
+  final _remarks = <int, String>{};
   late final Set<int> _selectedIds = widget.initialSelectedBookIds.toSet();
 
   BookCardRepository? _repository;
@@ -60,6 +62,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     final isar = await IsarDb.instance.isar;
     final repository = BookCardRepository(isar);
     final books = await repository.loadBooks();
+    final remarks = await BookRemarkService.instance.load();
 
     if (!mounted) return;
     setState(() {
@@ -68,6 +71,9 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       _books
         ..clear()
         ..addAll(books);
+      _remarks
+        ..clear()
+        ..addAll(remarks);
       _selectedIds.removeWhere((id) => !_books.any((book) => book.id == id));
       _isLoading = false;
     });
@@ -144,12 +150,13 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
   Future<void> _deleteBook(Book book) async {
     final repository = _repository;
     if (repository == null || _isBusy) return;
+    final title = _displayTitle(book);
 
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除书籍'),
-        content: Text('将删除《${book.title}》及其所有卡片，是否继续？'),
+        content: Text('将删除《$title》及其所有卡片，是否继续？'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -171,11 +178,13 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
 
     try {
       await repository.deleteBook(book.id);
+      await BookRemarkService.instance.removeRemark(book.id);
       await _reloadBooks();
       if (!mounted) return;
       setState(() {
         _selectedIds.remove(book.id);
-        _status = '已删除《${book.title}》';
+        _remarks.remove(book.id);
+        _status = '已删除《$title》';
       });
     } catch (error) {
       if (!mounted) return;
@@ -186,6 +195,51 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       }
     }
   }
+
+  Future<void> _editRemark(Book book) async {
+    if (_isBusy) return;
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => _BookRemarkDialog(
+        initialValue: _remarks[book.id] ?? book.title,
+        originalTitle: book.title,
+      ),
+    );
+    if (result == null) return;
+
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+
+    setState(() {
+      _isBusy = true;
+      _status = '正在保存备注…';
+    });
+
+    try {
+      await BookRemarkService.instance.saveRemark(book.id, result);
+      final trimmed = result.trim();
+      if (!mounted) return;
+      setState(() {
+        if (trimmed.isEmpty) {
+          _remarks.remove(book.id);
+          _status = '已清除《${book.title}》的备注';
+        } else {
+          _remarks[book.id] = trimmed;
+          _status = '已备注为《$trimmed》';
+        }
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _status = '备注保存失败：$error');
+    } finally {
+      if (mounted) {
+        setState(() => _isBusy = false);
+      }
+    }
+  }
+
+  String _displayTitle(Book book) => _remarks[book.id] ?? book.title;
 
   List<Book> _selectedBooks() {
     return _books.where((book) => _selectedIds.contains(book.id)).toList();
@@ -293,6 +347,8 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                                   final selected = _selectedIds.contains(
                                     book.id,
                                   );
+                                  final remark = _remarks[book.id];
+                                  final displayTitle = _displayTitle(book);
 
                                   return Material(
                                     color: Colors.transparent,
@@ -326,29 +382,90 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                                                         _toggleSelected(book),
                                             ),
                                             Expanded(
-                                              child: Text(
-                                                book.title,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodyLarge
-                                                    ?.copyWith(
-                                                      fontWeight: selected
-                                                          ? FontWeight.w700
-                                                          : FontWeight.w500,
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(
+                                                    displayTitle,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .bodyLarge
+                                                        ?.copyWith(
+                                                          fontWeight: selected
+                                                              ? FontWeight.w700
+                                                              : FontWeight.w500,
+                                                        ),
+                                                  ),
+                                                  if (remark != null) ...[
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      book.title,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: Theme.of(context)
+                                                          .textTheme
+                                                          .bodySmall
+                                                          ?.copyWith(
+                                                            color: cs
+                                                                .onSurfaceVariant,
+                                                          ),
                                                     ),
+                                                  ],
+                                                ],
                                               ),
                                             ),
-                                            IconButton(
-                                              tooltip: '删除',
-                                              onPressed: _isBusy
-                                                  ? null
-                                                  : () => _deleteBook(book),
+                                            PopupMenuButton<String>(
+                                              enabled: !_isBusy,
+                                              tooltip: '更多',
                                               icon: const Icon(
-                                                Icons.delete_outline_rounded,
-                                                size: 20,
+                                                Icons.more_horiz_rounded,
+                                                size: 22,
                                               ),
+                                              onSelected: (value) {
+                                                WidgetsBinding.instance
+                                                    .addPostFrameCallback((_) {
+                                                      if (!mounted) return;
+                                                      switch (value) {
+                                                        case 'remark':
+                                                          _editRemark(book);
+                                                          break;
+                                                        case 'delete':
+                                                          _deleteBook(book);
+                                                          break;
+                                                      }
+                                                    });
+                                              },
+                                              itemBuilder: (context) => [
+                                                const PopupMenuItem(
+                                                  value: 'remark',
+                                                  child: ListTile(
+                                                    leading: Icon(
+                                                      Icons.edit_note_rounded,
+                                                    ),
+                                                    title: Text('备注'),
+                                                    contentPadding:
+                                                        EdgeInsets.zero,
+                                                  ),
+                                                ),
+                                                const PopupMenuItem(
+                                                  value: 'delete',
+                                                  child: ListTile(
+                                                    leading: Icon(
+                                                      Icons
+                                                          .delete_outline_rounded,
+                                                    ),
+                                                    title: Text('删除'),
+                                                    contentPadding:
+                                                        EdgeInsets.zero,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ],
                                         ),
@@ -394,6 +511,64 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _BookRemarkDialog extends StatefulWidget {
+  const _BookRemarkDialog({
+    required this.initialValue,
+    required this.originalTitle,
+  });
+
+  final String initialValue;
+  final String originalTitle;
+
+  @override
+  State<_BookRemarkDialog> createState() => _BookRemarkDialogState();
+}
+
+class _BookRemarkDialogState extends State<_BookRemarkDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    Navigator.of(context).pop(_controller.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('备注书名'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: InputDecoration(
+          labelText: '备注名',
+          hintText: widget.originalTitle,
+          helperText: '留空会清除备注，原书名不会被修改',
+        ),
+        textInputAction: TextInputAction.done,
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('保存')),
+      ],
     );
   }
 }

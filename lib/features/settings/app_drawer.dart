@@ -121,7 +121,7 @@ class AppDrawer extends StatelessWidget {
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 2,
                             ),
-                            title: const Text('只看未读'),
+                            title: const Text('过滤已读'),
                             value: showUnreadOnly,
                             onChanged: onShowUnreadOnlyChanged,
                           ),

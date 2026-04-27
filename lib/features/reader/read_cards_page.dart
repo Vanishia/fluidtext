@@ -12,11 +12,13 @@ class ReadCardsPage extends StatefulWidget {
     required this.bookIds,
     required this.shelfTitle,
     required this.repository,
+    this.bookTitlesById = const <int, String>{},
   });
 
   final List<int> bookIds;
   final String shelfTitle;
   final BookCardRepository repository;
+  final Map<int, String> bookTitlesById;
 
   @override
   State<ReadCardsPage> createState() => _ReadCardsPageState();
@@ -53,6 +55,10 @@ class _ReadCardsPageState extends State<ReadCardsPage> {
     return '${local.year}-$month-$day $hour:$minute';
   }
 
+  String _bookTitle(BookCard card) {
+    return widget.bookTitlesById[card.bookId] ?? card.bookTitle;
+  }
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ReaderBackgroundSettings>(
@@ -79,7 +85,7 @@ class _ReadCardsPageState extends State<ReadCardsPage> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         subtitle: Text(
-                          '${card.bookTitle} · #${card.cardIndex} · 已读于 ${_formatReadAt(card.readAt)}',
+                          '${_bookTitle(card)} · #${card.cardIndex} · 已读于 ${_formatReadAt(card.readAt)}',
                         ),
                       );
                     },
