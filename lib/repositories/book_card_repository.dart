@@ -26,35 +26,39 @@ class BookCardRepository {
   Future<List<int>> loadOrderedCardIds(List<int> bookIds) async {
     if (bookIds.isEmpty) return const <int>[];
 
-    final orderedIds = <int>[];
-    for (final bookId in bookIds) {
-      final ids = await isar.bookCards
-          .filter()
-          .bookIdEqualTo(bookId)
-          .sortByCardIndex()
-          .idProperty()
-          .findAll();
-      orderedIds.addAll(ids);
-    }
-    return orderedIds;
+    final idsByBook = await Future.wait(
+      bookIds.map(_loadOrderedCardIdsForBook),
+    );
+    return idsByBook.expand((ids) => ids).toList(growable: false);
   }
 
   Future<List<int>> loadUnreadOrderedCardIds(List<int> bookIds) async {
     if (bookIds.isEmpty) return const <int>[];
 
-    final orderedIds = <int>[];
-    for (final bookId in bookIds) {
-      final ids = await isar.bookCards
-          .filter()
-          .bookIdEqualTo(bookId)
-          .and()
-          .isReadEqualTo(false)
-          .sortByCardIndex()
-          .idProperty()
-          .findAll();
-      orderedIds.addAll(ids);
-    }
-    return orderedIds;
+    final idsByBook = await Future.wait(
+      bookIds.map(_loadUnreadOrderedCardIdsForBook),
+    );
+    return idsByBook.expand((ids) => ids).toList(growable: false);
+  }
+
+  Future<List<int>> _loadOrderedCardIdsForBook(int bookId) {
+    return isar.bookCards
+        .filter()
+        .bookIdEqualTo(bookId)
+        .sortByCardIndex()
+        .idProperty()
+        .findAll();
+  }
+
+  Future<List<int>> _loadUnreadOrderedCardIdsForBook(int bookId) {
+    return isar.bookCards
+        .filter()
+        .bookIdEqualTo(bookId)
+        .and()
+        .isReadEqualTo(false)
+        .sortByCardIndex()
+        .idProperty()
+        .findAll();
   }
 
   Future<List<BookCard>> loadReadCards(List<int> bookIds) {

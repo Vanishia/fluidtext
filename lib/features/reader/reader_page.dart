@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../app_settings.dart';
@@ -44,7 +46,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
   BookCardRepository? _repository;
   ReaderController? _controller;
   late final List<Book> _books = List<Book>.from(widget.books);
-  ContextSettings _contextSettings = const ContextSettings();
+  ContextSettings _contextSettings = contextSettingsSetting.value;
 
   @override
   void initState() {
@@ -61,14 +63,13 @@ class _BookCardsPageState extends State<BookCardsPage> {
   }
 
   Future<void> _init() async {
-    await ReaderSessionService.instance.saveLastOpenedBookIds(widget.bookIds);
-
     final isar = await IsarDb.instance.isar;
     final repository = BookCardRepository(isar);
     final controller = ReaderController(
       repository: repository,
       bookIds: widget.bookIds,
       initialReadingOrder: readingOrderSetting.value,
+      initialShowUnreadOnly: showUnreadOnlySetting.value,
     );
     await controller.reloadCards();
 
@@ -81,6 +82,15 @@ class _BookCardsPageState extends State<BookCardsPage> {
       _repository = repository;
       _controller = controller;
     });
+    unawaited(_saveCurrentSession());
+  }
+
+  Future<void> _saveCurrentSession() async {
+    try {
+      await ReaderSessionService.instance.saveLastOpenedBookIds(widget.bookIds);
+    } catch (_) {
+      // Session restore is best-effort and should not block reading startup.
+    }
   }
 
   void _maybeLoadMore() {
@@ -217,6 +227,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
       setState(() {
         _contextSettings = contextController.settings;
       });
+      saveContextSettingsSetting(contextController.settings);
     }
     contextController.dispose();
   }
@@ -289,26 +300,33 @@ class _BookCardsPageState extends State<BookCardsPage> {
                 onOpenBookshelf: _openBookshelf,
                 readingOrder: controller.readingOrder,
                 onReadingOrderChanged: (order) {
-                  readingOrderSetting.value = order;
+                  saveReadingOrderSetting(order);
                   controller.setReadingOrder(order);
                 },
                 themeMode: themeModeSetting.value,
-                onThemeModeChanged: (mode) => themeModeSetting.value = mode,
+                onThemeModeChanged: saveThemeModeSetting,
                 showUnreadOnly: controller.showUnreadOnly,
-                onShowUnreadOnlyChanged: controller.setShowUnreadOnly,
+                onShowUnreadOnlyChanged: (value) {
+                  saveShowUnreadOnlySetting(value);
+                  controller.setShowUnreadOnly(value);
+                },
                 onOpenReadList: _openReadList,
                 onOpenFavoriteList: _openFavoriteList,
                 onOpenReaderBackgroundSettings: _openReaderBackgroundSettings,
                 contextBefore: _contextSettings.before,
                 contextAfter: _contextSettings.after,
                 onContextBeforeChanged: (value) {
+                  final next = _contextSettings.copyWith(before: value);
+                  saveContextSettingsSetting(next);
                   setState(() {
-                    _contextSettings = _contextSettings.copyWith(before: value);
+                    _contextSettings = next;
                   });
                 },
                 onContextAfterChanged: (value) {
+                  final next = _contextSettings.copyWith(after: value);
+                  saveContextSettingsSetting(next);
                   setState(() {
-                    _contextSettings = _contextSettings.copyWith(after: value);
+                    _contextSettings = next;
                   });
                 },
               ),
