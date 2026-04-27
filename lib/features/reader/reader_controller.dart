@@ -10,12 +10,15 @@ class ReaderController extends ChangeNotifier {
   ReaderController({
     required this.repository,
     required this.bookIds,
-    this.initialReadingOrder = ReadingOrder.sequential,
-  }) : _readingOrder = initialReadingOrder;
+    this.initialReadingOrder = ReadingOrder.random,
+    this.initialShowUnreadOnly = false,
+  }) : _readingOrder = initialReadingOrder,
+       _showUnreadOnly = initialShowUnreadOnly;
 
   final BookCardRepository repository;
   final List<int> bookIds;
   final ReadingOrder initialReadingOrder;
+  final bool initialShowUnreadOnly;
   final Random _random = Random();
 
   static const pageSize = 60;
@@ -24,7 +27,7 @@ class ReaderController extends ChangeNotifier {
   final List<BookCard> _cards = <BookCard>[];
   final List<int> _orderedCardIds = <int>[];
   final List<int> _shuffledCardIds = <int>[];
-  bool _showUnreadOnly = false;
+  bool _showUnreadOnly;
 
   bool _hasMore = true;
   bool _isLoadingInitial = true;

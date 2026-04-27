@@ -155,9 +155,12 @@ class _BookshelfPageState extends State<BookshelfPage> {
           drawer: AppDrawer(
             onOpenBookshelf: _openBookshelf,
             readingOrder: readingOrderSetting.value,
-            onReadingOrderChanged: (order) => readingOrderSetting.value = order,
+            onReadingOrderChanged: (order) {
+              saveReadingOrderSetting(order);
+              setState(() {});
+            },
             themeMode: themeModeSetting.value,
-            onThemeModeChanged: (mode) => themeModeSetting.value = mode,
+            onThemeModeChanged: saveThemeModeSetting,
             onOpenReadList: _selectedBooks.isEmpty ? null : _openReadList,
             onOpenFavoriteList: _selectedBooks.isEmpty
                 ? null
