@@ -4,6 +4,7 @@ import '../../app_settings.dart';
 import '../../db/isar_db.dart';
 import '../../models/book.dart';
 import '../../repositories/book_card_repository.dart';
+import '../../services/book_remark_service.dart';
 import '../../services/reader_session_service.dart';
 import '../../widgets/shelf_glyph.dart';
 import '../reader/favorite_cards_page.dart';
@@ -25,6 +26,7 @@ class BookshelfPage extends StatefulWidget {
 class _BookshelfPageState extends State<BookshelfPage> {
   BookCardRepository? _repository;
   final _selectedBooks = <Book>[];
+  final _bookRemarks = <int, String>{};
   bool _isLoading = true;
   bool _didAutoOpen = false;
 
@@ -40,6 +42,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
     final savedBookIds = await ReaderSessionService.instance
         .loadLastOpenedBookIds();
     final savedBooks = await repository.loadBooksByIds(savedBookIds);
+    final remarks = await BookRemarkService.instance.load();
 
     if (!mounted) return;
     setState(() {
@@ -47,6 +50,9 @@ class _BookshelfPageState extends State<BookshelfPage> {
       _selectedBooks
         ..clear()
         ..addAll(savedBooks);
+      _bookRemarks
+        ..clear()
+        ..addAll(remarks);
       _isLoading = false;
     });
 
@@ -63,7 +69,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   String _selectionTitle() {
     if (_selectedBooks.isEmpty) return '还没有上次阅读';
-    if (_selectedBooks.length == 1) return _selectedBooks.first.title;
+    if (_selectedBooks.length == 1) return _displayTitle(_selectedBooks.first);
     return '上次阅读 · ${_selectedBooks.length} 本';
   }
 
@@ -71,7 +77,13 @@ class _BookshelfPageState extends State<BookshelfPage> {
     if (_selectedBooks.isEmpty) {
       return '前往书架管理书籍，选好后会直接进入阅读。';
     }
-    return _selectedBooks.map((book) => book.title).join('、');
+    return _selectedBooks.map(_displayTitle).join('、');
+  }
+
+  String _displayTitle(Book book) => _bookRemarks[book.id] ?? book.title;
+
+  Map<int, String> _selectedBookTitlesById() {
+    return {for (final book in _selectedBooks) book.id: _displayTitle(book)};
   }
 
   Future<void> _applySelection(List<Book> selected) async {
@@ -94,6 +106,14 @@ class _BookshelfPageState extends State<BookshelfPage> {
     );
     if (selected == null || !mounted) return;
 
+    final remarks = await BookRemarkService.instance.load();
+    if (!mounted) return;
+    setState(() {
+      _bookRemarks
+        ..clear()
+        ..addAll(remarks);
+    });
+
     await _applySelection(selected);
     if (!mounted || selected.isEmpty) return;
 
@@ -112,6 +132,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
           bookIds: _selectedBooks.map((book) => book.id).toList(),
           shelfTitle: _selectionTitle(),
           repository: repository,
+          bookTitlesById: _selectedBookTitlesById(),
         ),
       ),
     );
@@ -127,6 +148,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
           bookIds: _selectedBooks.map((book) => book.id).toList(),
           shelfTitle: _selectionTitle(),
           repository: repository,
+          bookTitlesById: _selectedBookTitlesById(),
         ),
       ),
     );

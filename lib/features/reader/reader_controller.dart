@@ -78,16 +78,28 @@ class ReaderController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final pageIds = _nextPageIds();
-      if (pageIds.isEmpty) {
-        _hasMore = false;
-        return;
+      while (true) {
+        final pageIds = _nextPageIds();
+        if (pageIds.isEmpty) {
+          _hasMore = false;
+          return;
+        }
+
+        final page = _showUnreadOnly
+            ? await repository.loadUnreadCardsByIds(pageIds)
+            : await repository.loadCardsByIds(pageIds);
+
+        if (page.isNotEmpty) {
+          _cards.addAll(page);
+          _hasMore = _hasMoreAfterCurrentPage();
+          return;
+        }
+
+        if (!_hasMoreAfterCurrentPage()) {
+          _hasMore = false;
+          return;
+        }
       }
-
-      final page = await repository.loadCardsByIds(pageIds);
-
-      _cards.addAll(page);
-      _hasMore = _hasMoreAfterCurrentPage();
     } finally {
       _isLoadingMore = false;
       notifyListeners();
@@ -107,15 +119,6 @@ class ReaderController extends ChangeNotifier {
   }
 
   Future<void> refreshCard(BookCard card) async {
-    if (_showUnreadOnly && card.isRead) {
-      _cards.removeWhere((item) => item.id == card.id);
-      _orderedCardIds.remove(card.id);
-      _shuffledCardIds.remove(card.id);
-      _hasMore = _hasMoreAfterCurrentPage();
-      notifyListeners();
-      return;
-    }
-
     final index = _cards.indexWhere((item) => item.id == card.id);
     if (index == -1) return;
     _cards[index] = card;

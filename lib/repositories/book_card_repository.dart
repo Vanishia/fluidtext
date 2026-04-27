@@ -96,6 +96,19 @@ class BookCardRepository {
     return ids.map((id) => mapById[id]).whereType<BookCard>().toList();
   }
 
+  Future<List<BookCard>> loadUnreadCardsByIds(List<int> ids) async {
+    if (ids.isEmpty) return const <BookCard>[];
+
+    final fetched = await isar.bookCards
+        .filter()
+        .anyOf(ids, (query, id) => query.idEqualTo(id))
+        .and()
+        .isReadEqualTo(false)
+        .findAll();
+    final mapById = {for (final card in fetched) card.id: card};
+    return ids.map((id) => mapById[id]).whereType<BookCard>().toList();
+  }
+
   Future<List<BookCard>> loadContextCards({
     required int bookId,
     required int centerCardIndex,

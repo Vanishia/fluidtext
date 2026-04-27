@@ -10,6 +10,7 @@ class BookCardTile extends StatelessWidget {
     required this.onToggleRead,
     required this.onToggleFavorite,
     required this.onShowContext,
+    this.bookTitle,
     this.showBookTitle = false,
   });
 
@@ -17,6 +18,7 @@ class BookCardTile extends StatelessWidget {
   final VoidCallback onToggleRead;
   final VoidCallback onToggleFavorite;
   final VoidCallback onShowContext;
+  final String? bookTitle;
   final bool showBookTitle;
 
   @override
@@ -48,7 +50,7 @@ class BookCardTile extends StatelessWidget {
                   children: [
                     if (showBookTitle) ...[
                       Text(
-                        card.bookTitle,
+                        bookTitle ?? card.bookTitle,
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: cs.onSurfaceVariant,
                           fontWeight: FontWeight.w600,
@@ -63,12 +65,11 @@ class BookCardTile extends StatelessWidget {
                       ).textTheme.labelMedium?.copyWith(color: cs.primary),
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      card.content,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontSize: 15,
-                        height: 1.42,
-                      ),
+                    _CardContentText(
+                      content: card.content,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(fontSize: 15),
                     ),
                     const SizedBox(height: 6),
                     Row(
@@ -118,6 +119,37 @@ class BookCardTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CardContentText extends StatelessWidget {
+  const _CardContentText({required this.content, required this.style});
+
+  final String content;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final paragraphs = content
+        .split(RegExp(r'\n+'))
+        .map((paragraph) => paragraph.trimRight())
+        .where((paragraph) => paragraph.trim().isNotEmpty)
+        .toList(growable: false);
+    final textStyle = style?.copyWith(height: 1.5);
+
+    if (paragraphs.isEmpty) {
+      return Text('', style: textStyle);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var index = 0; index < paragraphs.length; index += 1) ...[
+          Text(paragraphs[index], style: textStyle),
+          if (index < paragraphs.length - 1) const SizedBox(height: 2),
+        ],
+      ],
     );
   }
 }

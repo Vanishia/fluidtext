@@ -7,6 +7,7 @@ import '../../db/isar_db.dart';
 import '../../models/book.dart';
 import '../../models/book_card.dart';
 import '../../repositories/book_card_repository.dart';
+import '../../services/book_remark_service.dart';
 import '../../services/reader_session_service.dart';
 import '../bookshelf/bookshelf_page.dart';
 import '../bookshelf/bookshelf_sheet.dart';
@@ -46,6 +47,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
   BookCardRepository? _repository;
   ReaderController? _controller;
   late final List<Book> _books = List<Book>.from(widget.books);
+  final _bookRemarks = <int, String>{};
   ContextSettings _contextSettings = contextSettingsSetting.value;
 
   @override
@@ -72,6 +74,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
       initialShowUnreadOnly: showUnreadOnlySetting.value,
     );
     await controller.reloadCards();
+    final remarks = await BookRemarkService.instance.load();
 
     if (!mounted) {
       controller.dispose();
@@ -81,6 +84,9 @@ class _BookCardsPageState extends State<BookCardsPage> {
     setState(() {
       _repository = repository;
       _controller = controller;
+      _bookRemarks
+        ..clear()
+        ..addAll(remarks);
     });
     unawaited(_saveCurrentSession());
   }
@@ -129,8 +135,9 @@ class _BookCardsPageState extends State<BookCardsPage> {
       MaterialPageRoute(
         builder: (_) => ReadCardsPage(
           bookIds: _books.map((book) => book.id).toList(),
-          shelfTitle: widget.shelfTitle,
+          shelfTitle: _shelfTitle(),
           repository: repository,
+          bookTitlesById: _bookTitlesById(),
         ),
       ),
     );
@@ -144,8 +151,9 @@ class _BookCardsPageState extends State<BookCardsPage> {
       MaterialPageRoute(
         builder: (_) => FavoriteCardsPage(
           bookIds: _books.map((book) => book.id).toList(),
-          shelfTitle: widget.shelfTitle,
+          shelfTitle: _shelfTitle(),
           repository: repository,
+          bookTitlesById: _bookTitlesById(),
         ),
       ),
     );
@@ -157,6 +165,14 @@ class _BookCardsPageState extends State<BookCardsPage> {
       initialSelectedBookIds: _books.map((book) => book.id).toList(),
     );
     if (!mounted || selected == null) return;
+
+    final remarks = await BookRemarkService.instance.load();
+    if (!mounted) return;
+    setState(() {
+      _bookRemarks
+        ..clear()
+        ..addAll(remarks);
+    });
 
     await ReaderSessionService.instance.saveLastOpenedBookIds(
       selected.map((book) => book.id).toList(),
@@ -196,6 +212,22 @@ class _BookCardsPageState extends State<BookCardsPage> {
     return true;
   }
 
+  String _displayTitle(Book book) => _bookRemarks[book.id] ?? book.title;
+
+  String _bookTitleForCard(BookCard card) {
+    return _bookRemarks[card.bookId] ?? card.bookTitle;
+  }
+
+  String _shelfTitle() {
+    if (_books.isEmpty) return '阅读';
+    if (_books.length == 1) return _displayTitle(_books.first);
+    return '混合阅读 · ${_books.length} 本';
+  }
+
+  Map<int, String> _bookTitlesById() {
+    return {for (final book in _books) book.id: _displayTitle(book)};
+  }
+
   Future<void> _showContext(BookCard card) async {
     final repository = _repository;
     if (repository == null) return;
@@ -219,7 +251,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
       backgroundColor: Colors.transparent,
       builder: (context) => ContextSheet(
         controller: contextController,
-        bookTitle: card.bookTitle,
+        bookTitle: _bookTitleForCard(card),
       ),
     );
 
@@ -294,6 +326,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
                         onToggleFavorite: () => _toggleFavorite(card),
                         onShowContext: () => _showContext(card),
                         showBookTitle: _books.length > 1,
+                        bookTitle: _bookTitleForCard(card),
                       );
                     },
                   );
