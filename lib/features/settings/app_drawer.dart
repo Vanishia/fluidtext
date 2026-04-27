@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../widgets/glass.dart';
 import '../../widgets/shelf_glyph.dart';
+import '../context/context_settings.dart';
 import '../reader/reading_order.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -296,9 +297,9 @@ class _DrawerSlider extends StatelessWidget {
           child: Slider(
             padding: const EdgeInsets.symmetric(horizontal: 0),
             value: value.toDouble(),
-            min: 1,
-            max: 5,
-            divisions: 4,
+            min: ContextSettings.minCount.toDouble(),
+            max: ContextSettings.maxCount.toDouble(),
+            divisions: ContextSettings.maxCount - ContextSettings.minCount,
             label: '$value',
             onChanged: (next) => onChanged(next.toInt()),
           ),
