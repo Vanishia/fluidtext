@@ -228,6 +228,12 @@ class _BookCardsPageState extends State<BookCardsPage> {
         _contextSettings = contextController.settings;
       });
       saveContextSettingsSetting(contextController.settings);
+      final changedCards = await repository.loadCardsByIds(
+        contextController.changedCardIds.toList(),
+      );
+      for (final changedCard in changedCards) {
+        await _controller?.refreshCard(changedCard);
+      }
     }
     contextController.dispose();
   }

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../models/book_card.dart';
 import '../../repositories/book_card_repository.dart';
@@ -10,8 +10,8 @@ class ContextController extends ChangeNotifier {
     required this.bookId,
     required BookCard initialCard,
     required ContextSettings initialSettings,
-  })  : _centerCard = initialCard,
-        _settings = initialSettings;
+  }) : _centerCard = initialCard,
+       _settings = initialSettings;
 
   final BookCardRepository repository;
   final int bookId;
@@ -19,11 +19,13 @@ class ContextController extends ChangeNotifier {
   BookCard _centerCard;
   ContextSettings _settings;
   final List<BookCard> _cards = <BookCard>[];
+  final Set<int> _changedCardIds = <int>{};
   bool _isLoading = false;
 
   BookCard get centerCard => _centerCard;
   ContextSettings get settings => _settings;
   List<BookCard> get cards => List.unmodifiable(_cards);
+  Set<int> get changedCardIds => Set.unmodifiable(_changedCardIds);
   bool get isLoading => _isLoading;
 
   Future<void> load() async {
@@ -58,11 +60,13 @@ class ContextController extends ChangeNotifier {
 
   Future<void> toggleFavorite(BookCard card) async {
     await repository.toggleFavorite(card);
+    _changedCardIds.add(card.id);
     notifyListeners();
   }
 
   Future<void> toggleRead(BookCard card) async {
     await repository.toggleRead(card);
+    _changedCardIds.add(card.id);
     notifyListeners();
   }
 }

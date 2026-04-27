@@ -97,7 +97,10 @@ class AppBehaviorSettingsService {
   }
 
   int _contextCountFromJson(Object? value) {
-    if (value is! num) return 2;
-    return value.toInt().clamp(1, 5);
+    if (value is! num) return ContextSettings.defaultCount;
+    return value.toInt().clamp(
+      ContextSettings.minCount,
+      ContextSettings.maxCount,
+    );
   }
 }
