@@ -26,6 +26,8 @@ class BookCardStats {
     if (totalCount == 0) return 0;
     return readCount / totalCount;
   }
+
+  int get unreadCount => totalCount - readCount;
 }
 
 class BookCardRepository {
@@ -40,12 +42,8 @@ class BookCardRepository {
   Future<List<Book>> loadBooksByIds(List<int> ids) async {
     if (ids.isEmpty) return const <Book>[];
 
-    final fetched = await isar.books
-        .filter()
-        .anyOf(ids, (query, id) => query.idEqualTo(id))
-        .findAll();
-    final booksById = {for (final book in fetched) book.id: book};
-    return ids.map((id) => booksById[id]).whereType<Book>().toList();
+    final books = await Future.wait(ids.map(isar.books.get));
+    return books.whereType<Book>().toList(growable: false);
   }
 
   Future<List<int>> loadOrderedCardIds(List<int> bookIds) async {
@@ -79,11 +77,14 @@ class BookCardRepository {
     return isar.bookCards
         .filter()
         .bookIdEqualTo(bookId)
-        .and()
-        .isReadEqualTo(false)
         .sortByCardIndex()
-        .idProperty()
-        .findAll();
+        .findAll()
+        .then(
+          (cards) => cards
+              .where((card) => !card.isRead)
+              .map((card) => card.id)
+              .toList(growable: false),
+        );
   }
 
   Future<List<BookCard>> loadReadCards(List<int> bookIds) {
@@ -196,25 +197,18 @@ class BookCardRepository {
   Future<List<BookCard>> loadCardsByIds(List<int> ids) async {
     if (ids.isEmpty) return const <BookCard>[];
 
-    final fetched = await isar.bookCards
-        .filter()
-        .anyOf(ids, (query, id) => query.idEqualTo(id))
-        .findAll();
-    final mapById = {for (final card in fetched) card.id: card};
-    return ids.map((id) => mapById[id]).whereType<BookCard>().toList();
+    final cards = await Future.wait(ids.map(isar.bookCards.get));
+    return cards.whereType<BookCard>().toList(growable: false);
   }
 
   Future<List<BookCard>> loadUnreadCardsByIds(List<int> ids) async {
     if (ids.isEmpty) return const <BookCard>[];
 
-    final fetched = await isar.bookCards
-        .filter()
-        .anyOf(ids, (query, id) => query.idEqualTo(id))
-        .and()
-        .isReadEqualTo(false)
-        .findAll();
-    final mapById = {for (final card in fetched) card.id: card};
-    return ids.map((id) => mapById[id]).whereType<BookCard>().toList();
+    final cards = await Future.wait(ids.map(isar.bookCards.get));
+    return cards
+        .whereType<BookCard>()
+        .where((card) => !card.isRead)
+        .toList(growable: false);
   }
 
   Future<List<BookCard>> loadContextCards({

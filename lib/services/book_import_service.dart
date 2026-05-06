@@ -42,7 +42,31 @@ class BookImportService {
     );
 
     final fileHash = sha256.convert(bytes).toString();
-    final existingByFileHash = await _findBestBookByFileHash(isar, fileHash);
+    final epub = await EpubReader.readBook(bytes);
+    final rawTitle = (epub.title ?? '').trim();
+    final title = rawTitle.isEmpty ? 'Untitled' : rawTitle;
+    final contentTextFiles = epub.content?.html.length ?? 0;
+    final contentAllFiles = epub.content?.allFiles.length ?? 0;
+    developer.log(
+      'Parsed EPUB metadata: title="$title", topLevelChapters=${epub.chapters.length}, htmlFiles=$contentTextFiles, allFiles=$contentAllFiles',
+      name: 'BookImportService',
+    );
+
+    final draft = _buildImportDraft(
+      title: title,
+      chapters: _chapterContents(epub.chapters).toList(growable: false),
+      targetCharsPerCard: targetCharsPerCard,
+    );
+    if (draft.cards.isEmpty) {
+      throw const BookImportException('没有从 EPUB 中解析出可导入的文本');
+    }
+
+    final existingByFileHash = await _findBestCompleteBookByFileHash(
+      isar: isar,
+      fileHash: fileHash,
+      contentFingerprint: draft.contentFingerprint,
+      cardCount: draft.cards.length,
+    );
     if (existingByFileHash != null) {
       developer.log(
         'Duplicate EPUB import matched by fileHash: bookId=${existingByFileHash.id}',
@@ -55,23 +79,6 @@ class BookImportService {
         wasDuplicate: true,
         matchedBy: 'fileHash',
       );
-    }
-
-    final epub = await EpubReader.readBook(bytes);
-    final rawTitle = (epub.title ?? '').trim();
-    final title = rawTitle.isEmpty ? 'Untitled' : rawTitle;
-    developer.log(
-      'Parsed EPUB metadata: title="$title", topLevelChapters=${epub.chapters.length}',
-      name: 'BookImportService',
-    );
-
-    final draft = _buildImportDraft(
-      title: title,
-      chapters: _chapterContents(epub.chapters).toList(growable: false),
-      targetCharsPerCard: targetCharsPerCard,
-    );
-    if (draft.cards.isEmpty) {
-      throw const BookImportException('没有从 EPUB 中解析出可导入的文本');
     }
 
     final existingByFingerprint =
@@ -189,13 +196,51 @@ class BookImportService {
     );
   }
 
-  Future<Book?> _findBestBookByFileHash(Isar isar, String fileHash) async {
+  Future<Book?> _findBestCompleteBookByFileHash({
+    required Isar isar,
+    required String fileHash,
+    required String contentFingerprint,
+    required int cardCount,
+  }) async {
     final matches = await isar.books
         .filter()
         .fileHashEqualTo(fileHash)
         .findAll();
     if (matches.isEmpty) return null;
-    return _bestDuplicateMatch(isar, matches);
+
+    final completeMatches = <Book>[];
+    for (final book in matches) {
+      final actualCardCount = await isar.bookCards
+          .filter()
+          .bookIdEqualTo(book.id)
+          .count();
+      if (actualCardCount != cardCount) {
+        developer.log(
+          'Skipping incomplete fileHash duplicate: bookId=${book.id}, actualCards=$actualCardCount, expectedCards=$cardCount',
+          name: 'BookImportService',
+        );
+        continue;
+      }
+
+      if (book.contentFingerprint == contentFingerprint) {
+        completeMatches.add(book);
+        continue;
+      }
+
+      if (book.contentFingerprint == null) {
+        final cards = await isar.bookCards
+            .filter()
+            .bookIdEqualTo(book.id)
+            .sortByCardIndex()
+            .findAll();
+        if (_contentFingerprintForCards(cards) == contentFingerprint) {
+          completeMatches.add(book);
+        }
+      }
+    }
+
+    if (completeMatches.isEmpty) return null;
+    return _bestDuplicateMatch(isar, completeMatches);
   }
 
   Future<Book?> _findBookByContentFingerprintWithLegacyBackfill({
@@ -210,6 +255,22 @@ class BookImportService {
         .filter()
         .contentFingerprintEqualTo(contentFingerprint)
         .findAll();
+    final completeMatches = <Book>[];
+    for (final book in matches) {
+      final actualCardCount = await isar.bookCards
+          .filter()
+          .bookIdEqualTo(book.id)
+          .count();
+      if (actualCardCount == cardCount) {
+        completeMatches.add(book);
+      } else {
+        developer.log(
+          'Skipping incomplete contentFingerprint duplicate: bookId=${book.id}, actualCards=$actualCardCount, expectedCards=$cardCount',
+          name: 'BookImportService',
+        );
+      }
+    }
+
     final legacyBooks = await isar.books
         .filter()
         .contentFingerprintIsNull()
@@ -235,11 +296,18 @@ class BookImportService {
         textCharCount: legacyTextCharCount,
       );
 
-      if (isMatch) matches.add(legacyBook);
+      if (isMatch && legacyCards.length == cardCount) {
+        completeMatches.add(legacyBook);
+      } else if (isMatch) {
+        developer.log(
+          'Skipping incomplete legacy duplicate: bookId=${legacyBook.id}, actualCards=${legacyCards.length}, expectedCards=$cardCount',
+          name: 'BookImportService',
+        );
+      }
     }
 
-    if (matches.isEmpty) return null;
-    final best = await _bestDuplicateMatch(isar, matches);
+    if (completeMatches.isEmpty) return null;
+    final best = await _bestDuplicateMatch(isar, completeMatches);
     await _fillMissingIdentity(
       isar: isar,
       book: best,

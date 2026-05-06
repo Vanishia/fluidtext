@@ -282,12 +282,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
             final body = controller.isLoadingInitial && controller.cards.isEmpty
                 ? const Center(child: Text('加载中…'))
                 : !controller.isLoadingInitial && controller.cards.isEmpty
-                ? Center(
-                    child: Text(
-                      '当前书单没有可显示的卡片',
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
-                  )
+                ? _EmptyCardsMessage(showUnreadOnly: controller.showUnreadOnly)
                 : ListView.builder(
                     controller: _scrollController,
                     padding: EdgeInsets.only(
@@ -383,6 +378,20 @@ class _BookCardsPageState extends State<BookCardsPage> {
           },
         );
       },
+    );
+  }
+}
+
+class _EmptyCardsMessage extends StatelessWidget {
+  const _EmptyCardsMessage({required this.showUnreadOnly});
+
+  final bool showUnreadOnly;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = showUnreadOnly ? '当前书单没有未读卡片' : '当前书单没有可显示的卡片';
+    return Center(
+      child: Text(text, style: Theme.of(context).textTheme.bodyLarge),
     );
   }
 }

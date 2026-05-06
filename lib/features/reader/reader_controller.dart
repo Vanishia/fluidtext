@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -22,6 +23,7 @@ class ReaderController extends ChangeNotifier {
   final Random _random = Random();
 
   static const pageSize = 60;
+  static const initialPageCount = 2;
 
   ReadingOrder _readingOrder;
   final List<BookCard> _cards = <BookCard>[];
@@ -46,9 +48,24 @@ class ReaderController extends ChangeNotifier {
     _isLoadingInitial = true;
     notifyListeners();
 
+    final statsByBook = await repository.loadBookStats(bookIds);
+    final totalCount = statsByBook.values.fold<int>(
+      0,
+      (sum, stats) => sum + stats.totalCount,
+    );
+    final readCount = statsByBook.values.fold<int>(
+      0,
+      (sum, stats) => sum + stats.readCount,
+    );
+
     final ids = _showUnreadOnly
         ? await repository.loadUnreadOrderedCardIds(bookIds)
         : await repository.loadOrderedCardIds(bookIds);
+
+    developer.log(
+      'reloadCards: bookIds=$bookIds, order=$_readingOrder, unreadOnly=$_showUnreadOnly, total=$totalCount, read=$readCount, unread=${totalCount - readCount}, visibleIds=${ids.length}',
+      name: 'ReaderController',
+    );
 
     _cards.clear();
     _offset = 0;
@@ -68,7 +85,13 @@ class ReaderController extends ChangeNotifier {
     _isLoadingInitial = false;
     notifyListeners();
 
-    await loadMore();
+    await loadInitialPages();
+  }
+
+  Future<void> loadInitialPages() async {
+    for (var page = 0; page < initialPageCount && _hasMore; page += 1) {
+      await loadMore();
+    }
   }
 
   Future<void> loadMore() async {
@@ -82,12 +105,21 @@ class ReaderController extends ChangeNotifier {
         final pageIds = _nextPageIds();
         if (pageIds.isEmpty) {
           _hasMore = false;
+          developer.log(
+            'loadMore: exhausted, loaded=${_cards.length}',
+            name: 'ReaderController',
+          );
           return;
         }
 
         final page = _showUnreadOnly
             ? await repository.loadUnreadCardsByIds(pageIds)
             : await repository.loadCardsByIds(pageIds);
+
+        developer.log(
+          'loadMore: requested=${pageIds.length}, fetched=${page.length}, loaded=${_cards.length + page.length}, hasMore=${_hasMoreAfterCurrentPage()}',
+          name: 'ReaderController',
+        );
 
         if (page.isNotEmpty) {
           _cards.addAll(page);
