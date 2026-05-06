@@ -1,7 +1,32 @@
+import 'dart:developer' as developer;
+
 import 'package:isar/isar.dart';
 
 import '../models/book.dart';
 import '../models/book_card.dart';
+
+class BookCardStats {
+  const BookCardStats({
+    required this.totalCount,
+    required this.readCount,
+    required this.favoriteCount,
+  });
+
+  static const empty = BookCardStats(
+    totalCount: 0,
+    readCount: 0,
+    favoriteCount: 0,
+  );
+
+  final int totalCount;
+  final int readCount;
+  final int favoriteCount;
+
+  double get readProgress {
+    if (totalCount == 0) return 0;
+    return readCount / totalCount;
+  }
+}
 
 class BookCardRepository {
   const BookCardRepository(this.isar);
@@ -62,7 +87,13 @@ class BookCardRepository {
   }
 
   Future<List<BookCard>> loadReadCards(List<int> bookIds) {
-    if (bookIds.isEmpty) return Future.value(const <BookCard>[]);
+    if (bookIds.isEmpty) {
+      return isar.bookCards
+          .filter()
+          .isReadEqualTo(true)
+          .sortByReadAtDesc()
+          .findAll();
+    }
 
     return isar.bookCards
         .filter()
@@ -74,7 +105,13 @@ class BookCardRepository {
   }
 
   Future<List<BookCard>> loadFavoriteCards(List<int> bookIds) {
-    if (bookIds.isEmpty) return Future.value(const <BookCard>[]);
+    if (bookIds.isEmpty) {
+      return isar.bookCards
+          .filter()
+          .isFavoriteEqualTo(true)
+          .sortByFavoritedAtDesc()
+          .findAll();
+    }
 
     return isar.bookCards
         .filter()
@@ -83,6 +120,77 @@ class BookCardRepository {
         .isFavoriteEqualTo(true)
         .sortByFavoritedAtDesc()
         .findAll();
+  }
+
+  Future<Map<int, BookCardStats>> loadBookStats(List<int> bookIds) async {
+    if (bookIds.isEmpty) return const <int, BookCardStats>{};
+
+    final entries = await Future.wait(
+      bookIds.map((bookId) async {
+        final total = await isar.bookCards
+            .filter()
+            .bookIdEqualTo(bookId)
+            .count();
+        final read = await isar.bookCards
+            .filter()
+            .bookIdEqualTo(bookId)
+            .and()
+            .isReadEqualTo(true)
+            .count();
+        final favorite = await isar.bookCards
+            .filter()
+            .bookIdEqualTo(bookId)
+            .and()
+            .isFavoriteEqualTo(true)
+            .count();
+        return MapEntry(
+          bookId,
+          BookCardStats(
+            totalCount: total,
+            readCount: read,
+            favoriteCount: favorite,
+          ),
+        );
+      }),
+    );
+
+    return Map<int, BookCardStats>.fromEntries(entries);
+  }
+
+  Future<void> logDatabaseSnapshot(String reason) async {
+    final books = await loadBooks();
+    final stats = await loadBookStats(books.map((book) => book.id).toList());
+    final totalCards = stats.values.fold<int>(
+      0,
+      (sum, item) => sum + item.totalCount,
+    );
+    final totalRead = stats.values.fold<int>(
+      0,
+      (sum, item) => sum + item.readCount,
+    );
+    final totalFavorites = stats.values.fold<int>(
+      0,
+      (sum, item) => sum + item.favoriteCount,
+    );
+    final unknownFavoriteTime = await isar.bookCards
+        .filter()
+        .isFavoriteEqualTo(true)
+        .and()
+        .favoritedAtIsNull()
+        .count();
+
+    developer.log(
+      'DB snapshot [$reason]: books=${books.length}, cards=$totalCards, read=$totalRead, favorites=$totalFavorites, favoritesWithoutTime=$unknownFavoriteTime',
+      name: 'BookCardRepository',
+    );
+
+    for (final book in books) {
+      final item = stats[book.id] ?? BookCardStats.empty;
+      developer.log(
+        'Book id=${book.id}, title="${book.title}", cards=${item.totalCount}, read=${item.readCount}, favorites=${item.favoriteCount}, createdAt=${book.createdAt.toIso8601String()}',
+        name: 'BookCardRepository',
+      );
+    }
   }
 
   Future<List<BookCard>> loadCardsByIds(List<int> ids) async {

@@ -118,6 +118,16 @@ class ReaderController extends ChangeNotifier {
     await reloadCards();
   }
 
+  Future<void> toggleRead(BookCard card) async {
+    await repository.toggleRead(card);
+    await refreshCard(card);
+  }
+
+  Future<void> toggleFavorite(BookCard card) async {
+    await repository.toggleFavorite(card);
+    await refreshCard(card);
+  }
+
   Future<void> refreshCard(BookCard card) async {
     final index = _cards.indexWhere((item) => item.id == card.id);
     if (index == -1) return;

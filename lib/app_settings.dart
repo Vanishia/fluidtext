@@ -1,89 +1,38 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import 'features/context/context_settings.dart';
 import 'features/reader/reader_background_settings.dart';
 import 'features/reader/reading_order.dart';
-import 'services/app_behavior_settings_service.dart';
-import 'services/reader_background_service.dart';
+import 'viewmodels/app_settings_viewmodel.dart';
 
-final themeModeSetting = ValueNotifier(ThemeMode.system);
-final readingOrderSetting = ValueNotifier(ReadingOrder.random);
-final showUnreadOnlySetting = ValueNotifier(false);
-final contextSettingsSetting = ValueNotifier(const ContextSettings());
-final readerBackgroundSetting = ValueNotifier(const ReaderBackgroundSettings());
-Future<void> _behaviorSettingsSaveQueue = Future.value();
+final _vm = AppSettingsViewModel.instance;
 
-Future<void> initializeAppSettings() async {
-  final behaviorSettings = await AppBehaviorSettingsService.instance.load();
-  themeModeSetting.value = behaviorSettings.themeMode;
-  readingOrderSetting.value = behaviorSettings.readingOrder;
-  showUnreadOnlySetting.value = behaviorSettings.showUnreadOnly;
-  contextSettingsSetting.value = behaviorSettings.contextSettings;
-  readerBackgroundSetting.value = await ReaderBackgroundService.instance.load();
-}
+final themeModeSetting = _vm.themeModeSetting;
+final readingOrderSetting = _vm.readingOrderSetting;
+final showUnreadOnlySetting = _vm.showUnreadOnlySetting;
+final contextSettingsSetting = _vm.contextSettingsSetting;
+final readerBackgroundSetting = _vm.readerBackgroundSetting;
 
-void saveThemeModeSetting(ThemeMode mode) {
-  themeModeSetting.value = mode;
-  _scheduleBehaviorSettingsSave();
-}
+Future<void> initializeAppSettings() => _vm.init();
 
-void saveReadingOrderSetting(ReadingOrder order) {
-  readingOrderSetting.value = order;
-  _scheduleBehaviorSettingsSave();
-}
+void saveThemeModeSetting(ThemeMode mode) => _vm.setThemeMode(mode);
 
-void saveShowUnreadOnlySetting(bool value) {
-  showUnreadOnlySetting.value = value;
-  _scheduleBehaviorSettingsSave();
-}
+void saveReadingOrderSetting(ReadingOrder order) => _vm.setReadingOrder(order);
 
-void saveContextSettingsSetting(ContextSettings settings) {
-  contextSettingsSetting.value = settings;
-  _scheduleBehaviorSettingsSave();
-}
+void saveShowUnreadOnlySetting(bool value) => _vm.setShowUnreadOnly(value);
 
-void _scheduleBehaviorSettingsSave() {
-  final settings = AppBehaviorSettings(
-    themeMode: themeModeSetting.value,
-    readingOrder: readingOrderSetting.value,
-    showUnreadOnly: showUnreadOnlySetting.value,
-    contextSettings: contextSettingsSetting.value,
-  );
+void saveContextSettingsSetting(ContextSettings settings) =>
+    _vm.setContextSettings(settings);
 
-  _behaviorSettingsSaveQueue = _behaviorSettingsSaveQueue
-      .catchError((_) {})
-      .then((_) => AppBehaviorSettingsService.instance.save(settings))
-      .catchError((_) {});
-  unawaited(_behaviorSettingsSaveQueue);
-}
-
-Future<void> saveReaderBackgroundSettings(
-  ReaderBackgroundSettings settings,
-) async {
-  readerBackgroundSetting.value = settings;
-  await ReaderBackgroundService.instance.save(settings);
-}
+Future<void> saveReaderBackgroundSettings(ReaderBackgroundSettings settings) =>
+    _vm.saveReaderBackground(settings);
 
 Future<ReaderBackgroundSettings?> importReaderBackgroundImage(
   ReaderBackgroundSettings current,
-) async {
-  final next = await ReaderBackgroundService.instance.importImage(current);
-  if (next == null) return null;
-
-  readerBackgroundSetting.value = next;
-  await ReaderBackgroundService.instance.save(next);
-  return next;
-}
+) =>
+    _vm.importReaderBackgroundImage(current);
 
 Future<ReaderBackgroundSettings> clearReaderBackgroundImage(
   ReaderBackgroundSettings current,
-) async {
-  final next = await ReaderBackgroundService.instance.clearImportedImage(
-    current,
-  );
-  readerBackgroundSetting.value = next;
-  await ReaderBackgroundService.instance.save(next);
-  return next;
-}
+) =>
+    _vm.clearReaderBackgroundImage(current);
