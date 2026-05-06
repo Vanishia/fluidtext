@@ -34,6 +34,18 @@ class ReaderSessionService {
     await file.writeAsString(jsonEncode(payload), flush: true);
   }
 
+  Future<Map<String, dynamic>?> exportJson() async {
+    try {
+      final file = await _sessionFile();
+      if (!await file.exists()) return null;
+      final json =
+          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      return json;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<File> _sessionFile() async {
     final dir = await getApplicationDocumentsDirectory();
     return File('${dir.path}${Platform.pathSeparator}$_fileName');

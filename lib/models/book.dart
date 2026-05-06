@@ -10,5 +10,18 @@ class Book {
   late String title;
 
   late DateTime createdAt;
-}
 
+  @Index()
+  String? fileHash;
+
+  @Index()
+  String? contentFingerprint;
+
+  String? sourceFileName;
+
+  DateTime? importedAt;
+
+  int? cardCount;
+
+  int? textCharCount;
+}

@@ -20,6 +20,11 @@ class BookRemarkService {
     };
   }
 
+  Future<List<Map<String, dynamic>>> exportJson() async {
+    final isar = await _db;
+    return isar.bookRemarks.where().exportJson();
+  }
+
   Future<void> saveRemark(int bookId, String remark) async {
     final isar = await _db;
     final trimmed = remark.trim();
