@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 
 import 'app_settings.dart';
 import 'features/bookshelf/bookshelf_page.dart';
@@ -66,6 +67,7 @@ class MyApp extends StatelessWidget {
       builder: (context, themeMode, _) {
         return MaterialApp(
           title: 'FluidText',
+          scrollBehavior: const _FluidScrollBehavior(),
           theme: _buildTheme(brightness: Brightness.light),
           darkTheme: _buildTheme(brightness: Brightness.dark),
           themeMode: themeMode,
@@ -81,4 +83,17 @@ class MyApp extends StatelessWidget {
       },
     );
   }
+}
+
+class _FluidScrollBehavior extends MaterialScrollBehavior {
+  const _FluidScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => const {
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.stylus,
+    PointerDeviceKind.invertedStylus,
+    PointerDeviceKind.trackpad,
+  };
 }

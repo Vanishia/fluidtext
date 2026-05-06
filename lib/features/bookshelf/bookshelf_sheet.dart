@@ -147,8 +147,8 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       setState(() {
         _selectedIds.add(imported.bookId);
         _status = imported.wasDuplicate
-            ? '《${imported.bookTitle}》已存在，已选中原书'
-            : '已导入《${imported.bookTitle}》';
+            ? '《${imported.bookTitle}》已存在，已选中原书（${imported.matchedBy ?? '重复匹配'}）'
+            : '已导入《${imported.bookTitle}》 · ${imported.insertedCards} 张卡片';
       });
     } catch (error, stackTrace) {
       developer.log(
