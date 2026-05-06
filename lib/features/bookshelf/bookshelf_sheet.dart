@@ -10,6 +10,7 @@ import '../../models/book.dart';
 import '../../repositories/book_card_repository.dart';
 import '../../services/book_remark_service.dart';
 import '../../services/book_import_service.dart';
+import '../../services/data_backup_service.dart';
 import '../../widgets/blocking_loader.dart';
 import '../../widgets/glass.dart';
 
@@ -42,6 +43,7 @@ class BookshelfSheet extends StatefulWidget {
 
 class _BookshelfSheetState extends State<BookshelfSheet> {
   final _importService = const BookImportService();
+  final _backupService = const DataBackupService();
   final _books = <Book>[];
   final _remarks = <int, String>{};
   final _stats = <int, BookCardStats>{};
@@ -136,6 +138,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       final imported = await _importService.importEpubBytes(
         isar: isar,
         bytes: bytes,
+        sourceFileName: file?.name,
       );
 
       await _reloadBooks();
@@ -143,7 +146,9 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
 
       setState(() {
         _selectedIds.add(imported.bookId);
-        _status = '已导入《${imported.bookTitle}》';
+        _status = imported.wasDuplicate
+            ? '《${imported.bookTitle}》已存在，已选中原书'
+            : '已导入《${imported.bookTitle}》';
       });
     } catch (error, stackTrace) {
       developer.log(
@@ -154,6 +159,37 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       );
       if (!mounted) return;
       setState(() => _status = '导入失败：$error');
+    } finally {
+      if (mounted) {
+        setState(() => _isBusy = false);
+      }
+    }
+  }
+
+  Future<void> _exportBackup() async {
+    final isar = _isar;
+    if (isar == null || _isBusy) return;
+
+    setState(() {
+      _isBusy = true;
+      _status = '正在导出备份…';
+    });
+
+    try {
+      final path = await _backupService.exportBackup(isar);
+      if (!mounted) return;
+      setState(() {
+        _status = path == null ? '已取消导出备份' : '备份已导出：$path';
+      });
+    } catch (error, stackTrace) {
+      developer.log(
+        'Backup export failed in bookshelf sheet',
+        name: 'BookshelfSheet',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      setState(() => _status = '备份导出失败：$error');
     } finally {
       if (mounted) {
         setState(() => _isBusy = false);
@@ -313,6 +349,11 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                               tooltip: '导入 EPUB',
                               onPressed: _isBusy ? null : _pickAndImportEpub,
                               icon: const Icon(Icons.add_rounded),
+                            ),
+                            IconButton(
+                              tooltip: '导出备份',
+                              onPressed: _isBusy ? null : _exportBackup,
+                              icon: const Icon(Icons.ios_share_rounded),
                             ),
                             IconButton(
                               tooltip: '关闭',

@@ -17,13 +17,43 @@ const BookSchema = CollectionSchema(
   name: r'Book',
   id: 4089735379470416465,
   properties: {
-    r'createdAt': PropertySchema(
+    r'cardCount': PropertySchema(
       id: 0,
+      name: r'cardCount',
+      type: IsarType.long,
+    ),
+    r'contentFingerprint': PropertySchema(
+      id: 1,
+      name: r'contentFingerprint',
+      type: IsarType.string,
+    ),
+    r'createdAt': PropertySchema(
+      id: 2,
       name: r'createdAt',
       type: IsarType.dateTime,
     ),
+    r'fileHash': PropertySchema(
+      id: 3,
+      name: r'fileHash',
+      type: IsarType.string,
+    ),
+    r'importedAt': PropertySchema(
+      id: 4,
+      name: r'importedAt',
+      type: IsarType.dateTime,
+    ),
+    r'sourceFileName': PropertySchema(
+      id: 5,
+      name: r'sourceFileName',
+      type: IsarType.string,
+    ),
+    r'textCharCount': PropertySchema(
+      id: 6,
+      name: r'textCharCount',
+      type: IsarType.long,
+    ),
     r'title': PropertySchema(
-      id: 1,
+      id: 7,
       name: r'title',
       type: IsarType.string,
     )
@@ -46,6 +76,32 @@ const BookSchema = CollectionSchema(
           caseSensitive: true,
         )
       ],
+    ),
+    r'fileHash': IndexSchema(
+      id: -5944002318434853925,
+      name: r'fileHash',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'fileHash',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
+    ),
+    r'contentFingerprint': IndexSchema(
+      id: -1318515989236822905,
+      name: r'contentFingerprint',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'contentFingerprint',
+          type: IndexType.hash,
+          caseSensitive: true,
+        )
+      ],
     )
   },
   links: {},
@@ -62,6 +118,24 @@ int _bookEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
+  {
+    final value = object.contentFingerprint;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.fileHash;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.sourceFileName;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   bytesCount += 3 + object.title.length * 3;
   return bytesCount;
 }
@@ -72,8 +146,14 @@ void _bookSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeDateTime(offsets[0], object.createdAt);
-  writer.writeString(offsets[1], object.title);
+  writer.writeLong(offsets[0], object.cardCount);
+  writer.writeString(offsets[1], object.contentFingerprint);
+  writer.writeDateTime(offsets[2], object.createdAt);
+  writer.writeString(offsets[3], object.fileHash);
+  writer.writeDateTime(offsets[4], object.importedAt);
+  writer.writeString(offsets[5], object.sourceFileName);
+  writer.writeLong(offsets[6], object.textCharCount);
+  writer.writeString(offsets[7], object.title);
 }
 
 Book _bookDeserialize(
@@ -83,9 +163,15 @@ Book _bookDeserialize(
   Map<Type, List<int>> allOffsets,
 ) {
   final object = Book();
-  object.createdAt = reader.readDateTime(offsets[0]);
+  object.cardCount = reader.readLongOrNull(offsets[0]);
+  object.contentFingerprint = reader.readStringOrNull(offsets[1]);
+  object.createdAt = reader.readDateTime(offsets[2]);
+  object.fileHash = reader.readStringOrNull(offsets[3]);
   object.id = id;
-  object.title = reader.readString(offsets[1]);
+  object.importedAt = reader.readDateTimeOrNull(offsets[4]);
+  object.sourceFileName = reader.readStringOrNull(offsets[5]);
+  object.textCharCount = reader.readLongOrNull(offsets[6]);
+  object.title = reader.readString(offsets[7]);
   return object;
 }
 
@@ -97,8 +183,20 @@ P _bookDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 1:
+      return (reader.readStringOrNull(offset)) as P;
+    case 2:
+      return (reader.readDateTime(offset)) as P;
+    case 3:
+      return (reader.readStringOrNull(offset)) as P;
+    case 4:
+      return (reader.readDateTimeOrNull(offset)) as P;
+    case 5:
+      return (reader.readStringOrNull(offset)) as P;
+    case 6:
+      return (reader.readLongOrNull(offset)) as P;
+    case 7:
       return (reader.readString(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -233,9 +331,355 @@ extension BookQueryWhere on QueryBuilder<Book, Book, QWhereClause> {
       }
     });
   }
+
+  QueryBuilder<Book, Book, QAfterWhereClause> fileHashIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'fileHash',
+        value: [null],
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterWhereClause> fileHashIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'fileHash',
+        lower: [null],
+        includeLower: false,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterWhereClause> fileHashEqualTo(
+      String? fileHash) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'fileHash',
+        value: [fileHash],
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterWhereClause> fileHashNotEqualTo(
+      String? fileHash) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'fileHash',
+              lower: [],
+              upper: [fileHash],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'fileHash',
+              lower: [fileHash],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'fileHash',
+              lower: [fileHash],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'fileHash',
+              lower: [],
+              upper: [fileHash],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterWhereClause> contentFingerprintIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'contentFingerprint',
+        value: [null],
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterWhereClause> contentFingerprintIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.between(
+        indexName: r'contentFingerprint',
+        lower: [null],
+        includeLower: false,
+        upper: [],
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterWhereClause> contentFingerprintEqualTo(
+      String? contentFingerprint) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(IndexWhereClause.equalTo(
+        indexName: r'contentFingerprint',
+        value: [contentFingerprint],
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterWhereClause> contentFingerprintNotEqualTo(
+      String? contentFingerprint) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'contentFingerprint',
+              lower: [],
+              upper: [contentFingerprint],
+              includeUpper: false,
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'contentFingerprint',
+              lower: [contentFingerprint],
+              includeLower: false,
+              upper: [],
+            ));
+      } else {
+        return query
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'contentFingerprint',
+              lower: [contentFingerprint],
+              includeLower: false,
+              upper: [],
+            ))
+            .addWhereClause(IndexWhereClause.between(
+              indexName: r'contentFingerprint',
+              lower: [],
+              upper: [contentFingerprint],
+              includeUpper: false,
+            ));
+      }
+    });
+  }
 }
 
 extension BookQueryFilter on QueryBuilder<Book, Book, QFilterCondition> {
+  QueryBuilder<Book, Book, QAfterFilterCondition> cardCountIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'cardCount',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> cardCountIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'cardCount',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> cardCountEqualTo(int? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'cardCount',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> cardCountGreaterThan(
+    int? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'cardCount',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> cardCountLessThan(
+    int? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'cardCount',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> cardCountBetween(
+    int? lower,
+    int? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'cardCount',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> contentFingerprintIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'contentFingerprint',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition>
+      contentFingerprintIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'contentFingerprint',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> contentFingerprintEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'contentFingerprint',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> contentFingerprintGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'contentFingerprint',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> contentFingerprintLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'contentFingerprint',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> contentFingerprintBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'contentFingerprint',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> contentFingerprintStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'contentFingerprint',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> contentFingerprintEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'contentFingerprint',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> contentFingerprintContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'contentFingerprint',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> contentFingerprintMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'contentFingerprint',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> contentFingerprintIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'contentFingerprint',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition>
+      contentFingerprintIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'contentFingerprint',
+        value: '',
+      ));
+    });
+  }
+
   QueryBuilder<Book, Book, QAfterFilterCondition> createdAtEqualTo(
       DateTime value) {
     return QueryBuilder.apply(this, (query) {
@@ -289,6 +733,151 @@ extension BookQueryFilter on QueryBuilder<Book, Book, QFilterCondition> {
     });
   }
 
+  QueryBuilder<Book, Book, QAfterFilterCondition> fileHashIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'fileHash',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> fileHashIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'fileHash',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> fileHashEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'fileHash',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> fileHashGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'fileHash',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> fileHashLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'fileHash',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> fileHashBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'fileHash',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> fileHashStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'fileHash',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> fileHashEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'fileHash',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> fileHashContains(String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'fileHash',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> fileHashMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'fileHash',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> fileHashIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'fileHash',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> fileHashIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'fileHash',
+        value: '',
+      ));
+    });
+  }
+
   QueryBuilder<Book, Book, QAfterFilterCondition> idEqualTo(Id value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.equalTo(
@@ -333,6 +922,290 @@ extension BookQueryFilter on QueryBuilder<Book, Book, QFilterCondition> {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(FilterCondition.between(
         property: r'id',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> importedAtIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'importedAt',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> importedAtIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'importedAt',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> importedAtEqualTo(
+      DateTime? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'importedAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> importedAtGreaterThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'importedAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> importedAtLessThan(
+    DateTime? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'importedAt',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> importedAtBetween(
+    DateTime? lower,
+    DateTime? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'importedAt',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> sourceFileNameIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'sourceFileName',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> sourceFileNameIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'sourceFileName',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> sourceFileNameEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'sourceFileName',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> sourceFileNameGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'sourceFileName',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> sourceFileNameLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'sourceFileName',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> sourceFileNameBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'sourceFileName',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> sourceFileNameStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'sourceFileName',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> sourceFileNameEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'sourceFileName',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> sourceFileNameContains(
+      String value,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'sourceFileName',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> sourceFileNameMatches(
+      String pattern,
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'sourceFileName',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> sourceFileNameIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'sourceFileName',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> sourceFileNameIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'sourceFileName',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> textCharCountIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'textCharCount',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> textCharCountIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'textCharCount',
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> textCharCountEqualTo(
+      int? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'textCharCount',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> textCharCountGreaterThan(
+    int? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'textCharCount',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> textCharCountLessThan(
+    int? value, {
+    bool include = false,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'textCharCount',
+        value: value,
+      ));
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterFilterCondition> textCharCountBetween(
+    int? lower,
+    int? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'textCharCount',
         lower: lower,
         includeLower: includeLower,
         upper: upper,
@@ -475,6 +1348,30 @@ extension BookQueryObject on QueryBuilder<Book, Book, QFilterCondition> {}
 extension BookQueryLinks on QueryBuilder<Book, Book, QFilterCondition> {}
 
 extension BookQuerySortBy on QueryBuilder<Book, Book, QSortBy> {
+  QueryBuilder<Book, Book, QAfterSortBy> sortByCardCount() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'cardCount', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> sortByCardCountDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'cardCount', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> sortByContentFingerprint() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'contentFingerprint', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> sortByContentFingerprintDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'contentFingerprint', Sort.desc);
+    });
+  }
+
   QueryBuilder<Book, Book, QAfterSortBy> sortByCreatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'createdAt', Sort.asc);
@@ -484,6 +1381,54 @@ extension BookQuerySortBy on QueryBuilder<Book, Book, QSortBy> {
   QueryBuilder<Book, Book, QAfterSortBy> sortByCreatedAtDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'createdAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> sortByFileHash() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileHash', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> sortByFileHashDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileHash', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> sortByImportedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'importedAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> sortByImportedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'importedAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> sortBySourceFileName() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sourceFileName', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> sortBySourceFileNameDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sourceFileName', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> sortByTextCharCount() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'textCharCount', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> sortByTextCharCountDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'textCharCount', Sort.desc);
     });
   }
 
@@ -501,6 +1446,30 @@ extension BookQuerySortBy on QueryBuilder<Book, Book, QSortBy> {
 }
 
 extension BookQuerySortThenBy on QueryBuilder<Book, Book, QSortThenBy> {
+  QueryBuilder<Book, Book, QAfterSortBy> thenByCardCount() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'cardCount', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> thenByCardCountDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'cardCount', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> thenByContentFingerprint() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'contentFingerprint', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> thenByContentFingerprintDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'contentFingerprint', Sort.desc);
+    });
+  }
+
   QueryBuilder<Book, Book, QAfterSortBy> thenByCreatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'createdAt', Sort.asc);
@@ -513,6 +1482,18 @@ extension BookQuerySortThenBy on QueryBuilder<Book, Book, QSortThenBy> {
     });
   }
 
+  QueryBuilder<Book, Book, QAfterSortBy> thenByFileHash() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileHash', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> thenByFileHashDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileHash', Sort.desc);
+    });
+  }
+
   QueryBuilder<Book, Book, QAfterSortBy> thenById() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'id', Sort.asc);
@@ -522,6 +1503,42 @@ extension BookQuerySortThenBy on QueryBuilder<Book, Book, QSortThenBy> {
   QueryBuilder<Book, Book, QAfterSortBy> thenByIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'id', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> thenByImportedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'importedAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> thenByImportedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'importedAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> thenBySourceFileName() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sourceFileName', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> thenBySourceFileNameDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'sourceFileName', Sort.desc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> thenByTextCharCount() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'textCharCount', Sort.asc);
+    });
+  }
+
+  QueryBuilder<Book, Book, QAfterSortBy> thenByTextCharCountDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'textCharCount', Sort.desc);
     });
   }
 
@@ -539,9 +1556,50 @@ extension BookQuerySortThenBy on QueryBuilder<Book, Book, QSortThenBy> {
 }
 
 extension BookQueryWhereDistinct on QueryBuilder<Book, Book, QDistinct> {
+  QueryBuilder<Book, Book, QDistinct> distinctByCardCount() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'cardCount');
+    });
+  }
+
+  QueryBuilder<Book, Book, QDistinct> distinctByContentFingerprint(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'contentFingerprint',
+          caseSensitive: caseSensitive);
+    });
+  }
+
   QueryBuilder<Book, Book, QDistinct> distinctByCreatedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'createdAt');
+    });
+  }
+
+  QueryBuilder<Book, Book, QDistinct> distinctByFileHash(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'fileHash', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<Book, Book, QDistinct> distinctByImportedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'importedAt');
+    });
+  }
+
+  QueryBuilder<Book, Book, QDistinct> distinctBySourceFileName(
+      {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'sourceFileName',
+          caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<Book, Book, QDistinct> distinctByTextCharCount() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'textCharCount');
     });
   }
 
@@ -560,9 +1618,45 @@ extension BookQueryProperty on QueryBuilder<Book, Book, QQueryProperty> {
     });
   }
 
+  QueryBuilder<Book, int?, QQueryOperations> cardCountProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'cardCount');
+    });
+  }
+
+  QueryBuilder<Book, String?, QQueryOperations> contentFingerprintProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'contentFingerprint');
+    });
+  }
+
   QueryBuilder<Book, DateTime, QQueryOperations> createdAtProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'createdAt');
+    });
+  }
+
+  QueryBuilder<Book, String?, QQueryOperations> fileHashProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'fileHash');
+    });
+  }
+
+  QueryBuilder<Book, DateTime?, QQueryOperations> importedAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'importedAt');
+    });
+  }
+
+  QueryBuilder<Book, String?, QQueryOperations> sourceFileNameProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'sourceFileName');
+    });
+  }
+
+  QueryBuilder<Book, int?, QQueryOperations> textCharCountProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'textCharCount');
     });
   }
 

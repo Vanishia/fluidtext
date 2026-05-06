@@ -187,7 +187,7 @@ class BookCardRepository {
     for (final book in books) {
       final item = stats[book.id] ?? BookCardStats.empty;
       developer.log(
-        'Book id=${book.id}, title="${book.title}", cards=${item.totalCount}, read=${item.readCount}, favorites=${item.favoriteCount}, createdAt=${book.createdAt.toIso8601String()}',
+        'Book id=${book.id}, title="${book.title}", cards=${item.totalCount}, read=${item.readCount}, favorites=${item.favoriteCount}, fileHash=${book.fileHash != null ? 'yes' : 'no'}, contentFingerprint=${book.contentFingerprint != null ? 'yes' : 'no'}, createdAt=${book.createdAt.toIso8601String()}',
         name: 'BookCardRepository',
       );
     }

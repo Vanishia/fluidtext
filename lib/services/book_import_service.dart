@@ -1,6 +1,8 @@
 import 'dart:developer' as developer;
+import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:epub_plus/epub_plus.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:isar/isar.dart';
@@ -14,11 +16,15 @@ class BookImportResult {
     required this.bookId,
     required this.bookTitle,
     required this.insertedCards,
+    required this.wasDuplicate,
+    this.matchedBy,
   });
 
   final int bookId;
   final String bookTitle;
   final int insertedCards;
+  final bool wasDuplicate;
+  final String? matchedBy;
 }
 
 class BookImportService {
@@ -27,12 +33,29 @@ class BookImportService {
   Future<BookImportResult> importEpubBytes({
     required Isar isar,
     required Uint8List bytes,
+    String? sourceFileName,
     int targetCharsPerCard = 300,
   }) async {
     developer.log(
       'Starting EPUB import: bytes=${bytes.length}, targetCharsPerCard=$targetCharsPerCard',
       name: 'BookImportService',
     );
+
+    final fileHash = sha256.convert(bytes).toString();
+    final existingByFileHash = await _findBestBookByFileHash(isar, fileHash);
+    if (existingByFileHash != null) {
+      developer.log(
+        'Duplicate EPUB import matched by fileHash: bookId=${existingByFileHash.id}',
+        name: 'BookImportService',
+      );
+      return BookImportResult(
+        bookId: existingByFileHash.id,
+        bookTitle: existingByFileHash.title,
+        insertedCards: 0,
+        wasDuplicate: true,
+        matchedBy: 'fileHash',
+      );
+    }
 
     final epub = await EpubReader.readBook(bytes);
     final rawTitle = (epub.title ?? '').trim();
@@ -42,35 +65,101 @@ class BookImportService {
       name: 'BookImportService',
     );
 
+    final draft = _buildImportDraft(
+      title: title,
+      chapters: _chapterContents(epub.chapters).toList(growable: false),
+      targetCharsPerCard: targetCharsPerCard,
+    );
+    if (draft.cards.isEmpty) {
+      throw const BookImportException('没有从 EPUB 中解析出可导入的文本');
+    }
+
+    final existingByFingerprint =
+        await _findBookByContentFingerprintWithLegacyBackfill(
+          isar: isar,
+          contentFingerprint: draft.contentFingerprint,
+          fileHash: fileHash,
+          sourceFileName: sourceFileName,
+          cardCount: draft.cards.length,
+          textCharCount: draft.textCharCount,
+        );
+    if (existingByFingerprint != null) {
+      developer.log(
+        'Duplicate EPUB import matched by contentFingerprint: bookId=${existingByFingerprint.id}',
+        name: 'BookImportService',
+      );
+      return BookImportResult(
+        bookId: existingByFingerprint.id,
+        bookTitle: existingByFingerprint.title,
+        insertedCards: 0,
+        wasDuplicate: true,
+        matchedBy: 'contentFingerprint',
+      );
+    }
+
+    final now = DateTime.now();
+    final book = Book()
+      ..title = title
+      ..createdAt = now
+      ..fileHash = fileHash
+      ..contentFingerprint = draft.contentFingerprint
+      ..sourceFileName = sourceFileName
+      ..importedAt = now
+      ..cardCount = draft.cards.length
+      ..textCharCount = draft.textCharCount;
+
     final bookId = await isar.writeTxn(() async {
-      final book = Book()
-        ..title = title
-        ..createdAt = DateTime.now();
-      return await isar.books.put(book);
+      final newBookId = await isar.books.put(book);
+      for (final card in draft.cards) {
+        card.bookId = newBookId;
+      }
+      await isar.bookCards.putAll(draft.cards);
+      return newBookId;
     });
 
-    var cardIndex = 0;
-    var insertedCards = 0;
-    var chapterIndex = 0;
+    developer.log(
+      'Finished EPUB import: bookId=$bookId, insertedCards=${draft.cards.length}',
+      name: 'BookImportService',
+    );
 
-    for (final chapter in _chapterContents(epub.chapters)) {
+    return BookImportResult(
+      bookId: bookId,
+      bookTitle: title,
+      insertedCards: draft.cards.length,
+      wasDuplicate: false,
+    );
+  }
+
+  _ImportDraft _buildImportDraft({
+    required String title,
+    required List<_ChapterContent> chapters,
+    required int targetCharsPerCard,
+  }) {
+    final cards = <BookCard>[];
+    var cardIndex = 0;
+    var chapterIndex = 0;
+    var textCharCount = 0;
+
+    for (final chapter in chapters) {
       developer.log(
         'Processing chapter[$chapterIndex]: textLength=${chapter.text.length}',
         name: 'BookImportService',
       );
-      final cardsToInsert = <BookCard>[];
       final splitter = TextSplitter(targetChars: targetCharsPerCard);
       var pieceCount = 0;
       var chapterCardIndex = 0;
+      var chapterCards = 0;
+
+      textCharCount += _normalizeForFingerprint(chapter.text).length;
 
       for (final piece in splitter.split(chapter.text)) {
         pieceCount++;
         final trimmed = piece.trim();
         if (trimmed.isEmpty) continue;
 
-        cardsToInsert.add(
+        cards.add(
           BookCard()
-            ..bookId = bookId
+            ..bookId = 0
             ..bookTitle = title
             ..cardIndex = cardIndex
             ..chapterIndex = chapterIndex
@@ -80,32 +169,146 @@ class BookImportService {
         );
         cardIndex++;
         chapterCardIndex++;
+        chapterCards++;
       }
 
       developer.log(
-        'Split chapter[$chapterIndex] into $pieceCount pieces, ${cardsToInsert.length} non-empty cards',
+        'Split chapter[$chapterIndex] into $pieceCount pieces, $chapterCards non-empty cards',
         name: 'BookImportService',
       );
 
-      if (cardsToInsert.isEmpty) continue;
-
-      await isar.writeTxn(() async {
-        await isar.bookCards.putAll(cardsToInsert);
-      });
-      insertedCards += cardsToInsert.length;
-      chapterIndex++;
+      if (chapterCards > 0) {
+        chapterIndex++;
+      }
     }
 
-    developer.log(
-      'Finished EPUB import: bookId=$bookId, insertedCards=$insertedCards',
-      name: 'BookImportService',
+    return _ImportDraft(
+      cards: cards,
+      contentFingerprint: _contentFingerprintForCards(cards),
+      textCharCount: textCharCount,
     );
+  }
 
-    return BookImportResult(
-      bookId: bookId,
-      bookTitle: title,
-      insertedCards: insertedCards,
+  Future<Book?> _findBestBookByFileHash(Isar isar, String fileHash) async {
+    final matches = await isar.books
+        .filter()
+        .fileHashEqualTo(fileHash)
+        .findAll();
+    if (matches.isEmpty) return null;
+    return _bestDuplicateMatch(isar, matches);
+  }
+
+  Future<Book?> _findBookByContentFingerprintWithLegacyBackfill({
+    required Isar isar,
+    required String contentFingerprint,
+    required String fileHash,
+    required String? sourceFileName,
+    required int cardCount,
+    required int textCharCount,
+  }) async {
+    final matches = await isar.books
+        .filter()
+        .contentFingerprintEqualTo(contentFingerprint)
+        .findAll();
+    final legacyBooks = await isar.books
+        .filter()
+        .contentFingerprintIsNull()
+        .findAll();
+    for (final legacyBook in legacyBooks) {
+      final legacyCards = await isar.bookCards
+          .filter()
+          .bookIdEqualTo(legacyBook.id)
+          .sortByCardIndex()
+          .findAll();
+      if (legacyCards.isEmpty) continue;
+
+      final legacyFingerprint = _contentFingerprintForCards(legacyCards);
+      final legacyTextCharCount = _textCharCountForCards(legacyCards);
+      final isMatch = legacyFingerprint == contentFingerprint;
+      await _fillMissingIdentity(
+        isar: isar,
+        book: legacyBook,
+        contentFingerprint: legacyFingerprint,
+        fileHash: null,
+        sourceFileName: null,
+        cardCount: legacyCards.length,
+        textCharCount: legacyTextCharCount,
+      );
+
+      if (isMatch) matches.add(legacyBook);
+    }
+
+    if (matches.isEmpty) return null;
+    final best = await _bestDuplicateMatch(isar, matches);
+    await _fillMissingIdentity(
+      isar: isar,
+      book: best,
+      contentFingerprint: contentFingerprint,
+      fileHash: fileHash,
+      sourceFileName: sourceFileName,
+      cardCount: cardCount,
+      textCharCount: textCharCount,
     );
+    return best;
+  }
+
+  Future<Book> _bestDuplicateMatch(Isar isar, List<Book> matches) async {
+    if (matches.length == 1) return matches.single;
+
+    Book? best;
+    var bestScore = -1;
+    for (final book in matches) {
+      final readCount = await isar.bookCards
+          .filter()
+          .bookIdEqualTo(book.id)
+          .and()
+          .isReadEqualTo(true)
+          .count();
+      final favoriteCount = await isar.bookCards
+          .filter()
+          .bookIdEqualTo(book.id)
+          .and()
+          .isFavoriteEqualTo(true)
+          .count();
+      final score = favoriteCount * 1000000 + readCount;
+      if (score > bestScore) {
+        best = book;
+        bestScore = score;
+      }
+    }
+
+    return best ?? matches.first;
+  }
+
+  Future<void> _fillMissingIdentity({
+    required Isar isar,
+    required Book book,
+    required String contentFingerprint,
+    String? fileHash,
+    required String? sourceFileName,
+    required int cardCount,
+    required int textCharCount,
+  }) async {
+    final needsUpdate =
+        book.contentFingerprint == null ||
+        (fileHash != null && book.fileHash == null) ||
+        (sourceFileName != null && book.sourceFileName == null) ||
+        book.cardCount == null ||
+        book.textCharCount == null ||
+        book.importedAt == null;
+    if (!needsUpdate) {
+      return;
+    }
+
+    await isar.writeTxn(() async {
+      book.contentFingerprint ??= contentFingerprint;
+      if (fileHash != null) book.fileHash ??= fileHash;
+      if (sourceFileName != null) book.sourceFileName ??= sourceFileName;
+      book.importedAt ??= book.createdAt;
+      book.cardCount ??= cardCount;
+      book.textCharCount ??= textCharCount;
+      await isar.books.put(book);
+    });
   }
 
   Iterable<_ChapterContent> _chapterContents(List<EpubChapter> chapters) sync* {
@@ -120,7 +323,8 @@ class BookImportService {
 
       if (html != null && html.trim().isNotEmpty) {
         final document = html_parser.parse(html);
-        final text = document.body?.text ?? document.documentElement?.text ?? '';
+        final text =
+            document.body?.text ?? document.documentElement?.text ?? '';
         final trimmedText = text.trim();
         if (trimmedText.isNotEmpty) {
           developer.log(
@@ -149,13 +353,61 @@ class BookImportService {
       }
     }
   }
+
+  String _normalizeForFingerprint(String text) {
+    return text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  String _contentFingerprintForCards(List<BookCard> cards) {
+    final sorted = List<BookCard>.of(cards)
+      ..sort((a, b) => a.cardIndex.compareTo(b.cardIndex));
+    final buffer = StringBuffer()..writeln(sorted.length);
+
+    for (final card in sorted) {
+      final normalized = _normalizeForFingerprint(card.content);
+      buffer
+        ..write(card.chapterIndex)
+        ..write('|')
+        ..write(card.chapterCardIndex)
+        ..write('|')
+        ..writeln(normalized.length)
+        ..writeln(normalized);
+    }
+
+    return sha256.convert(utf8.encode(buffer.toString())).toString();
+  }
+
+  int _textCharCountForCards(List<BookCard> cards) {
+    return cards.fold<int>(
+      0,
+      (sum, card) => sum + _normalizeForFingerprint(card.content).length,
+    );
+  }
+}
+
+class BookImportException implements Exception {
+  const BookImportException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+class _ImportDraft {
+  const _ImportDraft({
+    required this.cards,
+    required this.contentFingerprint,
+    required this.textCharCount,
+  });
+
+  final List<BookCard> cards;
+  final String contentFingerprint;
+  final int textCharCount;
 }
 
 class _ChapterContent {
-  const _ChapterContent({
-    required this.text,
-    required this.title,
-  });
+  const _ChapterContent({required this.text, required this.title});
 
   final String text;
   final String? title;
