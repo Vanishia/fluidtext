@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -44,7 +45,6 @@ class BookCardsPage extends StatefulWidget {
 class _BookCardsPageState extends State<BookCardsPage> {
   final _scrollController = ScrollController();
 
-  BookCardRepository? _repository;
   ReaderController? _controller;
   late final List<Book> _books = List<Book>.from(widget.books);
   final _bookRemarks = <int, String>{};
@@ -82,7 +82,6 @@ class _BookCardsPageState extends State<BookCardsPage> {
     }
 
     setState(() {
-      _repository = repository;
       _controller = controller;
       _bookRemarks
         ..clear()
@@ -112,30 +111,22 @@ class _BookCardsPageState extends State<BookCardsPage> {
   }
 
   Future<void> _toggleFavorite(BookCard card) async {
-    final repository = _repository;
-    if (repository == null) return;
-
-    await repository.toggleFavorite(card);
-    await _controller?.refreshCard(card);
+    await _controller?.toggleFavorite(card);
   }
 
   Future<void> _toggleRead(BookCard card) async {
-    final repository = _repository;
-    if (repository == null) return;
-
-    await repository.toggleRead(card);
-    await _controller?.refreshCard(card);
+    await _controller?.toggleRead(card);
   }
 
   void _openReadList() {
-    final repository = _repository;
+    final repository = _controller?.repository;
     if (repository == null) return;
 
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ReadCardsPage(
-          bookIds: _books.map((book) => book.id).toList(),
-          shelfTitle: _shelfTitle(),
+          bookIds: const <int>[],
+          shelfTitle: '全部书籍',
           repository: repository,
           bookTitlesById: _bookTitlesById(),
         ),
@@ -144,14 +135,14 @@ class _BookCardsPageState extends State<BookCardsPage> {
   }
 
   void _openFavoriteList() {
-    final repository = _repository;
+    final repository = _controller?.repository;
     if (repository == null) return;
 
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => FavoriteCardsPage(
-          bookIds: _books.map((book) => book.id).toList(),
-          shelfTitle: _shelfTitle(),
+          bookIds: const <int>[],
+          shelfTitle: '全部书籍',
           repository: repository,
           bookTitlesById: _bookTitlesById(),
         ),
@@ -218,18 +209,12 @@ class _BookCardsPageState extends State<BookCardsPage> {
     return _bookRemarks[card.bookId] ?? card.bookTitle;
   }
 
-  String _shelfTitle() {
-    if (_books.isEmpty) return '阅读';
-    if (_books.length == 1) return _displayTitle(_books.first);
-    return '混合阅读 · ${_books.length} 本';
-  }
-
   Map<int, String> _bookTitlesById() {
     return {for (final book in _books) book.id: _displayTitle(book)};
   }
 
   Future<void> _showContext(BookCard card) async {
-    final repository = _repository;
+    final repository = _controller?.repository;
     if (repository == null) return;
 
     final contextController = ContextController(
@@ -369,9 +354,30 @@ class _BookCardsPageState extends State<BookCardsPage> {
                   });
                 },
               ),
-              body: ReaderBackgroundSurface(
-                settings: backgroundSettings,
-                child: body,
+              body: Stack(
+                children: [
+                  ReaderBackgroundSurface(
+                    settings: backgroundSettings,
+                    child: body,
+                  ),
+                  if (!Platform.isAndroid && !Platform.isIOS)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      child: SafeArea(
+                        child: Builder(
+                          builder: (context) {
+                            return IconButton(
+                              icon: const Icon(Icons.menu_rounded),
+                              tooltip: '打开菜单',
+                              onPressed: () =>
+                                  Scaffold.of(context).openDrawer(),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                ],
               ),
             );
           },

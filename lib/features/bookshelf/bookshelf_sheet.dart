@@ -44,6 +44,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
   final _importService = const BookImportService();
   final _books = <Book>[];
   final _remarks = <int, String>{};
+  final _stats = <int, BookCardStats>{};
   late final Set<int> _selectedIds = widget.initialSelectedBookIds.toSet();
 
   BookCardRepository? _repository;
@@ -63,6 +64,10 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     final repository = BookCardRepository(isar);
     final books = await repository.loadBooks();
     final remarks = await BookRemarkService.instance.load();
+    final stats = await repository.loadBookStats(
+      books.map((book) => book.id).toList(),
+    );
+    await repository.logDatabaseSnapshot('bookshelf init');
 
     if (!mounted) return;
     setState(() {
@@ -74,6 +79,9 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       _remarks
         ..clear()
         ..addAll(remarks);
+      _stats
+        ..clear()
+        ..addAll(stats);
       _selectedIds.removeWhere((id) => !_books.any((book) => book.id == id));
       _isLoading = false;
     });
@@ -84,11 +92,17 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     if (repository == null) return;
 
     final books = await repository.loadBooks();
+    final stats = await repository.loadBookStats(
+      books.map((book) => book.id).toList(),
+    );
     if (!mounted) return;
     setState(() {
       _books
         ..clear()
         ..addAll(books);
+      _stats
+        ..clear()
+        ..addAll(stats);
       _selectedIds.removeWhere((id) => !_books.any((book) => book.id == id));
     });
   }
@@ -349,6 +363,8 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                                   );
                                   final remark = _remarks[book.id];
                                   final displayTitle = _displayTitle(book);
+                                  final stats =
+                                      _stats[book.id] ?? BookCardStats.empty;
 
                                   return Material(
                                     color: Colors.transparent,
@@ -417,6 +433,8 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                                                           ),
                                                     ),
                                                   ],
+                                                  const SizedBox(height: 7),
+                                                  _BookProgress(stats: stats),
                                                 ],
                                               ),
                                             ),
@@ -568,6 +586,43 @@ class _BookRemarkDialogState extends State<_BookRemarkDialog> {
           child: const Text('取消'),
         ),
         FilledButton(onPressed: _submit, child: const Text('保存')),
+      ],
+    );
+  }
+}
+
+class _BookProgress extends StatelessWidget {
+  const _BookProgress({required this.stats});
+
+  final BookCardStats stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final percent = (stats.readProgress * 100).round();
+    final textStyle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant, height: 1.1);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: stats.readProgress,
+            minHeight: 3,
+            backgroundColor: cs.surfaceContainerHighest.withValues(alpha: 0.7),
+            color: cs.primary.withValues(alpha: 0.72),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '已读 ${stats.readCount}/${stats.totalCount} · $percent% · 收藏 ${stats.favoriteCount}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: textStyle,
+        ),
       ],
     );
   }

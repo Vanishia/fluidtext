@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app_settings.dart';
 import '../../models/book_card.dart';
 import '../../repositories/book_card_repository.dart';
+import '../../services/book_remark_service.dart';
 import 'reader_background_settings.dart';
 import 'widgets/reader_background_surface.dart';
 
@@ -26,6 +27,7 @@ class ReadCardsPage extends StatefulWidget {
 
 class _ReadCardsPageState extends State<ReadCardsPage> {
   final _cards = <BookCard>[];
+  final _bookTitlesById = <int, String>{};
   var _isLoading = true;
 
   @override
@@ -36,13 +38,23 @@ class _ReadCardsPageState extends State<ReadCardsPage> {
 
   Future<void> _load() async {
     final cards = await widget.repository.loadReadCards(widget.bookIds);
+    final bookTitlesById = await _loadBookTitlesById();
     if (!mounted) return;
     setState(() {
       _cards
         ..clear()
         ..addAll(cards);
+      _bookTitlesById
+        ..clear()
+        ..addAll(bookTitlesById);
       _isLoading = false;
     });
+  }
+
+  Future<Map<int, String>> _loadBookTitlesById() async {
+    final books = await widget.repository.loadBooks();
+    final remarks = await BookRemarkService.instance.load();
+    return {for (final book in books) book.id: remarks[book.id] ?? book.title};
   }
 
   String _formatReadAt(DateTime? readAt) {
@@ -56,7 +68,9 @@ class _ReadCardsPageState extends State<ReadCardsPage> {
   }
 
   String _bookTitle(BookCard card) {
-    return widget.bookTitlesById[card.bookId] ?? card.bookTitle;
+    return _bookTitlesById[card.bookId] ??
+        widget.bookTitlesById[card.bookId] ??
+        card.bookTitle;
   }
 
   @override

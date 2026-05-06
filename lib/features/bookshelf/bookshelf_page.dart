@@ -43,6 +43,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
         .loadLastOpenedBookIds();
     final savedBooks = await repository.loadBooksByIds(savedBookIds);
     final remarks = await BookRemarkService.instance.load();
+    await repository.logDatabaseSnapshot('app init');
 
     if (!mounted) return;
     setState(() {
@@ -124,13 +125,13 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   void _openReadList() {
     final repository = _repository;
-    if (repository == null || _selectedBooks.isEmpty) return;
+    if (repository == null) return;
 
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ReadCardsPage(
-          bookIds: _selectedBooks.map((book) => book.id).toList(),
-          shelfTitle: _selectionTitle(),
+          bookIds: const <int>[],
+          shelfTitle: '全部书籍',
           repository: repository,
           bookTitlesById: _selectedBookTitlesById(),
         ),
@@ -140,13 +141,13 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   void _openFavoriteList() {
     final repository = _repository;
-    if (repository == null || _selectedBooks.isEmpty) return;
+    if (repository == null) return;
 
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => FavoriteCardsPage(
-          bookIds: _selectedBooks.map((book) => book.id).toList(),
-          shelfTitle: _selectionTitle(),
+          bookIds: const <int>[],
+          shelfTitle: '全部书籍',
           repository: repository,
           bookTitlesById: _selectedBookTitlesById(),
         ),
@@ -183,10 +184,8 @@ class _BookshelfPageState extends State<BookshelfPage> {
             },
             themeMode: themeModeSetting.value,
             onThemeModeChanged: saveThemeModeSetting,
-            onOpenReadList: _selectedBooks.isEmpty ? null : _openReadList,
-            onOpenFavoriteList: _selectedBooks.isEmpty
-                ? null
-                : _openFavoriteList,
+            onOpenReadList: _openReadList,
+            onOpenFavoriteList: _openFavoriteList,
             onOpenReaderBackgroundSettings: _openReaderBackgroundSettings,
           ),
           body: ReaderBackgroundSurface(
