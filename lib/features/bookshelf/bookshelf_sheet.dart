@@ -113,6 +113,10 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     final isar = _isar;
     if (isar == null || _isBusy) return;
 
+    final targetCharsPerCard = await _chooseTargetCharsPerCard();
+    if (targetCharsPerCard == null) return;
+    if (!mounted) return;
+
     setState(() {
       _isBusy = true;
       _status = '正在导入…';
@@ -139,6 +143,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
         isar: isar,
         bytes: bytes,
         sourceFileName: file?.name,
+        targetCharsPerCard: targetCharsPerCard,
       );
 
       await _reloadBooks();
@@ -164,6 +169,47 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
         setState(() => _isBusy = false);
       }
     }
+  }
+
+  Future<int?> _chooseTargetCharsPerCard() {
+    return showDialog<int>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        final theme = Theme.of(context);
+        final colorScheme = theme.colorScheme;
+
+        return AlertDialog(
+          title: const Text('选择切分长度'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '按字符数切分，达到所选长度后会尽量在句号、问号、感叹号或换行处断开。',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 14),
+              _ImportLengthOption(
+                icon: Icons.menu_book_rounded,
+                title: '300字符',
+                subtitle: '建议中文书籍选择',
+                onTap: () => Navigator.of(context).pop(300),
+              ),
+              const SizedBox(height: 10),
+              _ImportLengthOption(
+                icon: Icons.notes_rounded,
+                title: '750字符',
+                subtitle: '建议英文书籍选择、或需要长卡片的中文书籍',
+                onTap: () => Navigator.of(context).pop(750),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _exportBackup() async {
@@ -567,6 +613,63 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                 if (_isBusy) const BlockingLoader(),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ImportLengthOption extends StatelessWidget {
+  const _ImportLengthOption({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: colorScheme.outlineVariant),
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: colorScheme.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: theme.textTheme.titleMedium),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
