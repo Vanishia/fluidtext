@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../models/book_card.dart';
+import '../../reader/widgets/book_card_content_view.dart';
 
 class ContextCardTile extends StatelessWidget {
   const ContextCardTile({
@@ -71,11 +72,11 @@ class ContextCardTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  card.content,
+                BookCardContentView(
+                  card: card,
                   style: Theme.of(
                     context,
-                  ).textTheme.bodyMedium?.copyWith(fontSize: 15, height: 1.5),
+                  ).textTheme.bodyMedium?.copyWith(fontSize: 15),
                 ),
                 const SizedBox(height: 2),
                 Row(

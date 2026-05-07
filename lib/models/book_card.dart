@@ -22,6 +22,8 @@ class BookCard {
 
   late String content;
 
+  String? blocksJson;
+
   bool isRead = false;
 
   DateTime? readAt;
