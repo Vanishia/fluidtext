@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../models/book_card.dart';
 
@@ -42,6 +43,7 @@ class ContextCardTile extends StatelessWidget {
             : colorScheme.surface.withValues(alpha: 0.62),
         child: InkWell(
           onTap: onToggleRead,
+          onLongPress: () => _copyCardContent(context),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
             child: Column(
@@ -134,5 +136,21 @@ class ContextCardTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _copyCardContent(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: card.content));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('Copied'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1200),
+          margin: const EdgeInsets.fromLTRB(24, 0, 24, 18),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
   }
 }

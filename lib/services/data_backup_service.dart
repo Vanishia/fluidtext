@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -39,11 +38,6 @@ class DataBackupService {
     );
 
     if (savedPath == null) return null;
-
-    final file = File(savedPath);
-    if (!await file.exists()) {
-      await file.writeAsBytes(bytes, flush: true);
-    }
 
     return savedPath;
   }
