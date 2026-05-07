@@ -4,7 +4,9 @@ import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/book.dart';
+import '../models/book_asset.dart';
 import '../models/book_card.dart';
+import '../services/book_asset_store.dart';
 
 class IsarDb {
   IsarDb._();
@@ -19,10 +21,11 @@ class IsarDb {
 
     final dir = await getApplicationDocumentsDirectory();
     final opened = await Isar.open(
-      [BookSchema, BookCardSchema],
+      [BookSchema, BookAssetSchema, BookCardSchema],
       directory: dir.path,
       inspector: true,
     );
+    unawaited(BookAssetStore.instance.cleanupOrphanAssetRoots(opened));
     _isar = opened;
     return opened;
   }

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../../models/book_card.dart';
 import '../../../widgets/glass.dart';
+import 'book_card_content_view.dart';
 
 class BookCardTile extends StatelessWidget {
   const BookCardTile({
@@ -67,8 +68,8 @@ class BookCardTile extends StatelessWidget {
                       ).textTheme.labelMedium?.copyWith(color: cs.primary),
                     ),
                     const SizedBox(height: 8),
-                    _CardContentText(
-                      content: card.content,
+                    BookCardContentView(
+                      card: card,
                       style: Theme.of(
                         context,
                       ).textTheme.bodyMedium?.copyWith(fontSize: 15),
@@ -138,36 +139,5 @@ class BookCardTile extends StatelessWidget {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
-  }
-}
-
-class _CardContentText extends StatelessWidget {
-  const _CardContentText({required this.content, required this.style});
-
-  final String content;
-  final TextStyle? style;
-
-  @override
-  Widget build(BuildContext context) {
-    final paragraphs = content
-        .split(RegExp(r'\n+'))
-        .map((paragraph) => paragraph.trimRight())
-        .where((paragraph) => paragraph.trim().isNotEmpty)
-        .toList(growable: false);
-    final textStyle = style?.copyWith(height: 1.5);
-
-    if (paragraphs.isEmpty) {
-      return Text('', style: textStyle);
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var index = 0; index < paragraphs.length; index += 1) ...[
-          Text(paragraphs[index], style: textStyle),
-          if (index < paragraphs.length - 1) const SizedBox(height: 2),
-        ],
-      ],
-    );
   }
 }

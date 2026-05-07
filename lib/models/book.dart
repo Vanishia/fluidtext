@@ -24,4 +24,6 @@ class Book {
   int? cardCount;
 
   int? textCharCount;
+
+  String? assetRootKey;
 }

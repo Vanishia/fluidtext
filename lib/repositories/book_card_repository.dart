@@ -3,7 +3,9 @@ import 'dart:developer' as developer;
 import 'package:isar/isar.dart';
 
 import '../models/book.dart';
+import '../models/book_asset.dart';
 import '../models/book_card.dart';
+import '../services/book_asset_store.dart';
 
 class BookCardStats {
   const BookCardStats({
@@ -244,6 +246,9 @@ class BookCardRepository {
   }
 
   Future<void> deleteBook(int bookId) async {
+    final book = await isar.books.get(bookId);
+    final assetRootKey = book?.assetRootKey;
+
     await isar.writeTxn(() async {
       final cardIds = await isar.bookCards
           .filter()
@@ -253,7 +258,26 @@ class BookCardRepository {
       if (cardIds.isNotEmpty) {
         await isar.bookCards.deleteAll(cardIds);
       }
+      final assetIds = await isar.bookAssets
+          .filter()
+          .bookIdEqualTo(bookId)
+          .idProperty()
+          .findAll();
+      if (assetIds.isNotEmpty) {
+        await isar.bookAssets.deleteAll(assetIds);
+      }
       await isar.books.delete(bookId);
     });
+
+    try {
+      await BookAssetStore.instance.deleteAssetRoot(assetRootKey);
+    } catch (error, stackTrace) {
+      developer.log(
+        'Failed to delete book asset root: bookId=$bookId',
+        name: 'BookCardRepository',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 }

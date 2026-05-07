@@ -42,6 +42,7 @@ dependencies:
   path_provider: ^2.1.5
   collection: ^1.19.1
   crypto: ^3.0.7
+  archive: ^4.0.9
 
 dev_dependencies:
   flutter_test:
