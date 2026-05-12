@@ -79,6 +79,9 @@ class BookImportService {
     'ul',
   };
 
+  static const _maxSkippedChapterRatio = 0.35;
+  static const _minChaptersBeforeRatioFailure = 4;
+
   Future<BookImportResult> importEpubBytes({
     required Isar isar,
     required Uint8List bytes,
@@ -91,32 +94,57 @@ class BookImportService {
     );
 
     final fileHash = sha256.convert(bytes).toString();
-    final epub = await EpubReader.readBook(bytes);
+    late final EpubBookRef epub;
+    try {
+      epub = await EpubReader.openBook(bytes);
+    } catch (error, stackTrace) {
+      developer.log(
+        'Failed to parse EPUB package',
+        name: 'BookImportService',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw BookImportException(
+        '无法打开 EPUB 基础结构，文件可能损坏或格式不兼容；${_ImportToleranceReport.shortError(error)}',
+      );
+    }
+    final report = _ImportToleranceReport();
     final rawTitle = (epub.title ?? '').trim();
     final title = rawTitle.isEmpty ? 'Untitled' : rawTitle;
+    final images = await _readAvailableImages(epub, report: report);
+    final chapters = await _readAvailableChapters(epub, report: report);
+    _throwIfTooManyChaptersSkipped(report);
     final contentTextFiles = epub.content?.html.length ?? 0;
-    final contentImageFiles = epub.content?.images.length ?? 0;
+    final contentImageFiles = images.length;
     final contentAllFiles = epub.content?.allFiles.length ?? 0;
     developer.log(
-      'Parsed EPUB metadata: title="$title", topLevelChapters=${epub.chapters.length}, htmlFiles=$contentTextFiles, imageFiles=$contentImageFiles, allFiles=$contentAllFiles',
+      'Parsed EPUB metadata: title="$title", topLevelChapters=${chapters.length}, htmlFiles=$contentTextFiles, imageFiles=$contentImageFiles, allFiles=$contentAllFiles',
       name: 'BookImportService',
     );
 
-    final imageIndex = _EpubImageIndex(epub.content?.images ?? const {});
+    final imageIndex = _EpubImageIndex(images);
     final contentChapters = _chapterContents(
-      epub.chapters,
+      chapters,
       imageIndex: imageIndex,
+      report: report,
     ).toList(growable: false);
+    _throwIfTooManyChaptersSkipped(report);
     final draft = _buildImportDraft(
       title: title,
       chapters: contentChapters,
       legacyChapters: contentChapters.any((chapter) => chapter.imageCount > 0)
           ? const <_LegacyChapterContent>[]
-          : _legacyChapterContents(epub.chapters).toList(growable: false),
+          : _legacyChapterContents(
+              chapters,
+              report: report,
+            ).toList(growable: false),
       targetCharsPerCard: targetCharsPerCard,
     );
     if (draft.cards.isEmpty) {
-      throw const BookImportException('没有从 EPUB 中解析出可导入的文本');
+      final detail = report.summary;
+      throw BookImportException(
+        detail == null ? '没有从 EPUB 中解析出可导入的正文' : '没有从 EPUB 中解析出可导入的正文；$detail',
+      );
     }
 
     final existingByFileHash = await _findBestCompleteBookByFileHash(
@@ -240,6 +268,95 @@ class BookImportService {
       insertedCards: draft.cards.length,
       wasDuplicate: false,
     );
+  }
+
+  Future<Map<String, EpubByteContentFile>> _readAvailableImages(
+    EpubBookRef epub, {
+    required _ImportToleranceReport report,
+  }) async {
+    final imageRefs = epub.content?.images ?? const {};
+    final images = <String, EpubByteContentFile>{};
+
+    for (final entry in imageRefs.entries) {
+      try {
+        images[entry.key] = await EpubReader.readByteContentFile(entry.value);
+      } catch (error, stackTrace) {
+        report.rememberImageError(entry.value.fileName ?? entry.key, error);
+        developer.log(
+          'Skipping EPUB image that cannot be read: href="${entry.value.fileName ?? entry.key}"',
+          name: 'BookImportService',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
+
+    return images;
+  }
+
+  Future<List<EpubChapter>> _readAvailableChapters(
+    EpubBookRef epub, {
+    required _ImportToleranceReport report,
+  }) async {
+    late final List<EpubChapterRef> chapterRefs;
+    try {
+      chapterRefs = epub.getChapters();
+    } catch (error, stackTrace) {
+      developer.log(
+        'Failed to read EPUB chapter navigation',
+        name: 'BookImportService',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      throw BookImportException(
+        '无法读取 EPUB 章节目录；${_ImportToleranceReport.shortError(error)}',
+      );
+    }
+
+    return _readAvailableChapterRefs(chapterRefs, report: report);
+  }
+
+  Future<List<EpubChapter>> _readAvailableChapterRefs(
+    List<EpubChapterRef> refs, {
+    required _ImportToleranceReport report,
+  }) async {
+    final chapters = <EpubChapter>[];
+
+    for (final ref in refs) {
+      report.seenChapters += 1;
+      try {
+        final htmlContent = await ref.readHtmlContent();
+        final subChapters = await _readAvailableChapterRefs(
+          ref.subChapters,
+          report: report,
+        );
+        final chapter = EpubChapter(
+          title: ref.title,
+          contentFileName: ref.contentFileName,
+          anchor: ref.anchor,
+          htmlContent: htmlContent,
+          subChapters: subChapters,
+        );
+        chapters.add(chapter);
+      } catch (error, stackTrace) {
+        report.skippedChapters += 1;
+        report.rememberChapterError(ref.title ?? '', error);
+        developer.log(
+          'Skipping EPUB chapter that cannot be read: title="${(ref.title ?? '').trim().isEmpty ? '(untitled)' : ref.title}"',
+          name: 'BookImportService',
+          error: error,
+          stackTrace: stackTrace,
+        );
+
+        if (ref.subChapters.isNotEmpty) {
+          chapters.addAll(
+            await _readAvailableChapterRefs(ref.subChapters, report: report),
+          );
+        }
+      }
+    }
+
+    return chapters;
   }
 
   _ImportDraft _buildImportDraft({
@@ -556,6 +673,7 @@ class BookImportService {
   Iterable<_ChapterContent> _chapterContents(
     List<EpubChapter> chapters, {
     required _EpubImageIndex imageIndex,
+    required _ImportToleranceReport report,
   }) sync* {
     for (var index = 0; index < chapters.length; index++) {
       final chapter = chapters[index];
@@ -568,12 +686,33 @@ class BookImportService {
       );
 
       if (html != null && html.trim().isNotEmpty) {
-        final document = html_parser.parse(html);
-        final items = _extractContentItems(
-          document,
-          contentFileName: contentFileName,
-          imageIndex: imageIndex,
-        );
+        late final List<_ContentItem> items;
+        try {
+          final document = html_parser.parse(html);
+          items = _extractContentItems(
+            document,
+            contentFileName: contentFileName,
+            imageIndex: imageIndex,
+            report: report,
+          );
+        } catch (error, stackTrace) {
+          report.skippedChapters += 1;
+          report.rememberChapterError(chapterTitle, error);
+          developer.log(
+            'Skipping EPUB chapter after parse failure: title="${chapterTitle.isEmpty ? '(untitled)' : chapterTitle}"',
+            name: 'BookImportService',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          if (chapter.subChapters.isNotEmpty) {
+            yield* _chapterContents(
+              chapter.subChapters,
+              imageIndex: imageIndex,
+              report: report,
+            );
+          }
+          continue;
+        }
         final textCharCount = items.whereType<_TextContentItem>().fold<int>(
           0,
           (sum, item) => sum + _normalizeForFingerprint(item.text).length,
@@ -609,23 +748,42 @@ class BookImportService {
       }
 
       if (chapter.subChapters.isNotEmpty) {
-        yield* _chapterContents(chapter.subChapters, imageIndex: imageIndex);
+        yield* _chapterContents(
+          chapter.subChapters,
+          imageIndex: imageIndex,
+          report: report,
+        );
       }
     }
   }
 
   Iterable<_LegacyChapterContent> _legacyChapterContents(
-    List<EpubChapter> chapters,
-  ) sync* {
+    List<EpubChapter> chapters, {
+    required _ImportToleranceReport report,
+  }) sync* {
     for (var index = 0; index < chapters.length; index++) {
       final chapter = chapters[index];
       final html = chapter.htmlContent;
       final chapterTitle = (chapter.title ?? '').trim();
 
       if (html != null && html.trim().isNotEmpty) {
-        final document = html_parser.parse(html);
-        final text =
-            document.body?.text ?? document.documentElement?.text ?? '';
+        late final String text;
+        try {
+          final document = html_parser.parse(html);
+          text = document.body?.text ?? document.documentElement?.text ?? '';
+        } catch (error, stackTrace) {
+          report.rememberChapterError(chapterTitle, error);
+          developer.log(
+            'Skipping legacy EPUB chapter after parse failure: title="${chapterTitle.isEmpty ? '(untitled)' : chapterTitle}"',
+            name: 'BookImportService',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          if (chapter.subChapters.isNotEmpty) {
+            yield* _legacyChapterContents(chapter.subChapters, report: report);
+          }
+          continue;
+        }
         final trimmedText = text.trim();
         if (trimmedText.isNotEmpty) {
           yield _LegacyChapterContent(
@@ -636,7 +794,7 @@ class BookImportService {
       }
 
       if (chapter.subChapters.isNotEmpty) {
-        yield* _legacyChapterContents(chapter.subChapters);
+        yield* _legacyChapterContents(chapter.subChapters, report: report);
       }
     }
   }
@@ -645,6 +803,7 @@ class BookImportService {
     html_dom.Document document, {
     required String? contentFileName,
     required _EpubImageIndex imageIndex,
+    required _ImportToleranceReport report,
   }) {
     final root = document.body ?? document.documentElement;
     if (root == null) return const <_ContentItem>[];
@@ -693,6 +852,7 @@ class BookImportService {
           final asset = imageIndex.resolve(
             contentFileName: contentFileName,
             href: href,
+            report: report,
           );
           if (asset != null) {
             items.add(
@@ -720,6 +880,19 @@ class BookImportService {
       items.removeLast();
     }
     return items;
+  }
+
+  void _throwIfTooManyChaptersSkipped(_ImportToleranceReport report) {
+    if (report.seenChapters < _minChaptersBeforeRatioFailure) return;
+    if (report.skippedChapters == 0) return;
+
+    final ratio = report.skippedChapters / report.seenChapters;
+    if (ratio <= _maxSkippedChapterRatio) return;
+
+    final detail = report.summary;
+    throw BookImportException(
+      detail == null ? 'EPUB 章节解析失败过多，已停止导入' : 'EPUB 章节解析失败过多，已停止导入；$detail',
+    );
   }
 
   String? _imageHrefForElement(html_dom.Element element) {
@@ -772,6 +945,55 @@ class BookImportException implements Exception {
 
   @override
   String toString() => message;
+}
+
+class _ImportToleranceReport {
+  int seenChapters = 0;
+  int skippedChapters = 0;
+  int skippedImages = 0;
+  String? firstChapterError;
+  String? firstImageError;
+  final Set<String> _seenImageFailures = <String>{};
+
+  void rememberChapterError(String title, Object error) {
+    firstChapterError ??=
+        '${title.trim().isEmpty ? '未命名章节' : title.trim()}：${shortError(error)}';
+  }
+
+  void rememberImageError(String href, Object error) {
+    if (!_seenImageFailures.add(href)) return;
+    skippedImages += 1;
+    firstImageError ??= '$href：${shortError(error)}';
+  }
+
+  void rememberMissingImage(String href) {
+    if (!_seenImageFailures.add(href)) return;
+    skippedImages += 1;
+    firstImageError ??= href;
+  }
+
+  String? get summary {
+    final parts = <String>[];
+    if (skippedChapters > 0) {
+      parts.add(
+        '已跳过 $skippedChapters/$seenChapters 个异常章节'
+        '${firstChapterError == null ? '' : '（$firstChapterError）'}',
+      );
+    }
+    if (skippedImages > 0) {
+      parts.add(
+        '已跳过 $skippedImages 张异常图片'
+        '${firstImageError == null ? '' : '（$firstImageError）'}',
+      );
+    }
+    return parts.isEmpty ? null : parts.join('，');
+  }
+
+  static String shortError(Object error) {
+    final text = error.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (text.length <= 80) return text;
+    return '${text.substring(0, 80)}...';
+  }
 }
 
 class _ImportDraft {
@@ -1063,15 +1285,26 @@ class _EpubImageIndex {
   _ImageAssetDraft? resolve({
     required String? contentFileName,
     required String href,
+    required _ImportToleranceReport report,
   }) {
     final normalized = _resolveEpubHref(
       baseFileName: contentFileName,
       href: href,
+      report: report,
     );
     if (normalized == null) return null;
-    return _byHref[normalized] ??
+    final asset =
+        _byHref[normalized] ??
         _byHref[normalized.toLowerCase()] ??
         _resolveBySuffix(normalized);
+    if (asset == null) {
+      report.rememberMissingImage(href);
+      developer.log(
+        'Skipping unresolved EPUB image: href="$href", normalized="$normalized"',
+        name: 'BookImportService',
+      );
+    }
+    return asset;
   }
 
   void _addCandidate(String? href, _ImageAssetDraft asset) {
@@ -1095,6 +1328,7 @@ class _EpubImageIndex {
   static String? _resolveEpubHref({
     required String? baseFileName,
     required String href,
+    required _ImportToleranceReport report,
   }) {
     final cleanedHref = _stripHrefNoise(href);
     if (cleanedHref == null) return null;
@@ -1104,7 +1338,10 @@ class _EpubImageIndex {
       return null;
     }
 
-    final decoded = Uri.decodeFull(cleanedHref).replaceAll(r'\', '/');
+    final decoded = _safeDecodeHref(
+      cleanedHref,
+      report: report,
+    ).replaceAll(r'\', '/');
     if (decoded.startsWith('/')) {
       return _normalizeEpubPath(decoded.substring(1));
     }
@@ -1119,7 +1356,7 @@ class _EpubImageIndex {
   static String? _normalizeEpubPath(String? path) {
     final stripped = _stripHrefNoise(path);
     if (stripped == null) return null;
-    final decoded = Uri.decodeFull(stripped).replaceAll(r'\', '/');
+    final decoded = _decodeHrefLossy(stripped).replaceAll(r'\', '/');
     final segments = <String>[];
     for (final rawSegment in decoded.split('/')) {
       final segment = rawSegment.trim();
@@ -1153,6 +1390,31 @@ class _EpubImageIndex {
     final slash = path.lastIndexOf('/');
     if (slash <= 0) return null;
     return path.substring(0, slash);
+  }
+
+  static String _safeDecodeHref(
+    String href, {
+    required _ImportToleranceReport report,
+  }) {
+    try {
+      return Uri.decodeFull(href);
+    } catch (error) {
+      report.rememberImageError(href, error);
+      developer.log(
+        'Using undecoded EPUB image href after decode failure: href="$href"',
+        name: 'BookImportService',
+        error: error,
+      );
+      return href;
+    }
+  }
+
+  static String _decodeHrefLossy(String href) {
+    try {
+      return Uri.decodeFull(href);
+    } catch (_) {
+      return href;
+    }
   }
 
   static String _extensionForAsset({
