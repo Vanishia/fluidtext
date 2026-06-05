@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../features/context/context_settings.dart';
+import '../features/reader/reading_analysis_module.dart';
 import '../features/reader/reader_background_settings.dart';
 import '../features/reader/reading_order.dart';
 import '../services/app_behavior_settings_service.dart';
@@ -17,7 +18,13 @@ class AppSettingsViewModel {
   final readingOrderSetting = ValueNotifier(ReadingOrder.random);
   final showUnreadOnlySetting = ValueNotifier(false);
   final contextSettingsSetting = ValueNotifier(const ContextSettings());
-  final readerBackgroundSetting = ValueNotifier(const ReaderBackgroundSettings());
+  final readerBackgroundSetting = ValueNotifier(
+    const ReaderBackgroundSettings(),
+  );
+  final analysisModuleOrderSetting =
+      ValueNotifier<List<ReadingAnalysisModuleType>>(
+        defaultReadingAnalysisModuleOrder,
+      );
 
   Future<void> _saveQueue = Future.value();
 
@@ -25,7 +32,10 @@ class AppSettingsViewModel {
   ReadingOrder get readingOrder => readingOrderSetting.value;
   bool get showUnreadOnly => showUnreadOnlySetting.value;
   ContextSettings get contextSettings => contextSettingsSetting.value;
-  ReaderBackgroundSettings get readerBackground => readerBackgroundSetting.value;
+  ReaderBackgroundSettings get readerBackground =>
+      readerBackgroundSetting.value;
+  List<ReadingAnalysisModuleType> get analysisModuleOrder =>
+      analysisModuleOrderSetting.value;
 
   Future<void> init() async {
     final behaviorSettings = await AppBehaviorSettingsService.instance.load();
@@ -33,7 +43,11 @@ class AppSettingsViewModel {
     readingOrderSetting.value = behaviorSettings.readingOrder;
     showUnreadOnlySetting.value = behaviorSettings.showUnreadOnly;
     contextSettingsSetting.value = behaviorSettings.contextSettings;
-    readerBackgroundSetting.value = await ReaderBackgroundService.instance.load();
+    analysisModuleOrderSetting.value = List<ReadingAnalysisModuleType>.from(
+      behaviorSettings.analysisModuleOrder,
+    );
+    readerBackgroundSetting.value = await ReaderBackgroundService.instance
+        .load();
   }
 
   void setThemeMode(ThemeMode mode) {
@@ -56,6 +70,14 @@ class AppSettingsViewModel {
     _scheduleBehaviorSave();
   }
 
+  void setAnalysisModuleOrder(List<ReadingAnalysisModuleType> order) {
+    analysisModuleOrderSetting.value =
+        List<ReadingAnalysisModuleType>.unmodifiable(
+          normalizeReadingAnalysisModuleOrder(order),
+        );
+    _scheduleBehaviorSave();
+  }
+
   Future<ReaderBackgroundSettings?> importReaderBackgroundImage(
     ReaderBackgroundSettings current,
   ) async {
@@ -69,8 +91,9 @@ class AppSettingsViewModel {
   Future<ReaderBackgroundSettings> clearReaderBackgroundImage(
     ReaderBackgroundSettings current,
   ) async {
-    final next =
-        await ReaderBackgroundService.instance.clearImportedImage(current);
+    final next = await ReaderBackgroundService.instance.clearImportedImage(
+      current,
+    );
     readerBackgroundSetting.value = next;
     await ReaderBackgroundService.instance.save(next);
     return next;
@@ -87,6 +110,7 @@ class AppSettingsViewModel {
       readingOrder: readingOrderSetting.value,
       showUnreadOnly: showUnreadOnlySetting.value,
       contextSettings: contextSettingsSetting.value,
+      analysisModuleOrder: analysisModuleOrderSetting.value,
     );
 
     _saveQueue = _saveQueue

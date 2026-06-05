@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../features/context/context_settings.dart';
+import '../features/reader/reading_analysis_module.dart';
 import '../features/reader/reading_order.dart';
 
 class AppBehaviorSettings {
@@ -13,24 +14,28 @@ class AppBehaviorSettings {
     this.readingOrder = ReadingOrder.random,
     this.showUnreadOnly = false,
     this.contextSettings = const ContextSettings(),
+    this.analysisModuleOrder = defaultReadingAnalysisModuleOrder,
   });
 
   final ThemeMode themeMode;
   final ReadingOrder readingOrder;
   final bool showUnreadOnly;
   final ContextSettings contextSettings;
+  final List<ReadingAnalysisModuleType> analysisModuleOrder;
 
   AppBehaviorSettings copyWith({
     ThemeMode? themeMode,
     ReadingOrder? readingOrder,
     bool? showUnreadOnly,
     ContextSettings? contextSettings,
+    List<ReadingAnalysisModuleType>? analysisModuleOrder,
   }) {
     return AppBehaviorSettings(
       themeMode: themeMode ?? this.themeMode,
       readingOrder: readingOrder ?? this.readingOrder,
       showUnreadOnly: showUnreadOnly ?? this.showUnreadOnly,
       contextSettings: contextSettings ?? this.contextSettings,
+      analysisModuleOrder: analysisModuleOrder ?? this.analysisModuleOrder,
     );
   }
 }
@@ -56,6 +61,9 @@ class AppBehaviorSettingsService {
           before: _contextCountFromJson(json['contextBefore']),
           after: _contextCountFromJson(json['contextAfter']),
         ),
+        analysisModuleOrder: normalizeReadingAnalysisModuleOrder(
+          json['analysisModuleOrder'] as List<dynamic>?,
+        ),
       );
     } catch (_) {
       return const AppBehaviorSettings();
@@ -70,6 +78,9 @@ class AppBehaviorSettingsService {
       'showUnreadOnly': settings.showUnreadOnly,
       'contextBefore': settings.contextSettings.before,
       'contextAfter': settings.contextSettings.after,
+      'analysisModuleOrder': settings.analysisModuleOrder
+          .map((item) => item.name)
+          .toList(growable: false),
       'savedAt': DateTime.now().toIso8601String(),
     };
     await file.writeAsString(jsonEncode(payload), flush: true);
