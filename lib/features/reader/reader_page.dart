@@ -19,6 +19,7 @@ import '../settings/reader_background_sheet.dart';
 import '../settings/app_drawer.dart';
 import 'favorite_cards_page.dart';
 import 'read_cards_page.dart';
+import 'reading_analysis_page.dart';
 import 'reader_background_settings.dart';
 import 'reader_controller.dart';
 import 'widgets/book_card_tile.dart';
@@ -148,6 +149,18 @@ class _BookCardsPageState extends State<BookCardsPage> {
           repository: repository,
           bookTitlesById: _bookTitlesById(),
         ),
+      ),
+    );
+  }
+
+  void _openReadingAnalysis() {
+    final repository = _controller?.repository;
+    if (repository == null) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            ReadingAnalysisPage(repository: repository, shelfTitle: '全部书籍'),
       ),
     );
   }
@@ -369,6 +382,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
                     saveShowUnreadOnlySetting(value);
                     controller.setShowUnreadOnly(value);
                   },
+                  onOpenReadingAnalysis: _openReadingAnalysis,
                   onOpenReadList: _openReadList,
                   onOpenFavoriteList: _openFavoriteList,
                   onOpenReaderBackgroundSettings: _openReaderBackgroundSettings,

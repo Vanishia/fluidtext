@@ -18,6 +18,7 @@ class AppDrawer extends StatelessWidget {
     this.onOpenReadList,
     this.onOpenFavoriteList,
     this.onOpenReaderBackgroundSettings,
+    this.onOpenReadingAnalysis,
     this.contextBefore,
     this.contextAfter,
     this.onContextBeforeChanged,
@@ -34,6 +35,7 @@ class AppDrawer extends StatelessWidget {
   final VoidCallback? onOpenReadList;
   final VoidCallback? onOpenFavoriteList;
   final VoidCallback? onOpenReaderBackgroundSettings;
+  final VoidCallback? onOpenReadingAnalysis;
   final int? contextBefore;
   final int? contextAfter;
   final ValueChanged<int>? onContextBeforeChanged;
@@ -158,6 +160,18 @@ class AppDrawer extends StatelessWidget {
                           Icons.settings_rounded,
                           size: 18,
                           color: onOpenReaderBackgroundSettings == null
+                              ? cs.onSurface.withValues(alpha: 0.32)
+                              : cs.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _QuietIconButton(
+                        tooltip: '阅读分析',
+                        onTap: _popThen(context, onOpenReadingAnalysis),
+                        child: Icon(
+                          Icons.insights_rounded,
+                          size: 18,
+                          color: onOpenReadingAnalysis == null
                               ? cs.onSurface.withValues(alpha: 0.32)
                               : cs.onSurfaceVariant,
                         ),
