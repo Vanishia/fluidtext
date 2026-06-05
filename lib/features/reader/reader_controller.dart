@@ -23,7 +23,7 @@ class ReaderController extends ChangeNotifier {
   final Random _random = Random();
 
   static const pageSize = 60;
-  static const initialPageCount = 2;
+  static const initialPageSize = 30;
 
   ReadingOrder _readingOrder;
   final List<BookCard> _cards = <BookCard>[];
@@ -48,22 +48,12 @@ class ReaderController extends ChangeNotifier {
     _isLoadingInitial = true;
     notifyListeners();
 
-    final statsByBook = await repository.loadBookStats(bookIds);
-    final totalCount = statsByBook.values.fold<int>(
-      0,
-      (sum, stats) => sum + stats.totalCount,
-    );
-    final readCount = statsByBook.values.fold<int>(
-      0,
-      (sum, stats) => sum + stats.readCount,
-    );
-
     final ids = _showUnreadOnly
         ? await repository.loadUnreadOrderedCardIds(bookIds)
         : await repository.loadOrderedCardIds(bookIds);
 
     developer.log(
-      'reloadCards: bookIds=$bookIds, order=$_readingOrder, unreadOnly=$_showUnreadOnly, total=$totalCount, read=$readCount, unread=${totalCount - readCount}, visibleIds=${ids.length}',
+      'reloadCards: bookIds=$bookIds, order=$_readingOrder, unreadOnly=$_showUnreadOnly, visibleIds=${ids.length}',
       name: 'ReaderController',
     );
 
@@ -85,16 +75,14 @@ class ReaderController extends ChangeNotifier {
     _isLoadingInitial = false;
     notifyListeners();
 
-    await loadInitialPages();
+    await loadInitialPage();
   }
 
-  Future<void> loadInitialPages() async {
-    for (var page = 0; page < initialPageCount && _hasMore; page += 1) {
-      await loadMore();
-    }
+  Future<void> loadInitialPage() async {
+    await loadMore(limit: initialPageSize);
   }
 
-  Future<void> loadMore() async {
+  Future<void> loadMore({int limit = pageSize}) async {
     if (_isLoadingMore || !_hasMore) return;
 
     _isLoadingMore = true;
@@ -102,7 +90,7 @@ class ReaderController extends ChangeNotifier {
 
     try {
       while (true) {
-        final pageIds = _nextPageIds();
+        final pageIds = _nextPageIds(limit);
         if (pageIds.isEmpty) {
           _hasMore = false;
           developer.log(
@@ -167,18 +155,18 @@ class ReaderController extends ChangeNotifier {
     notifyListeners();
   }
 
-  List<int> _nextPageIds() {
+  List<int> _nextPageIds(int limit) {
     if (_readingOrder == ReadingOrder.sequential) {
       final start = _offset;
       if (start >= _orderedCardIds.length) return const [];
-      final end = min(start + pageSize, _orderedCardIds.length);
+      final end = min(start + limit, _orderedCardIds.length);
       _offset = end;
       return _orderedCardIds.sublist(start, end);
     }
 
     final start = _randomOffset;
     if (start >= _shuffledCardIds.length) return const [];
-    final end = min(start + pageSize, _shuffledCardIds.length);
+    final end = min(start + limit, _shuffledCardIds.length);
     _randomOffset = end;
     return _shuffledCardIds.sublist(start, end);
   }

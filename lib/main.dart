@@ -3,12 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 
 import 'app_settings.dart';
-import 'features/bookshelf/bookshelf_page.dart';
+import 'features/bookshelf/launch_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initializeAppSettings();
-  runApp(const MyApp());
+  final settingsFuture = initializeAppSettings();
+  final launchStateFuture = loadLaunchState();
+  await settingsFuture;
+  final launchState = await launchStateFuture;
+  runApp(MyApp(initialLaunchState: launchState));
 }
 
 SystemUiOverlayStyle _systemUiStyleForTheme(ThemeData theme) {
@@ -26,7 +29,9 @@ SystemUiOverlayStyle _systemUiStyleForTheme(ThemeData theme) {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, required this.initialLaunchState});
+
+  final LaunchState initialLaunchState;
 
   ThemeData _buildTheme({required Brightness brightness}) {
     final scheme = ColorScheme.fromSeed(
@@ -78,7 +83,10 @@ class MyApp extends StatelessWidget {
               child: child ?? const SizedBox.shrink(),
             );
           },
-          home: const BookshelfPage(),
+          home: LaunchPage(
+            resumeLastSession: false,
+            initialState: initialLaunchState,
+          ),
         );
       },
     );
