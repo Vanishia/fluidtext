@@ -107,6 +107,28 @@ class BookCardRepository {
         .findAll();
   }
 
+  Future<List<BookCard>> loadReadCardsSince(List<int> bookIds, DateTime since) {
+    if (bookIds.isEmpty) {
+      return isar.bookCards
+          .filter()
+          .isReadEqualTo(true)
+          .and()
+          .readAtGreaterThan(since)
+          .sortByReadAtDesc()
+          .findAll();
+    }
+
+    return isar.bookCards
+        .filter()
+        .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
+        .and()
+        .isReadEqualTo(true)
+        .and()
+        .readAtGreaterThan(since)
+        .sortByReadAtDesc()
+        .findAll();
+  }
+
   Future<List<BookCard>> loadFavoriteCards(List<int> bookIds) {
     if (bookIds.isEmpty) {
       return isar.bookCards
@@ -121,6 +143,31 @@ class BookCardRepository {
         .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
         .and()
         .isFavoriteEqualTo(true)
+        .sortByFavoritedAtDesc()
+        .findAll();
+  }
+
+  Future<List<BookCard>> loadFavoriteCardsSince(
+    List<int> bookIds,
+    DateTime since,
+  ) {
+    if (bookIds.isEmpty) {
+      return isar.bookCards
+          .filter()
+          .isFavoriteEqualTo(true)
+          .and()
+          .favoritedAtGreaterThan(since)
+          .sortByFavoritedAtDesc()
+          .findAll();
+    }
+
+    return isar.bookCards
+        .filter()
+        .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
+        .and()
+        .isFavoriteEqualTo(true)
+        .and()
+        .favoritedAtGreaterThan(since)
         .sortByFavoritedAtDesc()
         .findAll();
   }
