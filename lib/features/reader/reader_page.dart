@@ -10,7 +10,7 @@ import '../../models/book_card.dart';
 import '../../repositories/book_card_repository.dart';
 import '../../services/book_remark_service.dart';
 import '../../services/reader_session_service.dart';
-import '../bookshelf/bookshelf_page.dart';
+import '../bookshelf/launch_page.dart';
 import '../bookshelf/bookshelf_sheet.dart';
 import '../context/context_controller.dart';
 import '../context/context_settings.dart';
@@ -25,10 +25,11 @@ import 'widgets/book_card_tile.dart';
 import 'widgets/reader_background_surface.dart';
 
 class BookCardsPage extends StatefulWidget {
-  BookCardsPage({super.key, required List<Book> books})
+  BookCardsPage({super.key, required List<Book> books, this.onExitReader})
     : books = List<Book>.unmodifiable(books);
 
   final List<Book> books;
+  final VoidCallback? onExitReader;
 
   List<int> get bookIds => books.map((book) => book.id).toList(growable: false);
 
@@ -73,8 +74,9 @@ class _BookCardsPageState extends State<BookCardsPage> {
       initialReadingOrder: readingOrderSetting.value,
       initialShowUnreadOnly: showUnreadOnlySetting.value,
     );
+    final remarksFuture = BookRemarkService.instance.load();
     await controller.reloadCards();
-    final remarks = await BookRemarkService.instance.load();
+    final remarks = await remarksFuture;
 
     if (!mounted) {
       controller.dispose();
@@ -172,7 +174,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
     if (selected.isEmpty) {
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const BookshelfPage()),
+        MaterialPageRoute(builder: (_) => const LaunchPage()),
         (route) => false,
       );
       return;
@@ -265,119 +267,158 @@ class _BookCardsPageState extends State<BookCardsPage> {
     );
   }
 
+  void _handleBack() {
+    final onExitReader = widget.onExitReader;
+    if (onExitReader != null) {
+      onExitReader();
+      return;
+    }
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => const LaunchPage(
+          resumeLastSession: false,
+          initialState: LaunchState(statusMessage: '已退出阅读，可从书架重新进入。'),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
 
     if (controller == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return ValueListenableBuilder<ReaderBackgroundSettings>(
+        valueListenable: readerBackgroundSetting,
+        builder: (context, backgroundSettings, _) {
+          return Scaffold(
+            backgroundColor: backgroundSettings.palette.color,
+            body: ReaderBackgroundSurface(
+              settings: backgroundSettings,
+              child: const Center(child: CircularProgressIndicator()),
+            ),
+          );
+        },
+      );
     }
 
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        return ValueListenableBuilder<ReaderBackgroundSettings>(
-          valueListenable: readerBackgroundSetting,
-          builder: (context, backgroundSettings, _) {
-            final body = controller.isLoadingInitial && controller.cards.isEmpty
-                ? const Center(child: Text('加载中…'))
-                : !controller.isLoadingInitial && controller.cards.isEmpty
-                ? _EmptyCardsMessage(showUnreadOnly: controller.showUnreadOnly)
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: EdgeInsets.only(
-                      top: MediaQuery.paddingOf(context).top + 2,
-                      bottom: 20,
-                    ),
-                    itemCount:
-                        controller.cards.length + (controller.hasMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index >= controller.cards.length) {
-                        return const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Center(child: CircularProgressIndicator()),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _handleBack();
+      },
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) {
+          return ValueListenableBuilder<ReaderBackgroundSettings>(
+            valueListenable: readerBackgroundSetting,
+            builder: (context, backgroundSettings, _) {
+              final body =
+                  controller.isLoadingInitial && controller.cards.isEmpty
+                  ? const Center(child: Text('加载中…'))
+                  : !controller.isLoadingInitial && controller.cards.isEmpty
+                  ? _EmptyCardsMessage(
+                      showUnreadOnly: controller.showUnreadOnly,
+                    )
+                  : ListView.builder(
+                      controller: _scrollController,
+                      padding: EdgeInsets.only(
+                        top: MediaQuery.paddingOf(context).top + 2,
+                        bottom: 20,
+                      ),
+                      itemCount:
+                          controller.cards.length +
+                          (controller.hasMore ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index >= controller.cards.length) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+
+                        final card = controller.cards[index];
+                        return BookCardTile(
+                          card: card,
+                          onToggleRead: () => _toggleRead(card),
+                          onToggleFavorite: () => _toggleFavorite(card),
+                          onShowContext: () => _showContext(card),
+                          showBookTitle: _books.length > 1,
+                          bookTitle: _bookTitleForCard(card),
                         );
-                      }
+                      },
+                    );
 
-                      final card = controller.cards[index];
-                      return BookCardTile(
-                        card: card,
-                        onToggleRead: () => _toggleRead(card),
-                        onToggleFavorite: () => _toggleFavorite(card),
-                        onShowContext: () => _showContext(card),
-                        showBookTitle: _books.length > 1,
-                        bookTitle: _bookTitleForCard(card),
-                      );
-                    },
-                  );
-
-            return Scaffold(
-              backgroundColor: backgroundSettings.palette.color,
-              drawerEdgeDragWidth: 120,
-              drawerScrimColor: Colors.black.withValues(alpha: 0.18),
-              drawer: AppDrawer(
-                onOpenBookshelf: _openBookshelf,
-                readingOrder: controller.readingOrder,
-                onReadingOrderChanged: (order) {
-                  saveReadingOrderSetting(order);
-                  controller.setReadingOrder(order);
-                },
-                themeMode: themeModeSetting.value,
-                onThemeModeChanged: saveThemeModeSetting,
-                showUnreadOnly: controller.showUnreadOnly,
-                onShowUnreadOnlyChanged: (value) {
-                  saveShowUnreadOnlySetting(value);
-                  controller.setShowUnreadOnly(value);
-                },
-                onOpenReadList: _openReadList,
-                onOpenFavoriteList: _openFavoriteList,
-                onOpenReaderBackgroundSettings: _openReaderBackgroundSettings,
-                contextBefore: _contextSettings.before,
-                contextAfter: _contextSettings.after,
-                onContextBeforeChanged: (value) {
-                  final next = _contextSettings.copyWith(before: value);
-                  saveContextSettingsSetting(next);
-                  setState(() {
-                    _contextSettings = next;
-                  });
-                },
-                onContextAfterChanged: (value) {
-                  final next = _contextSettings.copyWith(after: value);
-                  saveContextSettingsSetting(next);
-                  setState(() {
-                    _contextSettings = next;
-                  });
-                },
-              ),
-              body: Stack(
-                children: [
-                  ReaderBackgroundSurface(
-                    settings: backgroundSettings,
-                    child: body,
-                  ),
-                  if (!Platform.isAndroid && !Platform.isIOS)
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      child: SafeArea(
-                        child: Builder(
-                          builder: (context) {
-                            return IconButton(
-                              icon: const Icon(Icons.menu_rounded),
-                              tooltip: '打开菜单',
-                              onPressed: () =>
-                                  Scaffold.of(context).openDrawer(),
-                            );
-                          },
+              return Scaffold(
+                backgroundColor: backgroundSettings.palette.color,
+                drawerEdgeDragWidth: 120,
+                drawerScrimColor: Colors.black.withValues(alpha: 0.18),
+                drawer: AppDrawer(
+                  onOpenBookshelf: _openBookshelf,
+                  readingOrder: controller.readingOrder,
+                  onReadingOrderChanged: (order) {
+                    saveReadingOrderSetting(order);
+                    controller.setReadingOrder(order);
+                  },
+                  themeMode: themeModeSetting.value,
+                  onThemeModeChanged: saveThemeModeSetting,
+                  showUnreadOnly: controller.showUnreadOnly,
+                  onShowUnreadOnlyChanged: (value) {
+                    saveShowUnreadOnlySetting(value);
+                    controller.setShowUnreadOnly(value);
+                  },
+                  onOpenReadList: _openReadList,
+                  onOpenFavoriteList: _openFavoriteList,
+                  onOpenReaderBackgroundSettings: _openReaderBackgroundSettings,
+                  contextBefore: _contextSettings.before,
+                  contextAfter: _contextSettings.after,
+                  onContextBeforeChanged: (value) {
+                    final next = _contextSettings.copyWith(before: value);
+                    saveContextSettingsSetting(next);
+                    setState(() {
+                      _contextSettings = next;
+                    });
+                  },
+                  onContextAfterChanged: (value) {
+                    final next = _contextSettings.copyWith(after: value);
+                    saveContextSettingsSetting(next);
+                    setState(() {
+                      _contextSettings = next;
+                    });
+                  },
+                ),
+                body: Stack(
+                  children: [
+                    ReaderBackgroundSurface(
+                      settings: backgroundSettings,
+                      child: body,
+                    ),
+                    if (!Platform.isAndroid && !Platform.isIOS)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        child: SafeArea(
+                          child: Builder(
+                            builder: (context) {
+                              return IconButton(
+                                icon: const Icon(Icons.menu_rounded),
+                                tooltip: '打开菜单',
+                                onPressed: () =>
+                                    Scaffold.of(context).openDrawer(),
+                              );
+                            },
+                          ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
