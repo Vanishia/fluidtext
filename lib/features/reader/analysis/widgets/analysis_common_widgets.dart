@@ -497,12 +497,12 @@ class TimelineEventTile extends StatelessWidget {
     super.key,
     required this.timeLabel,
     required this.title,
-    required this.preview,
+    required this.detail,
   });
 
   final String timeLabel;
   final String title;
-  final String preview;
+  final String detail;
 
   @override
   Widget build(BuildContext context) {
@@ -549,12 +549,13 @@ class TimelineEventTile extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            preview,
-            maxLines: 3,
+            detail,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(height: 1.45),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),

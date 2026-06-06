@@ -118,8 +118,8 @@ class DayAnalysisSheet extends StatelessWidget {
                           padding: const EdgeInsets.only(bottom: 10),
                           child: TimelineEventTile(
                             timeLabel: formatTime(event.timestamp),
-                            title: analytics.bookTitle(event.card.bookId),
-                            preview: event.card.content,
+                            title: analytics.bookTitle(event.bookId),
+                            detail: '#${event.cardIndex}',
                           ),
                         ),
                       ),
@@ -143,8 +143,8 @@ class DayAnalysisSheet extends StatelessWidget {
                           padding: const EdgeInsets.only(bottom: 10),
                           child: TimelineEventTile(
                             timeLabel: formatTime(event.timestamp),
-                            title: analytics.bookTitle(event.card.bookId),
-                            preview: event.card.content,
+                            title: analytics.bookTitle(event.bookId),
+                            detail: '#${event.cardIndex}',
                           ),
                         ),
                       ),

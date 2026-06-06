@@ -25,12 +25,18 @@ List<ReadingAnalysisModuleType> normalizeReadingAnalysisModuleOrder(
 
   if (values != null) {
     for (final value in values) {
-      if (value is! String) continue;
-      final match = ReadingAnalysisModuleType.values.where(
-        (item) => item.name == value,
-      );
-      if (match.isEmpty) continue;
-      final module = match.first;
+      ReadingAnalysisModuleType? module;
+      if (value is ReadingAnalysisModuleType) {
+        module = value;
+      } else if (value is String) {
+        for (final item in ReadingAnalysisModuleType.values) {
+          if (item.name == value) {
+            module = item;
+            break;
+          }
+        }
+      }
+      if (module == null) continue;
       if (!resolved.contains(module)) {
         resolved.add(module);
       }

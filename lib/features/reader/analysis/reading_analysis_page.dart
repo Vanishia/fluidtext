@@ -49,13 +49,13 @@ class _ReadingAnalysisPageState extends State<ReadingAnalysisPage> {
   }
 
   Future<void> _load({bool forceFullScan = false}) async {
-    final cached = _controller.getCachedEntry(forceFullScan: forceFullScan);
+    final cached = _controller.getCachedAnalytics(forceFullScan: forceFullScan);
 
     setState(() {
       _isLoading = cached == null;
       _error = null;
       if (cached != null) {
-        _analytics = cached.analytics;
+        _analytics = cached;
       }
     });
 
@@ -159,16 +159,24 @@ class _ReadingAnalysisPageState extends State<ReadingAnalysisPage> {
     required int index,
   }) {
     final content = switch (module) {
-      ReadingAnalysisModuleType.overview => OverviewModule(analytics: analytics),
+      ReadingAnalysisModuleType.overview => OverviewModule(
+        analytics: analytics,
+      ),
       ReadingAnalysisModuleType.heatmap => HeatmapModule(
         analytics: analytics,
         onOpenDay: (day) => _openDayAnalysis(context, analytics, day),
       ),
       ReadingAnalysisModuleType.streaks => StreaksModule(analytics: analytics),
-      ReadingAnalysisModuleType.activity => ActivityModule(analytics: analytics),
-      ReadingAnalysisModuleType.rankings => RankingsModule(analytics: analytics),
+      ReadingAnalysisModuleType.activity => ActivityModule(
+        analytics: analytics,
+      ),
+      ReadingAnalysisModuleType.rankings => RankingsModule(
+        analytics: analytics,
+      ),
       ReadingAnalysisModuleType.depth => DepthModule(analytics: analytics),
-      ReadingAnalysisModuleType.favorites => FavoritesModule(analytics: analytics),
+      ReadingAnalysisModuleType.favorites => FavoritesModule(
+        analytics: analytics,
+      ),
     };
 
     final title = moduleTitle(module);
