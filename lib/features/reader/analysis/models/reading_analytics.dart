@@ -82,7 +82,6 @@ class ReadingAnalytics {
     required this.bookTitlesById,
     required this.bookSummaries,
     required this.daysByDate,
-    required this.recentFavoriteEvents,
     required this.totalCards,
     required this.totalRead,
     required this.totalFavorites,
@@ -108,7 +107,6 @@ class ReadingAnalytics {
   final Map<int, String> bookTitlesById;
   final List<BookSummary> bookSummaries;
   final Map<DateTime, DayAnalysis> daysByDate;
-  final List<BookCardActivityEvent> recentFavoriteEvents;
   final int totalCards;
   final int totalRead;
   final int totalFavorites;
@@ -194,7 +192,6 @@ class ReadingAnalytics {
       }
     }
 
-    final recentFavoriteEvents = <BookCardActivityEvent>[];
     for (final event in favoriteEvents) {
       final favoritedAt = event.timestamp.toLocal();
       final localEvent = event.copyWith(timestamp: favoritedAt);
@@ -208,7 +205,6 @@ class ReadingAnalytics {
       );
       if (!day.isBefore(sevenDayStart)) favoriteLast7 += 1;
       if (!day.isBefore(thirtyDayStart)) favoriteLast30 += 1;
-      recentFavoriteEvents.add(localEvent);
 
       final current = lastFavoriteByBook[event.bookId];
       if (current == null || favoritedAt.isAfter(current)) {
@@ -220,7 +216,6 @@ class ReadingAnalytics {
       day.readEvents.sort((a, b) => a.timestamp.compareTo(b.timestamp));
       day.favoriteEvents.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     }
-    recentFavoriteEvents.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
     final activeReadDays =
         daysByDate.entries
@@ -290,7 +285,6 @@ class ReadingAnalytics {
       bookTitlesById: bookTitlesById,
       bookSummaries: summaries,
       daysByDate: daysByDate,
-      recentFavoriteEvents: recentFavoriteEvents,
       totalCards: totalCards,
       totalRead: totalRead,
       totalFavorites: totalFavorites,

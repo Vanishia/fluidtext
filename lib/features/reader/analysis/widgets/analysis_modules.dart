@@ -559,9 +559,6 @@ class FavoritesModule extends StatelessWidget {
         .where((item) => item.favoriteCount > 0)
         .take(5)
         .toList(growable: false);
-    final recentFavorites = analytics.recentFavoriteEvents
-        .take(5)
-        .toList(growable: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -600,26 +597,6 @@ class FavoritesModule extends StatelessWidget {
             title: '最常收藏的书',
             items: topFavoriteBooks,
             formatter: (item) => '${item.favoriteCount} 张',
-          ),
-        ],
-        if (recentFavorites.isNotEmpty) ...[
-          const SizedBox(height: 18),
-          Text(
-            '最近收藏',
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 10),
-          ...recentFavorites.map(
-            (event) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: TimelineEventTile(
-                timeLabel: formatTime(event.timestamp),
-                title: analytics.bookTitle(event.bookId),
-                detail: '#${event.cardIndex}',
-              ),
-            ),
           ),
         ],
       ],
