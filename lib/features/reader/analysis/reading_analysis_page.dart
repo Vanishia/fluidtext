@@ -126,6 +126,7 @@ class _ReadingAnalysisPageState extends State<ReadingAnalysisPage> {
       padding: EdgeInsets.fromLTRB(10, 52, 10, bottomInset + 14),
       buildDefaultDragHandles: false,
       autoScrollerVelocityScalar: 12.0,
+      proxyDecorator: _buildReorderProxy,
       onReorder: _onReorder,
       itemCount: _moduleOrder.length,
       itemBuilder: (context, index) {
@@ -145,6 +146,28 @@ class _ReadingAnalysisPageState extends State<ReadingAnalysisPage> {
               ),
             ),
           ),
+        );
+      },
+    );
+  }
+
+  Widget _buildReorderProxy(
+    Widget child,
+    int index,
+    Animation<double> animation,
+  ) {
+    final scale = Tween<double>(
+      begin: 1,
+      end: 1.015,
+    ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic));
+
+    return AnimatedBuilder(
+      animation: animation,
+      child: child,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: scale.value,
+          child: Opacity(opacity: 0.98, child: child),
         );
       },
     );
