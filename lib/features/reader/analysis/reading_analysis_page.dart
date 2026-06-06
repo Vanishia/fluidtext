@@ -64,7 +64,9 @@ class _ReadingAnalysisPageState extends State<ReadingAnalysisPage> {
       if (!mounted) return;
       setState(() {
         _analytics = analytics;
-        _moduleOrder = normalizeReadingAnalysisModuleOrder(_moduleOrder);
+        _moduleOrder = List<ReadingAnalysisModuleType>.from(
+          normalizeReadingAnalysisModuleOrder(_moduleOrder),
+        );
         _isLoading = false;
       });
     } catch (error) {
@@ -120,34 +122,31 @@ class _ReadingAnalysisPageState extends State<ReadingAnalysisPage> {
     ReaderBackgroundSettings backgroundSettings,
   ) {
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
-    return RefreshIndicator(
-      onRefresh: () => _load(forceFullScan: true),
-      child: ReorderableListView.builder(
-        padding: EdgeInsets.fromLTRB(10, 52, 10, bottomInset + 14),
-        buildDefaultDragHandles: false,
-        autoScrollerVelocityScalar: 12.0,
-        onReorder: _onReorder,
-        itemCount: _moduleOrder.length,
-        itemBuilder: (context, index) {
-          final module = _moduleOrder[index];
-          return Padding(
-            key: ValueKey(module.name),
-            padding: const EdgeInsets.only(bottom: 14),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
-                child: _buildModuleCard(
-                  context,
-                  analytics: analytics,
-                  backgroundSettings: backgroundSettings,
-                  module: module,
-                  index: index,
-                ),
+    return ReorderableListView.builder(
+      padding: EdgeInsets.fromLTRB(10, 52, 10, bottomInset + 14),
+      buildDefaultDragHandles: false,
+      autoScrollerVelocityScalar: 12.0,
+      onReorder: _onReorder,
+      itemCount: _moduleOrder.length,
+      itemBuilder: (context, index) {
+        final module = _moduleOrder[index];
+        return Padding(
+          key: ValueKey(module.name),
+          padding: const EdgeInsets.only(bottom: 14),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: _buildModuleCard(
+                context,
+                analytics: analytics,
+                backgroundSettings: backgroundSettings,
+                module: module,
+                index: index,
               ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
