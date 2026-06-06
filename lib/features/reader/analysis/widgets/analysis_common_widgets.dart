@@ -363,16 +363,10 @@ class VerticalBar extends StatelessWidget {
 }
 
 class RankingGroup extends StatelessWidget {
-  const RankingGroup({
-    super.key,
-    required this.title,
-    required this.items,
-    required this.formatter,
-  });
+  const RankingGroup({super.key, required this.title, required this.items});
 
   final String title;
   final List<BookSummary> items;
-  final String Function(BookSummary item) formatter;
 
   @override
   Widget build(BuildContext context) {
@@ -398,10 +392,55 @@ class RankingGroup extends StatelessWidget {
             ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 10),
-          ...items.map(
-            (item) => Padding(
+          ...items.indexed.map(
+            (entry) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: BookProgressRow(book: item, trailing: formatter(item)),
+              child: BookTitleRankRow(rank: entry.$1 + 1, book: entry.$2),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class BookTitleRankRow extends StatelessWidget {
+  const BookTitleRankRow({super.key, required this.rank, required this.book});
+
+  final int rank;
+  final BookSummary book;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: softPanelDecoration(
+        cs,
+        alpha: 0.08,
+        borderAlpha: 0.08,
+        radius: 6,
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 28,
+            child: Text(
+              '$rank',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: cs.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              book.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -632,7 +671,7 @@ String moduleTitle(ReadingAnalysisModuleType module) {
   return switch (module) {
     ReadingAnalysisModuleType.overview => '阅读总览',
     ReadingAnalysisModuleType.heatmap => '阅读热力图',
-    ReadingAnalysisModuleType.streaks => '连续阅读',
+    ReadingAnalysisModuleType.streaks => '近期阅读',
     ReadingAnalysisModuleType.activity => '活跃分布',
     ReadingAnalysisModuleType.rankings => '书籍排行',
     ReadingAnalysisModuleType.depth => '阅读深度',
@@ -644,7 +683,7 @@ IconData moduleIcon(ReadingAnalysisModuleType module) {
   return switch (module) {
     ReadingAnalysisModuleType.overview => Icons.dashboard_rounded,
     ReadingAnalysisModuleType.heatmap => Icons.calendar_month_rounded,
-    ReadingAnalysisModuleType.streaks => Icons.local_fire_department_rounded,
+    ReadingAnalysisModuleType.streaks => Icons.event_available_rounded,
     ReadingAnalysisModuleType.activity => Icons.timeline_rounded,
     ReadingAnalysisModuleType.rankings => Icons.leaderboard_rounded,
     ReadingAnalysisModuleType.depth => Icons.stacked_bar_chart_rounded,

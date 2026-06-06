@@ -30,8 +30,8 @@ class OverviewModule extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: HeroKpi(
-                label: '连续阅读',
-                value: '${analytics.currentStreak} 天',
+                label: '收藏',
+                value: '${analytics.totalFavorites} 张',
               ),
             ),
           ],
@@ -275,7 +275,7 @@ class _HeatmapModuleState extends State<HeatmapModule> {
             ),
             const Spacer(),
             Text(
-              '活跃 ${widget.analytics.activeDays365} 天 · 连续 ${widget.analytics.bestStreak} 天',
+              '活跃 ${widget.analytics.activeDays365} 天',
               style: Theme.of(
                 context,
               ).textTheme.labelMedium?.copyWith(color: cs.onSurfaceVariant),
@@ -327,16 +327,6 @@ class StreaksModule extends StatelessWidget {
           runSpacing: 12,
           children: [
             MetricTile(
-              label: '当前连续',
-              value: '${analytics.currentStreak} 天',
-              hint: analytics.currentStreak > 0 ? '今天仍在延续' : '今天还没读',
-            ),
-            MetricTile(
-              label: '最佳纪录',
-              value: '${analytics.bestStreak} 天',
-              hint: '历史最长连续阅读',
-            ),
-            MetricTile(
               label: '近 365 天',
               value: '${analytics.activeDays365} 天',
               hint: '有已读记录的天数',
@@ -385,10 +375,6 @@ class ActivityModule extends StatelessWidget {
     final weekdayPeaks = analytics.busiestWeekdayLabel;
     final hourPeak = analytics.busiestHourBucketLabel;
     final hourBuckets = analytics.hourBuckets;
-    final trendLast14Count = analytics.trendLast14.fold<int>(
-      0,
-      (sum, item) => sum + item.count,
-    );
     final cs = Theme.of(context).colorScheme;
 
     return Column(
@@ -407,13 +393,6 @@ class ActivityModule extends StatelessWidget {
             context,
           ).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
         ),
-        const SizedBox(height: 6),
-        Text(
-          '近 14 天：$trendLast14Count 张已读',
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
-        ),
         const SizedBox(height: 16),
         BarSection(
           title: '周内分布',
@@ -427,15 +406,6 @@ class ActivityModule extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         BarSection(title: '时段分布', bars: hourBuckets),
-        const SizedBox(height: 16),
-        BarSection(
-          title: '近 14 天趋势',
-          bars: analytics.trendLast14
-              .map(
-                (item) => BarDatum(label: item.shortLabel, value: item.count),
-              )
-              .toList(growable: false),
-        ),
       ],
     );
   }
@@ -463,23 +433,11 @@ class RankingsModule extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        RankingGroup(
-          title: '已读最多',
-          items: mostRead,
-          formatter: (item) => '${item.readCount}/${item.totalCount}',
-        ),
+        RankingGroup(title: '已读最多', items: mostRead),
         const SizedBox(height: 16),
-        RankingGroup(
-          title: '完成度最高',
-          items: highestCompletion,
-          formatter: (item) => '${(item.progress * 100).round()}%',
-        ),
+        RankingGroup(title: '完成度最高', items: highestCompletion),
         const SizedBox(height: 16),
-        RankingGroup(
-          title: '收藏最多',
-          items: mostFavorite,
-          formatter: (item) => '${item.favoriteCount} 张',
-        ),
+        RankingGroup(title: '收藏最多', items: mostFavorite),
       ],
     );
   }
@@ -573,16 +531,6 @@ class FavoritesModule extends StatelessWidget {
               hint: '累计被标记收藏',
             ),
             MetricTile(
-              label: '近 7 天',
-              value: '${analytics.favoriteLast7}',
-              hint: '新收藏卡片',
-            ),
-            MetricTile(
-              label: '近 30 天',
-              value: '${analytics.favoriteLast30}',
-              hint: '新收藏卡片',
-            ),
-            MetricTile(
               label: '收藏率',
               value: analytics.totalRead == 0
                   ? '0%'
@@ -593,11 +541,7 @@ class FavoritesModule extends StatelessWidget {
         ),
         if (topFavoriteBooks.isNotEmpty) ...[
           const SizedBox(height: 18),
-          RankingGroup(
-            title: '最常收藏的书',
-            items: topFavoriteBooks,
-            formatter: (item) => '${item.favoriteCount} 张',
-          ),
+          RankingGroup(title: '最常收藏的书', items: topFavoriteBooks),
         ],
       ],
     );
