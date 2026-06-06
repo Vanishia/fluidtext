@@ -5,6 +5,7 @@ import 'package:isar/isar.dart';
 import '../models/book.dart';
 import '../models/book_asset.dart';
 import '../models/book_card.dart';
+import '../models/book_card_activity_event.dart';
 import '../services/book_asset_store.dart';
 
 class BookCardStats {
@@ -107,28 +108,6 @@ class BookCardRepository {
         .findAll();
   }
 
-  Future<List<BookCard>> loadReadCardsSince(List<int> bookIds, DateTime since) {
-    if (bookIds.isEmpty) {
-      return isar.bookCards
-          .filter()
-          .isReadEqualTo(true)
-          .and()
-          .readAtGreaterThan(since)
-          .sortByReadAtDesc()
-          .findAll();
-    }
-
-    return isar.bookCards
-        .filter()
-        .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
-        .and()
-        .isReadEqualTo(true)
-        .and()
-        .readAtGreaterThan(since)
-        .sortByReadAtDesc()
-        .findAll();
-  }
-
   Future<List<BookCard>> loadFavoriteCards(List<int> bookIds) {
     if (bookIds.isEmpty) {
       return isar.bookCards
@@ -147,29 +126,318 @@ class BookCardRepository {
         .findAll();
   }
 
-  Future<List<BookCard>> loadFavoriteCardsSince(
+  Future<List<BookCardActivityEvent>> loadReadActivityEvents(
     List<int> bookIds,
-    DateTime since,
-  ) {
-    if (bookIds.isEmpty) {
-      return isar.bookCards
-          .filter()
-          .isFavoriteEqualTo(true)
-          .and()
-          .favoritedAtGreaterThan(since)
-          .sortByFavoritedAtDesc()
-          .findAll();
+  ) async {
+    try {
+      final events = await isar.txn(
+        () => _loadReadActivityEventsByProjection(bookIds),
+      );
+      if (events != null) return events;
+    } catch (error, stackTrace) {
+      developer.log(
+        'Read activity projection failed; falling back to full card load.',
+        name: 'BookCardRepository',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
 
-    return isar.bookCards
-        .filter()
-        .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
-        .and()
-        .isFavoriteEqualTo(true)
-        .and()
-        .favoritedAtGreaterThan(since)
-        .sortByFavoritedAtDesc()
-        .findAll();
+    final cards = await loadReadCards(bookIds);
+    return _readCardsToActivityEvents(cards);
+  }
+
+  Future<List<BookCardActivityEvent>> loadFavoriteActivityEvents(
+    List<int> bookIds,
+  ) async {
+    try {
+      final events = await isar.txn(
+        () => _loadFavoriteActivityEventsByProjection(bookIds),
+      );
+      if (events != null) return events;
+    } catch (error, stackTrace) {
+      developer.log(
+        'Favorite activity projection failed; falling back to full card load.',
+        name: 'BookCardRepository',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final cards = await loadFavoriteCards(bookIds);
+    return _favoriteCardsToActivityEvents(cards);
+  }
+
+  Future<List<BookCardActivityEvent>?> _loadReadActivityEventsByProjection(
+    List<int> bookIds,
+  ) async {
+    final ids = bookIds.isEmpty
+        ? await isar.bookCards
+              .filter()
+              .isReadEqualTo(true)
+              .and()
+              .readAtIsNotNull()
+              .sortByReadAtDesc()
+              .thenByIdDesc()
+              .idProperty()
+              .findAll()
+        : await isar.bookCards
+              .filter()
+              .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
+              .and()
+              .isReadEqualTo(true)
+              .and()
+              .readAtIsNotNull()
+              .sortByReadAtDesc()
+              .thenByIdDesc()
+              .idProperty()
+              .findAll();
+    final projectedBookIds = bookIds.isEmpty
+        ? await isar.bookCards
+              .filter()
+              .isReadEqualTo(true)
+              .and()
+              .readAtIsNotNull()
+              .sortByReadAtDesc()
+              .thenByIdDesc()
+              .bookIdProperty()
+              .findAll()
+        : await isar.bookCards
+              .filter()
+              .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
+              .and()
+              .isReadEqualTo(true)
+              .and()
+              .readAtIsNotNull()
+              .sortByReadAtDesc()
+              .thenByIdDesc()
+              .bookIdProperty()
+              .findAll();
+    final cardIndexes = bookIds.isEmpty
+        ? await isar.bookCards
+              .filter()
+              .isReadEqualTo(true)
+              .and()
+              .readAtIsNotNull()
+              .sortByReadAtDesc()
+              .thenByIdDesc()
+              .cardIndexProperty()
+              .findAll()
+        : await isar.bookCards
+              .filter()
+              .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
+              .and()
+              .isReadEqualTo(true)
+              .and()
+              .readAtIsNotNull()
+              .sortByReadAtDesc()
+              .thenByIdDesc()
+              .cardIndexProperty()
+              .findAll();
+    final timestamps = bookIds.isEmpty
+        ? await isar.bookCards
+              .filter()
+              .isReadEqualTo(true)
+              .and()
+              .readAtIsNotNull()
+              .sortByReadAtDesc()
+              .thenByIdDesc()
+              .readAtProperty()
+              .findAll()
+        : await isar.bookCards
+              .filter()
+              .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
+              .and()
+              .isReadEqualTo(true)
+              .and()
+              .readAtIsNotNull()
+              .sortByReadAtDesc()
+              .thenByIdDesc()
+              .readAtProperty()
+              .findAll();
+
+    return _zipActivityEvents(
+      ids: ids,
+      bookIds: projectedBookIds,
+      cardIndexes: cardIndexes,
+      timestamps: timestamps,
+      fallbackReason: 'read projection mismatch',
+    );
+  }
+
+  Future<List<BookCardActivityEvent>?> _loadFavoriteActivityEventsByProjection(
+    List<int> bookIds,
+  ) async {
+    final ids = bookIds.isEmpty
+        ? await isar.bookCards
+              .filter()
+              .isFavoriteEqualTo(true)
+              .and()
+              .favoritedAtIsNotNull()
+              .sortByFavoritedAtDesc()
+              .thenByIdDesc()
+              .idProperty()
+              .findAll()
+        : await isar.bookCards
+              .filter()
+              .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
+              .and()
+              .isFavoriteEqualTo(true)
+              .and()
+              .favoritedAtIsNotNull()
+              .sortByFavoritedAtDesc()
+              .thenByIdDesc()
+              .idProperty()
+              .findAll();
+    final projectedBookIds = bookIds.isEmpty
+        ? await isar.bookCards
+              .filter()
+              .isFavoriteEqualTo(true)
+              .and()
+              .favoritedAtIsNotNull()
+              .sortByFavoritedAtDesc()
+              .thenByIdDesc()
+              .bookIdProperty()
+              .findAll()
+        : await isar.bookCards
+              .filter()
+              .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
+              .and()
+              .isFavoriteEqualTo(true)
+              .and()
+              .favoritedAtIsNotNull()
+              .sortByFavoritedAtDesc()
+              .thenByIdDesc()
+              .bookIdProperty()
+              .findAll();
+    final cardIndexes = bookIds.isEmpty
+        ? await isar.bookCards
+              .filter()
+              .isFavoriteEqualTo(true)
+              .and()
+              .favoritedAtIsNotNull()
+              .sortByFavoritedAtDesc()
+              .thenByIdDesc()
+              .cardIndexProperty()
+              .findAll()
+        : await isar.bookCards
+              .filter()
+              .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
+              .and()
+              .isFavoriteEqualTo(true)
+              .and()
+              .favoritedAtIsNotNull()
+              .sortByFavoritedAtDesc()
+              .thenByIdDesc()
+              .cardIndexProperty()
+              .findAll();
+    final timestamps = bookIds.isEmpty
+        ? await isar.bookCards
+              .filter()
+              .isFavoriteEqualTo(true)
+              .and()
+              .favoritedAtIsNotNull()
+              .sortByFavoritedAtDesc()
+              .thenByIdDesc()
+              .favoritedAtProperty()
+              .findAll()
+        : await isar.bookCards
+              .filter()
+              .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
+              .and()
+              .isFavoriteEqualTo(true)
+              .and()
+              .favoritedAtIsNotNull()
+              .sortByFavoritedAtDesc()
+              .thenByIdDesc()
+              .favoritedAtProperty()
+              .findAll();
+
+    return _zipActivityEvents(
+      ids: ids,
+      bookIds: projectedBookIds,
+      cardIndexes: cardIndexes,
+      timestamps: timestamps,
+      fallbackReason: 'favorite projection mismatch',
+    );
+  }
+
+  List<BookCardActivityEvent>? _zipActivityEvents({
+    required List<int> ids,
+    required List<int> bookIds,
+    required List<int> cardIndexes,
+    required List<DateTime?> timestamps,
+    required String fallbackReason,
+  }) {
+    final length = ids.length;
+    if (bookIds.length != length ||
+        cardIndexes.length != length ||
+        timestamps.length != length ||
+        timestamps.any((timestamp) => timestamp == null)) {
+      developer.log(
+        '$fallbackReason: ids=${ids.length}, bookIds=${bookIds.length}, cardIndexes=${cardIndexes.length}, timestamps=${timestamps.length}',
+        name: 'BookCardRepository',
+      );
+      return null;
+    }
+
+    return List<BookCardActivityEvent>.generate(
+      length,
+      (index) => BookCardActivityEvent(
+        cardId: ids[index],
+        bookId: bookIds[index],
+        cardIndex: cardIndexes[index],
+        timestamp: timestamps[index]!,
+      ),
+      growable: false,
+    );
+  }
+
+  List<BookCardActivityEvent> _readCardsToActivityEvents(List<BookCard> cards) {
+    final events = <BookCardActivityEvent>[];
+    for (final card in cards) {
+      final timestamp = card.readAt;
+      if (timestamp == null) continue;
+      events.add(
+        BookCardActivityEvent(
+          cardId: card.id,
+          bookId: card.bookId,
+          cardIndex: card.cardIndex,
+          timestamp: timestamp,
+        ),
+      );
+    }
+    events.sort(_compareActivityEventsDesc);
+    return List<BookCardActivityEvent>.unmodifiable(events);
+  }
+
+  List<BookCardActivityEvent> _favoriteCardsToActivityEvents(
+    List<BookCard> cards,
+  ) {
+    final events = <BookCardActivityEvent>[];
+    for (final card in cards) {
+      final timestamp = card.favoritedAt;
+      if (timestamp == null) continue;
+      events.add(
+        BookCardActivityEvent(
+          cardId: card.id,
+          bookId: card.bookId,
+          cardIndex: card.cardIndex,
+          timestamp: timestamp,
+        ),
+      );
+    }
+    events.sort(_compareActivityEventsDesc);
+    return List<BookCardActivityEvent>.unmodifiable(events);
+  }
+
+  int _compareActivityEventsDesc(
+    BookCardActivityEvent a,
+    BookCardActivityEvent b,
+  ) {
+    final timestampCompare = b.timestamp.compareTo(a.timestamp);
+    if (timestampCompare != 0) return timestampCompare;
+    return b.cardId.compareTo(a.cardId);
   }
 
   Future<Map<int, BookCardStats>> loadBookStats(List<int> bookIds) async {

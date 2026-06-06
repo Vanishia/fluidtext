@@ -13,6 +13,7 @@ import '../../services/book_import_service.dart';
 import '../../services/data_backup_service.dart';
 import '../../widgets/blocking_loader.dart';
 import '../../widgets/glass.dart';
+import '../reader/analysis/reading_analysis_controller.dart';
 
 Future<List<Book>?> showBookshelfSheet(
   BuildContext context, {
@@ -145,6 +146,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
         sourceFileName: file?.name,
         targetCharsPerCard: targetCharsPerCard,
       );
+      ReadingAnalysisController.clearCache();
 
       await _reloadBooks();
       if (!mounted) return;
@@ -275,6 +277,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     try {
       await repository.deleteBook(book.id);
       await BookRemarkService.instance.removeRemark(book.id);
+      ReadingAnalysisController.clearCache();
       await _reloadBooks();
       if (!mounted) return;
       setState(() {

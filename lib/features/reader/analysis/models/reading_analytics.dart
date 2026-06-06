@@ -1,7 +1,5 @@
-import 'package:flutter/material.dart';
-
 import '../../../../models/book.dart';
-import '../../../../models/book_card.dart';
+import '../../../../models/book_card_activity_event.dart';
 import '../../../../repositories/book_card_repository.dart';
 
 class BarDatum {
@@ -20,19 +18,12 @@ class TrendPoint {
   String get shortLabel => '${date.month}/${date.day}';
 }
 
-class TimedCardEvent {
-  const TimedCardEvent({required this.timestamp, required this.card});
-
-  final DateTime timestamp;
-  final BookCard card;
-}
-
 class DayAnalysis {
   DayAnalysis(this.date);
 
   final DateTime date;
-  final List<TimedCardEvent> readEvents = <TimedCardEvent>[];
-  final List<TimedCardEvent> favoriteEvents = <TimedCardEvent>[];
+  final List<BookCardActivityEvent> readEvents = <BookCardActivityEvent>[];
+  final List<BookCardActivityEvent> favoriteEvents = <BookCardActivityEvent>[];
   final Map<int, int> readCountByBook = <int, int>{};
   final Map<int, int> favoriteCountByBook = <int, int>{};
   final List<int> hourlyReads = List<int>.filled(24, 0);
@@ -117,7 +108,7 @@ class ReadingAnalytics {
   final Map<int, String> bookTitlesById;
   final List<BookSummary> bookSummaries;
   final Map<DateTime, DayAnalysis> daysByDate;
-  final List<TimedCardEvent> recentFavoriteEvents;
+  final List<BookCardActivityEvent> recentFavoriteEvents;
   final int totalCards;
   final int totalRead;
   final int totalFavorites;
@@ -138,12 +129,12 @@ class ReadingAnalytics {
   final List<int> hourCounts;
   final List<TrendPoint> trendLast14;
 
-  factory ReadingAnalytics.from({
+  factory ReadingAnalytics.fromEvents({
     required List<Book> books,
     required Map<int, String> bookTitlesById,
     required Map<int, BookCardStats> statsByBookId,
-    required List<BookCard> readCards,
-    required List<BookCard> favoriteCards,
+    required List<BookCardActivityEvent> readEvents,
+    required List<BookCardActivityEvent> favoriteEvents,
   }) {
     final totalCards = statsByBookId.values.fold<int>(
       0,
@@ -163,7 +154,7 @@ class ReadingAnalytics {
     final daysByDate = <DateTime, DayAnalysis>{};
     final weekdayCounts = List<int>.filled(7, 0);
     final hourCounts = List<int>.filled(24, 0);
-    final today = DateUtils.dateOnly(DateTime.now());
+    final today = _dateOnly(DateTime.now());
     final sevenDayStart = today.subtract(const Duration(days: 6));
     final thirtyDayStart = today.subtract(const Duration(days: 29));
     final weekStart = today.subtract(Duration(days: today.weekday - 1));
@@ -177,15 +168,14 @@ class ReadingAnalytics {
     var thisWeekRead = 0;
     var thisMonthRead = 0;
 
-    for (final card in readCards) {
-      final readAt = card.readAt?.toLocal();
-      if (readAt == null) continue;
-      final day = DateUtils.dateOnly(readAt);
+    for (final event in readEvents) {
+      final readAt = event.timestamp.toLocal();
+      final localEvent = event.copyWith(timestamp: readAt);
+      final day = _dateOnly(readAt);
       final dayAnalysis = daysByDate.putIfAbsent(day, () => DayAnalysis(day));
-      final event = TimedCardEvent(timestamp: readAt, card: card);
-      dayAnalysis.readEvents.add(event);
+      dayAnalysis.readEvents.add(localEvent);
       dayAnalysis.readCountByBook.update(
-        card.bookId,
+        event.bookId,
         (value) => value + 1,
         ifAbsent: () => 1,
       );
@@ -198,32 +188,31 @@ class ReadingAnalytics {
       if (!day.isBefore(weekStart)) thisWeekRead += 1;
       if (!day.isBefore(monthStart)) thisMonthRead += 1;
 
-      final current = lastReadByBook[card.bookId];
+      final current = lastReadByBook[event.bookId];
       if (current == null || readAt.isAfter(current)) {
-        lastReadByBook[card.bookId] = readAt;
+        lastReadByBook[event.bookId] = readAt;
       }
     }
 
-    final favoriteEvents = <TimedCardEvent>[];
-    for (final card in favoriteCards) {
-      final favoritedAt = card.favoritedAt?.toLocal();
-      if (favoritedAt == null) continue;
-      final day = DateUtils.dateOnly(favoritedAt);
+    final recentFavoriteEvents = <BookCardActivityEvent>[];
+    for (final event in favoriteEvents) {
+      final favoritedAt = event.timestamp.toLocal();
+      final localEvent = event.copyWith(timestamp: favoritedAt);
+      final day = _dateOnly(favoritedAt);
       final dayAnalysis = daysByDate.putIfAbsent(day, () => DayAnalysis(day));
-      final event = TimedCardEvent(timestamp: favoritedAt, card: card);
-      dayAnalysis.favoriteEvents.add(event);
+      dayAnalysis.favoriteEvents.add(localEvent);
       dayAnalysis.favoriteCountByBook.update(
-        card.bookId,
+        event.bookId,
         (value) => value + 1,
         ifAbsent: () => 1,
       );
       if (!day.isBefore(sevenDayStart)) favoriteLast7 += 1;
       if (!day.isBefore(thirtyDayStart)) favoriteLast30 += 1;
-      favoriteEvents.add(event);
+      recentFavoriteEvents.add(localEvent);
 
-      final current = lastFavoriteByBook[card.bookId];
+      final current = lastFavoriteByBook[event.bookId];
       if (current == null || favoritedAt.isAfter(current)) {
-        lastFavoriteByBook[card.bookId] = favoritedAt;
+        lastFavoriteByBook[event.bookId] = favoritedAt;
       }
     }
 
@@ -231,7 +220,7 @@ class ReadingAnalytics {
       day.readEvents.sort((a, b) => a.timestamp.compareTo(b.timestamp));
       day.favoriteEvents.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     }
-    favoriteEvents.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    recentFavoriteEvents.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
     final activeReadDays =
         daysByDate.entries
@@ -301,7 +290,7 @@ class ReadingAnalytics {
       bookTitlesById: bookTitlesById,
       bookSummaries: summaries,
       daysByDate: daysByDate,
-      recentFavoriteEvents: favoriteEvents,
+      recentFavoriteEvents: recentFavoriteEvents,
       totalCards: totalCards,
       totalRead: totalRead,
       totalFavorites: totalFavorites,
@@ -435,4 +424,9 @@ class ReadingAnalytics {
   }
 
   String bookTitle(int bookId) => bookTitlesById[bookId] ?? '未知书籍';
+}
+
+DateTime _dateOnly(DateTime date) {
+  final local = date.toLocal();
+  return DateTime(local.year, local.month, local.day);
 }

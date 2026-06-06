@@ -431,7 +431,9 @@ class ActivityModule extends StatelessWidget {
         BarSection(
           title: '近 14 天趋势',
           bars: analytics.trendLast14
-              .map((item) => BarDatum(label: item.shortLabel, value: item.count))
+              .map(
+                (item) => BarDatum(label: item.shortLabel, value: item.count),
+              )
               .toList(growable: false),
         ),
       ],
@@ -446,7 +448,9 @@ class RankingsModule extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mostRead = analytics.booksSortedByRead.take(4).toList(growable: false);
+    final mostRead = analytics.booksSortedByRead
+        .take(4)
+        .toList(growable: false);
     final highestCompletion = analytics.booksSortedByProgress
         .where((item) => item.readCount > 0)
         .take(4)
@@ -612,8 +616,8 @@ class FavoritesModule extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 10),
               child: TimelineEventTile(
                 timeLabel: formatTime(event.timestamp),
-                title: analytics.bookTitle(event.card.bookId),
-                preview: event.card.content,
+                title: analytics.bookTitle(event.bookId),
+                detail: '#${event.cardIndex}',
               ),
             ),
           ),
