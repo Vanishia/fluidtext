@@ -376,8 +376,6 @@ flutter pub run flutter_launcher_icons:main
 
 本项目采用 **GNU Affero General Public License v3.0 (AGPL-3.0)** 开源。
 
-应用图标由项目作者绘制。
-
 详见 [`LICENSE`](LICENSE) 文件。
 
 ---
