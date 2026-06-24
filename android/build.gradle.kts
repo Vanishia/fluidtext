@@ -1,3 +1,8 @@
+import com.android.build.api.dsl.LibraryExtension
+import com.android.build.api.variant.AndroidComponentsExtension
+import com.android.build.api.variant.LibraryVariant
+import com.android.build.api.variant.LibraryVariantBuilder
+
 allprojects {
     repositories {
         google()
@@ -19,23 +24,21 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
-// AGP 8+ requires every Android module to declare `namespace`.
-// Some third-party Flutter plugins (e.g. isar_flutter_libs 3.1.0+1) may not yet set it,
-// which breaks configuration. Set a safe default for known offenders.
+// isar_flutter_libs 3.1.0+1 is a legacy plugin that still pins compileSdkVersion 30.
+// Override it after the plugin's DSL is configured, but before AGP creates variants.
 subprojects {
     plugins.withId("com.android.library") {
         if (name != "isar_flutter_libs") return@withId
 
-        val androidExt = extensions.findByName("android") ?: return@withId
-        try {
-            val namespaceProperty = androidExt.javaClass.getMethod("getNamespace")
-            val setNamespaceMethod = androidExt.javaClass.getMethod("setNamespace", String::class.java)
-            val current = namespaceProperty.invoke(androidExt) as? String
-            if (current.isNullOrBlank()) {
-                setNamespaceMethod.invoke(androidExt, "dev.isar.isar_flutter_libs")
+        extensions.configure<
+            AndroidComponentsExtension<LibraryExtension, LibraryVariantBuilder, LibraryVariant>,
+        >("androidComponents") {
+            finalizeDsl { extension ->
+                if (extension.namespace.isNullOrBlank()) {
+                    extension.namespace = "dev.isar.isar_flutter_libs"
+                }
+                extension.compileSdk = 35
             }
-        } catch (_: Throwable) {
-            // Ignore if AGP/extension API differs; build will surface any remaining issues.
         }
     }
 }
