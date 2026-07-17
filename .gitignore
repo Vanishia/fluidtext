@@ -33,6 +33,10 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Local release artifacts
+/release/
+/releases/
+
 # Symbolication related
 app.*.symbols
 
