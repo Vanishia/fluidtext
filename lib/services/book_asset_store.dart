@@ -20,10 +20,14 @@ class BookAssetFileDraft {
 }
 
 class BookAssetStore {
-  BookAssetStore._();
+  BookAssetStore({Future<Directory> Function()? documentsDirectory})
+    : _documentsDirectory =
+          documentsDirectory ?? getApplicationDocumentsDirectory;
 
-  static final instance = BookAssetStore._();
+  static final instance = BookAssetStore();
   static const assetsDirectoryName = 'book_assets';
+
+  final Future<Directory> Function() _documentsDirectory;
 
   String createAssetRootKey(String fileHash) {
     final stamp = DateTime.now().toUtc().microsecondsSinceEpoch;
@@ -51,31 +55,91 @@ class BookAssetStore {
     }
 
     for (final asset in uniqueAssets.values) {
-      final relativePath = relativeImagePath(
+      await writeAssetFile(
         assetRootKey: assetRootKey,
         assetKey: asset.assetKey,
         extension: asset.extension,
+        bytes: asset.bytes,
       );
-      final file = await resolveRelativeFile(relativePath);
-      await file.parent.create(recursive: true);
-      if (await file.exists()) continue;
-      await file.writeAsBytes(asset.bytes, flush: true);
+    }
+  }
+
+  Future<String> writeAssetFile({
+    required String assetRootKey,
+    required String assetKey,
+    required String extension,
+    required List<int> bytes,
+  }) async {
+    if (!_isSafeAssetRootKey(assetRootKey)) {
+      throw const FormatException('Invalid book asset root key');
+    }
+    final relativePath = relativeImagePath(
+      assetRootKey: assetRootKey,
+      assetKey: assetKey,
+      extension: extension,
+    );
+    final file = await resolveRelativeFile(relativePath);
+    await file.parent.create(recursive: true);
+    if (!await file.exists()) {
+      await file.writeAsBytes(bytes, flush: true);
+    }
+    return relativePath;
+  }
+
+  Future<void> pruneAssetRoot({
+    required String assetRootKey,
+    required Set<String> retainedRelativePaths,
+  }) async {
+    if (!_isSafeAssetRootKey(assetRootKey)) {
+      throw const FormatException('Invalid book asset root key');
+    }
+
+    final retainedPaths = <String>{};
+    for (final relativePath in retainedRelativePaths) {
+      final segments = _safeRelativeSegments(relativePath);
+      if (segments.length != 4 ||
+          segments[0] != assetsDirectoryName ||
+          segments[1] != assetRootKey ||
+          segments[2] != 'images') {
+        throw const FormatException('Invalid retained book asset path');
+      }
+      retainedPaths.add(_joinPath(segments));
+    }
+
+    final dir = await _documentsDirectory();
+    final root = Directory(
+      _joinPath([dir.path, assetsDirectoryName, assetRootKey]),
+    );
+    if (!await root.exists()) return;
+
+    await for (final entity in root.list(recursive: true, followLinks: false)) {
+      if (entity is! File && entity is! Link) continue;
+      final relativePath = _relativePathWithinDirectory(dir.path, entity.path);
+      if (!retainedPaths.contains(relativePath)) {
+        await entity.delete();
+      }
     }
   }
 
   Future<File> resolveRelativeFile(String relativePath) async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await _documentsDirectory();
     final segments = _safeRelativeSegments(relativePath);
+    if (segments.length != 4 ||
+        segments[0] != assetsDirectoryName ||
+        !_isSafeAssetRootKey(segments[1]) ||
+        segments[2] != 'images') {
+      throw const FormatException('Invalid book asset path');
+    }
     return File(_joinPath([dir.path, ...segments]));
   }
 
   Future<void> deleteAssetRoot(String? assetRootKey) async {
     final key = assetRootKey?.trim();
-    if (key == null || key.isEmpty || key.contains('/') || key.contains(r'\')) {
+    if (key == null || !_isSafeAssetRootKey(key)) {
       return;
     }
 
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await _documentsDirectory();
     final root = Directory(_joinPath([dir.path, assetsDirectoryName, key]));
     if (!await root.exists()) return;
     await root.delete(recursive: true);
@@ -83,7 +147,7 @@ class BookAssetStore {
 
   Future<void> cleanupOrphanAssetRoots(Isar isar) async {
     try {
-      final dir = await getApplicationDocumentsDirectory();
+      final dir = await _documentsDirectory();
       final assetsRoot = Directory(_joinPath([dir.path, assetsDirectoryName]));
       if (!await assetsRoot.exists()) return;
 
@@ -115,18 +179,33 @@ class BookAssetStore {
   }
 
   List<String> _safeRelativeSegments(String relativePath) {
-    return relativePath
-        .replaceAll(r'\', '/')
-        .split('/')
-        .where((segment) {
-          final trimmed = segment.trim();
-          return trimmed.isNotEmpty && trimmed != '.' && trimmed != '..';
-        })
-        .toList(growable: false);
+    final normalized = relativePath.replaceAll(r'\', '/');
+    if (normalized.isEmpty ||
+        normalized.startsWith('/') ||
+        RegExp(r'^[A-Za-z]:').hasMatch(normalized)) {
+      throw const FormatException('Book asset path must be relative');
+    }
+
+    final segments = normalized.split('/');
+    if (segments.any(
+      (segment) =>
+          segment.isEmpty ||
+          segment == '.' ||
+          segment == '..' ||
+          segment.contains(':'),
+    )) {
+      throw const FormatException('Invalid book asset path segment');
+    }
+    return segments;
   }
 
   String? _assetRootKeyFromRelativePath(String relativePath) {
-    final segments = _safeRelativeSegments(relativePath);
+    late final List<String> segments;
+    try {
+      segments = _safeRelativeSegments(relativePath);
+    } on FormatException {
+      return null;
+    }
     if (segments.length < 2 || segments.first != assetsDirectoryName) {
       return null;
     }
@@ -141,5 +220,23 @@ class BookAssetStore {
 
   String _joinPath(List<String> segments) {
     return segments.join(Platform.pathSeparator);
+  }
+
+  bool _isSafeAssetRootKey(String key) {
+    return RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(key) &&
+        key != '.' &&
+        key != '..';
+  }
+
+  String _relativePathWithinDirectory(String directoryPath, String filePath) {
+    final base = Directory(directoryPath).absolute.path;
+    final absolute = File(filePath).absolute.path;
+    final prefix = base.endsWith(Platform.pathSeparator)
+        ? base
+        : '$base${Platform.pathSeparator}';
+    if (!absolute.startsWith(prefix)) {
+      throw const FormatException('Book asset resolved outside storage root');
+    }
+    return absolute.substring(prefix.length);
   }
 }

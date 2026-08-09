@@ -27,7 +27,7 @@ class LibraryDataAccess {
     String? sourceFileName,
     int targetCharsPerCard = 300,
   }) {
-    return const BookImportService().importEpubBytes(
+    return BookImportService().importEpubBytes(
       isar: _isarRepository.isar,
       bytes: bytes,
       sourceFileName: sourceFileName,

@@ -7,10 +7,14 @@ import 'package:path_provider/path_provider.dart';
 import '../features/reader/reader_background_settings.dart';
 
 class ReaderBackgroundService {
-  ReaderBackgroundService._();
+  ReaderBackgroundService({Future<Directory> Function()? documentsDirectory})
+    : _documentsDirectory =
+          documentsDirectory ?? getApplicationDocumentsDirectory;
 
-  static final instance = ReaderBackgroundService._();
+  static final instance = ReaderBackgroundService();
   static const _fileName = 'reader_background.json';
+
+  final Future<Directory> Function() _documentsDirectory;
 
   Future<ReaderBackgroundSettings> load() async {
     try {
@@ -76,7 +80,7 @@ class ReaderBackgroundService {
   }
 
   Future<File> _settingsFile() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await _documentsDirectory();
     return File('${dir.path}${Platform.pathSeparator}$_fileName');
   }
 
@@ -100,7 +104,7 @@ class ReaderBackgroundService {
   }
 
   Future<Directory> _imageDirectory() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await _documentsDirectory();
     final imageDir = Directory(
       '${dir.path}${Platform.pathSeparator}reader_backgrounds',
     );
@@ -112,19 +116,20 @@ class ReaderBackgroundService {
 
   Future<void> _deleteManagedImage(String? imagePath) async {
     if (imagePath == null || imagePath.isEmpty) return;
-    if (!await _isManagedImage(imagePath)) return;
-
     final file = File(imagePath);
-    if (await file.exists()) {
-      await file.delete();
-    }
+    if (!await file.exists()) return;
+    if (!await _isManagedImage(file)) return;
+    await file.delete();
   }
 
-  Future<bool> _isManagedImage(String imagePath) async {
+  Future<bool> _isManagedImage(File imageFile) async {
     final managedDir = await _imageDirectory();
-    final normalizedImagePath = File(imagePath).absolute.path;
-    final normalizedDirPath = managedDir.absolute.path;
-    return normalizedImagePath.startsWith(normalizedDirPath);
+    final normalizedImagePath = await imageFile.resolveSymbolicLinks();
+    final normalizedDirPath = await managedDir.resolveSymbolicLinks();
+    final directoryPrefix = normalizedDirPath.endsWith(Platform.pathSeparator)
+        ? normalizedDirPath
+        : '$normalizedDirPath${Platform.pathSeparator}';
+    return normalizedImagePath.startsWith(directoryPrefix);
   }
 
   String _normalizedExtension(PlatformFile file) {

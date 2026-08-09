@@ -32,7 +32,13 @@ class BookImportResult {
 }
 
 class BookImportService {
-  const BookImportService();
+  BookImportService({BookAssetStore? assetStore})
+    : _assetStore = assetStore ?? BookAssetStore.instance;
+
+  static const maxSingleImageBytes = 64 * 1024 * 1024;
+  static const maxTotalImageBytes = 512 * 1024 * 1024;
+
+  final BookAssetStore _assetStore;
 
   static const _ignoredHtmlTags = {
     'script',
@@ -109,122 +115,123 @@ class BookImportService {
         '无法打开 EPUB 基础结构，文件可能损坏或格式不兼容；${_ImportToleranceReport.shortError(error)}',
       );
     }
-    final report = _ImportToleranceReport();
-    final rawTitle = (epub.title ?? '').trim();
-    final title = rawTitle.isEmpty ? 'Untitled' : rawTitle;
-    final images = await _readAvailableImages(epub, report: report);
-    final chapters = await _readAvailableChapters(epub, report: report);
-    _throwIfTooManyChaptersSkipped(report);
-    final contentTextFiles = epub.content?.html.length ?? 0;
-    final contentImageFiles = images.length;
-    final contentAllFiles = epub.content?.allFiles.length ?? 0;
-    developer.log(
-      'Parsed EPUB metadata: title="$title", topLevelChapters=${chapters.length}, htmlFiles=$contentTextFiles, imageFiles=$contentImageFiles, allFiles=$contentAllFiles',
-      name: 'BookImportService',
-    );
-
-    final imageIndex = _EpubImageIndex(images);
-    _ImportDraft? structuredDraft = _buildImportDraft(
-      title: title,
-      chapters: _chapterContents(
-        chapters,
-        imageIndex: imageIndex,
+    final stagedAssetRootKey = _assetStore.createAssetRootKey(fileHash);
+    var retainStagedAssets = false;
+    try {
+      final report = _ImportToleranceReport();
+      final rawTitle = (epub.title ?? '').trim();
+      final title = rawTitle.isEmpty ? 'Untitled' : rawTitle;
+      final imageIndex = await _stageAvailableImages(
+        epub,
+        assetRootKey: stagedAssetRootKey,
         report: report,
-      ),
-      targetCharsPerCard: targetCharsPerCard,
-    );
-    _throwIfTooManyChaptersSkipped(report);
-    late final _ImportDraft draft;
-    if (structuredDraft.assets.isNotEmpty) {
-      draft = structuredDraft;
-    } else {
-      structuredDraft = null;
-      draft = _buildLegacyImportDraft(
+      );
+      final chapters = await _readAvailableChapters(epub, report: report);
+      _throwIfTooManyChaptersSkipped(report);
+      final contentTextFiles = epub.content?.html.length ?? 0;
+      final contentImageFiles = imageIndex.assetCount;
+      final contentAllFiles = epub.content?.allFiles.length ?? 0;
+      developer.log(
+        'Parsed EPUB metadata: title="$title", topLevelChapters=${chapters.length}, htmlFiles=$contentTextFiles, imageFiles=$contentImageFiles, allFiles=$contentAllFiles',
+        name: 'BookImportService',
+      );
+
+      _ImportDraft? structuredDraft = _buildImportDraft(
         title: title,
-        chapters: _legacyChapterContents(chapters, report: report),
+        chapters: _chapterContents(
+          chapters,
+          imageIndex: imageIndex,
+          report: report,
+        ),
         targetCharsPerCard: targetCharsPerCard,
       );
-    }
-    if (draft.cards.isEmpty) {
-      final detail = report.summary;
-      throw BookImportException(
-        detail == null ? '没有从 EPUB 中解析出可导入的正文' : '没有从 EPUB 中解析出可导入的正文；$detail',
-      );
-    }
-
-    final existingByFileHash = await _findBestCompleteBookByFileHash(
-      isar: isar,
-      fileHash: fileHash,
-      contentFingerprint: draft.contentFingerprint,
-      cardCount: draft.cards.length,
-    );
-    if (existingByFileHash != null) {
-      developer.log(
-        'Duplicate EPUB import matched by fileHash: bookId=${existingByFileHash.id}',
-        name: 'BookImportService',
-      );
-      return BookImportResult(
-        bookId: existingByFileHash.id,
-        bookTitle: existingByFileHash.title,
-        insertedCards: 0,
-        wasDuplicate: true,
-        matchedBy: 'fileHash',
-      );
-    }
-
-    final existingByFingerprint =
-        await _findBookByContentFingerprintWithLegacyBackfill(
-          isar: isar,
-          contentFingerprint: draft.contentFingerprint,
-          fileHash: fileHash,
-          sourceFileName: sourceFileName,
-          cardCount: draft.cards.length,
-          textCharCount: draft.textCharCount,
+      _throwIfTooManyChaptersSkipped(report);
+      late final _ImportDraft draft;
+      if (structuredDraft.assets.isNotEmpty) {
+        draft = structuredDraft;
+      } else {
+        structuredDraft = null;
+        draft = _buildLegacyImportDraft(
+          title: title,
+          chapters: _legacyChapterContents(chapters, report: report),
+          targetCharsPerCard: targetCharsPerCard,
         );
-    if (existingByFingerprint != null) {
-      developer.log(
-        'Duplicate EPUB import matched by contentFingerprint: bookId=${existingByFingerprint.id}',
-        name: 'BookImportService',
-      );
-      return BookImportResult(
-        bookId: existingByFingerprint.id,
-        bookTitle: existingByFingerprint.title,
-        insertedCards: 0,
-        wasDuplicate: true,
-        matchedBy: 'contentFingerprint',
-      );
-    }
+      }
+      if (draft.cards.isEmpty) {
+        final detail = report.summary;
+        throw BookImportException(
+          detail == null
+              ? '没有从 EPUB 中解析出可导入的正文'
+              : '没有从 EPUB 中解析出可导入的正文；$detail',
+        );
+      }
 
-    final now = DateTime.now();
-    final assetRootKey = draft.assets.isEmpty
-        ? null
-        : BookAssetStore.instance.createAssetRootKey(fileHash);
-    final book = Book()
-      ..title = title
-      ..createdAt = now
-      ..fileHash = fileHash
-      ..contentFingerprint = draft.contentFingerprint
-      ..sourceFileName = sourceFileName
-      ..importedAt = now
-      ..cardCount = draft.cards.length
-      ..textCharCount = draft.textCharCount
-      ..assetRootKey = assetRootKey;
-
-    if (assetRootKey != null) {
-      await BookAssetStore.instance.writeAssetFiles(
-        assetRootKey: assetRootKey,
-        assets: draft.assets.values.map(
-          (asset) => BookAssetFileDraft(
-            assetKey: asset.assetKey,
-            extension: asset.extension,
-            bytes: asset.bytes,
-          ),
-        ),
+      final existingByFileHash = await _findBestCompleteBookByFileHash(
+        isar: isar,
+        fileHash: fileHash,
+        contentFingerprint: draft.contentFingerprint,
+        cardCount: draft.cards.length,
       );
-    }
+      if (existingByFileHash != null) {
+        developer.log(
+          'Duplicate EPUB import matched by fileHash: bookId=${existingByFileHash.id}',
+          name: 'BookImportService',
+        );
+        return BookImportResult(
+          bookId: existingByFileHash.id,
+          bookTitle: existingByFileHash.title,
+          insertedCards: 0,
+          wasDuplicate: true,
+          matchedBy: 'fileHash',
+        );
+      }
 
-    late final int bookId;
-    try {
+      final existingByFingerprint =
+          await _findBookByContentFingerprintWithLegacyBackfill(
+            isar: isar,
+            contentFingerprint: draft.contentFingerprint,
+            fileHash: fileHash,
+            sourceFileName: sourceFileName,
+            cardCount: draft.cards.length,
+            textCharCount: draft.textCharCount,
+          );
+      if (existingByFingerprint != null) {
+        developer.log(
+          'Duplicate EPUB import matched by contentFingerprint: bookId=${existingByFingerprint.id}',
+          name: 'BookImportService',
+        );
+        return BookImportResult(
+          bookId: existingByFingerprint.id,
+          bookTitle: existingByFingerprint.title,
+          insertedCards: 0,
+          wasDuplicate: true,
+          matchedBy: 'contentFingerprint',
+        );
+      }
+
+      final now = DateTime.now();
+      final assetRootKey = draft.assets.isEmpty ? null : stagedAssetRootKey;
+      final book = Book()
+        ..title = title
+        ..createdAt = now
+        ..fileHash = fileHash
+        ..contentFingerprint = draft.contentFingerprint
+        ..sourceFileName = sourceFileName
+        ..importedAt = now
+        ..cardCount = draft.cards.length
+        ..textCharCount = draft.textCharCount
+        ..assetRootKey = assetRootKey;
+
+      if (assetRootKey != null) {
+        await _assetStore.pruneAssetRoot(
+          assetRootKey: assetRootKey,
+          retainedRelativePaths: draft.assets.values
+              .map((asset) => asset.relativePath)
+              .toSet(),
+        );
+      }
+
+      late final int bookId;
       bookId = await isar.writeTxn(() async {
         final newBookId = await isar.books.put(book);
         for (final card in draft.cards) {
@@ -240,12 +247,8 @@ class BookImportService {
                   ..originalHref = asset.originalHref
                   ..normalizedHref = asset.normalizedHref
                   ..mimeType = asset.mimeType
-                  ..relativePath = BookAssetStore.instance.relativeImagePath(
-                    assetRootKey: assetRootKey,
-                    assetKey: asset.assetKey,
-                    extension: asset.extension,
-                  )
-                  ..byteLength = asset.bytes.length
+                  ..relativePath = asset.relativePath
+                  ..byteLength = asset.byteLength
                   ..createdAt = now;
               })
               .toList(growable: false);
@@ -255,52 +258,112 @@ class BookImportService {
         await isar.bookCards.putAll(draft.cards);
         return newBookId;
       });
+      retainStagedAssets = assetRootKey != null;
       LibraryChangeTracker.instance.markChanged();
-    } catch (_) {
-      if (assetRootKey != null) {
-        await BookAssetStore.instance.deleteAssetRoot(assetRootKey);
+
+      developer.log(
+        'Finished EPUB import: bookId=$bookId, insertedCards=${draft.cards.length}',
+        name: 'BookImportService',
+      );
+
+      return BookImportResult(
+        bookId: bookId,
+        bookTitle: title,
+        insertedCards: draft.cards.length,
+        wasDuplicate: false,
+      );
+    } finally {
+      if (!retainStagedAssets) {
+        await _assetStore.deleteAssetRoot(stagedAssetRootKey);
       }
-      rethrow;
     }
-
-    developer.log(
-      'Finished EPUB import: bookId=$bookId, insertedCards=${draft.cards.length}',
-      name: 'BookImportService',
-    );
-
-    return BookImportResult(
-      bookId: bookId,
-      bookTitle: title,
-      insertedCards: draft.cards.length,
-      wasDuplicate: false,
-    );
   }
 
-  Future<Map<String, EpubByteContentFile>> _readAvailableImages(
+  Future<_EpubImageIndex> _stageAvailableImages(
     EpubBookRef epub, {
+    required String assetRootKey,
     required _ImportToleranceReport report,
   }) async {
     final imageRefs = epub.content?.images ?? const {};
-    final images = <String, EpubByteContentFile>{};
+    final imageIndex = _EpubImageIndex();
+    final stagedByArchivePath = <String, _ImageAssetDraft>{};
+    var totalImageBytes = 0;
 
-    try {
-      for (final entry in imageRefs.entries) {
-        try {
-          images[entry.key] = await EpubReader.readByteContentFile(entry.value);
-        } catch (error, stackTrace) {
-          report.rememberImageError(entry.value.fileName ?? entry.key, error);
-          developer.log(
-            'Skipping EPUB image that cannot be read: href="${entry.value.fileName ?? entry.key}"',
-            name: 'BookImportService',
-            error: error,
-            stackTrace: stackTrace,
+    for (final entry in imageRefs.entries) {
+      final imageRef = entry.value;
+      try {
+        final archiveEntry = imageRef.getContentFileEntry();
+        final existingAsset = stagedByArchivePath[archiveEntry.name];
+        if (existingAsset != null) {
+          imageIndex.add(
+            entryKey: entry.key,
+            fileName: imageRef.fileName,
+            asset: existingAsset,
+          );
+          continue;
+        }
+        final declaredBytes = archiveEntry.size;
+        if (declaredBytes > maxSingleImageBytes) {
+          throw BookImportException(
+            '图片 ${imageRef.fileName ?? entry.key} 解压后超过 64 MB，已停止导入',
           );
         }
-      }
-    } finally {
-      // epub_plus copies each image out of ArchiveFile, whose decompressed
-      // cache otherwise remains alive alongside our image copy until import ends.
-      for (final imageRef in imageRefs.values) {
+        if (totalImageBytes + declaredBytes > maxTotalImageBytes) {
+          throw const BookImportException('图片资源总量超过 512 MB，已停止导入');
+        }
+
+        final file = await EpubReader.readByteContentFile(imageRef);
+        final bytes = file.content;
+        if (bytes == null || bytes.isEmpty) continue;
+        if (bytes.length > maxSingleImageBytes) {
+          throw BookImportException(
+            '图片 ${file.fileName ?? entry.key} 超过 64 MB，已停止导入',
+          );
+        }
+        totalImageBytes += bytes.length;
+        if (totalImageBytes > maxTotalImageBytes) {
+          throw const BookImportException('图片资源总量超过 512 MB，已停止导入');
+        }
+
+        final normalizedHref =
+            _EpubImageIndex._normalizeEpubPath(file.fileName ?? entry.key) ??
+            entry.key;
+        final assetKey = sha256.convert(bytes).toString();
+        final extension = _EpubImageIndex._extensionForAsset(
+          href: normalizedHref,
+          mimeType: file.contentMimeType,
+        );
+        final relativePath = await _assetStore.writeAssetFile(
+          assetRootKey: assetRootKey,
+          assetKey: assetKey,
+          extension: extension,
+          bytes: bytes,
+        );
+        final asset = _ImageAssetDraft(
+          assetKey: assetKey,
+          originalHref: file.fileName ?? entry.key,
+          normalizedHref: normalizedHref,
+          mimeType: file.contentMimeType,
+          relativePath: relativePath,
+          byteLength: bytes.length,
+        );
+        stagedByArchivePath[archiveEntry.name] = asset;
+        imageIndex.add(
+          entryKey: entry.key,
+          fileName: file.fileName,
+          asset: asset,
+        );
+      } on BookImportException {
+        rethrow;
+      } catch (error, stackTrace) {
+        report.rememberImageError(imageRef.fileName ?? entry.key, error);
+        developer.log(
+          'Skipping EPUB image that cannot be read: href="${imageRef.fileName ?? entry.key}"',
+          name: 'BookImportService',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      } finally {
         try {
           imageRef.getContentFileEntry().closeSync();
         } catch (_) {
@@ -309,7 +372,7 @@ class BookImportService {
       }
     }
 
-    return images;
+    return imageIndex;
   }
 
   Future<List<EpubChapter>> _readAvailableChapters(
@@ -1249,47 +1312,34 @@ class _ImageAssetDraft {
     required this.originalHref,
     required this.normalizedHref,
     required this.mimeType,
-    required this.extension,
-    required this.bytes,
+    required this.relativePath,
+    required this.byteLength,
   });
 
   final String assetKey;
   final String originalHref;
   final String normalizedHref;
   final String? mimeType;
-  final String extension;
-  final List<int> bytes;
+  final String relativePath;
+  final int byteLength;
 }
 
 class _EpubImageIndex {
-  _EpubImageIndex(Map<String, EpubByteContentFile> images) {
-    for (final entry in images.entries) {
-      final file = entry.value;
-      final bytes = file.content;
-      if (bytes == null || bytes.isEmpty) continue;
-
-      final normalizedHref =
-          _normalizeEpubPath(file.fileName ?? entry.key) ?? entry.key;
-      final assetKey = sha256.convert(bytes).toString();
-      final asset = _ImageAssetDraft(
-        assetKey: assetKey,
-        originalHref: file.fileName ?? entry.key,
-        normalizedHref: normalizedHref,
-        mimeType: file.contentMimeType,
-        extension: _extensionForAsset(
-          href: normalizedHref,
-          mimeType: file.contentMimeType,
-        ),
-        bytes: bytes,
-      );
-
-      _addCandidate(entry.key, asset);
-      _addCandidate(file.fileName, asset);
-      _addCandidate(normalizedHref, asset);
-    }
-  }
-
   final Map<String, _ImageAssetDraft> _byHref = <String, _ImageAssetDraft>{};
+  final Set<String> _assetKeys = <String>{};
+
+  int get assetCount => _assetKeys.length;
+
+  void add({
+    required String entryKey,
+    required String? fileName,
+    required _ImageAssetDraft asset,
+  }) {
+    _assetKeys.add(asset.assetKey);
+    _addCandidate(entryKey, asset);
+    _addCandidate(fileName, asset);
+    _addCandidate(asset.normalizedHref, asset);
+  }
 
   _ImageAssetDraft? resolve({
     required String? contentFileName,

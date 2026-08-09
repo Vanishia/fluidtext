@@ -11,9 +11,11 @@ import 'library_change_tracker.dart';
 import 'library_repository.dart';
 
 class BookCardRepository implements LibraryRepository {
-  const BookCardRepository(this.isar);
+  BookCardRepository(this.isar, {BookAssetStore? assetStore})
+    : _assetStore = assetStore ?? BookAssetStore.instance;
 
   final Isar isar;
+  final BookAssetStore _assetStore;
 
   @override
   Future<List<Book>> loadBooks() {
@@ -595,7 +597,7 @@ class BookCardRepository implements LibraryRepository {
     LibraryChangeTracker.instance.markChanged();
 
     try {
-      await BookAssetStore.instance.deleteAssetRoot(assetRootKey);
+      await _assetStore.deleteAssetRoot(assetRootKey);
     } catch (error, stackTrace) {
       developer.log(
         'Failed to delete book asset root: bookId=$bookId',
