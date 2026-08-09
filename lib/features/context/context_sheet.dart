@@ -173,6 +173,8 @@ class _ContextSheetState extends State<ContextSheet> {
                                       key: _keyFor(card.id),
                                       child: ContextCardTile(
                                         card: card,
+                                        repository:
+                                            widget.controller.repository,
                                         isCenter:
                                             card.id ==
                                             widget.controller.centerCard.id,

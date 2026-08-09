@@ -3,17 +3,13 @@ import 'dart:developer' as developer;
 import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:isar/isar.dart';
 
-import '../../db/isar_db.dart';
 import '../../models/book.dart';
-import '../../repositories/book_card_repository.dart';
+import '../../repositories/library_data_access.dart';
+import '../../repositories/library_repository.dart';
 import '../../services/book_remark_service.dart';
-import '../../services/book_import_service.dart';
-import '../../services/data_backup_service.dart';
 import '../../widgets/blocking_loader.dart';
 import '../../widgets/glass.dart';
-import '../reader/analysis/reading_analysis_controller.dart';
 
 Future<List<Book>?> showBookshelfSheet(
   BuildContext context, {
@@ -43,15 +39,13 @@ class BookshelfSheet extends StatefulWidget {
 }
 
 class _BookshelfSheetState extends State<BookshelfSheet> {
-  final _importService = const BookImportService();
-  final _backupService = const DataBackupService();
   final _books = <Book>[];
   final _remarks = <int, String>{};
   final _stats = <int, BookCardStats>{};
   late final Set<int> _selectedIds = widget.initialSelectedBookIds.toSet();
 
-  BookCardRepository? _repository;
-  Isar? _isar;
+  LibraryRepository? _repository;
+  LibraryDataAccess? _dataAccess;
   bool _isLoading = true;
   bool _isBusy = false;
   String? _status;
@@ -63,8 +57,8 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
   }
 
   Future<void> _init() async {
-    final isar = await IsarDb.instance.isar;
-    final repository = BookCardRepository(isar);
+    final dataAccess = await LibraryDataAccess.instance;
+    final repository = dataAccess.repository;
     final books = await repository.loadBooks();
     final remarks = await BookRemarkService.instance.load();
     final stats = await repository.loadBookStats(
@@ -74,7 +68,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
 
     if (!mounted) return;
     setState(() {
-      _isar = isar;
+      _dataAccess = dataAccess;
       _repository = repository;
       _books
         ..clear()
@@ -111,8 +105,8 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
   }
 
   Future<void> _pickAndImportEpub() async {
-    final isar = _isar;
-    if (isar == null || _isBusy) return;
+    final dataAccess = _dataAccess;
+    if (dataAccess == null || _isBusy) return;
 
     final targetCharsPerCard = await _chooseTargetCharsPerCard();
     if (targetCharsPerCard == null) return;
@@ -140,14 +134,11 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
 
       setState(() => _status = '解析与切分中…');
 
-      final imported = await _importService.importEpubBytes(
-        isar: isar,
+      final imported = await dataAccess.importEpubBytes(
         bytes: bytes,
         sourceFileName: file?.name,
         targetCharsPerCard: targetCharsPerCard,
       );
-      ReadingAnalysisController.clearCache();
-
       await _reloadBooks();
       if (!mounted) return;
 
@@ -215,8 +206,8 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
   }
 
   Future<void> _exportBackup() async {
-    final isar = _isar;
-    if (isar == null || _isBusy) return;
+    final dataAccess = _dataAccess;
+    if (dataAccess == null || _isBusy) return;
 
     setState(() {
       _isBusy = true;
@@ -224,7 +215,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     });
 
     try {
-      final path = await _backupService.exportBackup(isar);
+      final path = await dataAccess.exportBackup();
       if (!mounted) return;
       setState(() {
         _status = path == null ? '已取消导出备份' : '备份已导出：$path';
@@ -277,7 +268,6 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     try {
       await repository.deleteBook(book.id);
       await BookRemarkService.instance.removeRemark(book.id);
-      ReadingAnalysisController.clearCache();
       await _reloadBooks();
       if (!mounted) return;
       setState(() {

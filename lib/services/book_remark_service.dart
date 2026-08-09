@@ -2,6 +2,7 @@ import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/book_remark.dart';
+import '../repositories/library_change_tracker.dart';
 
 class BookRemarkService {
   BookRemarkService._();
@@ -41,11 +42,15 @@ class BookRemarkService {
           ..updatedAt = DateTime.now(),
       );
     });
+    LibraryChangeTracker.instance.markChanged();
   }
 
   Future<void> removeRemark(int bookId) async {
     final isar = await _db;
-    await isar.writeTxn(() => isar.bookRemarks.delete(bookId));
+    final deleted = await isar.writeTxn(() => isar.bookRemarks.delete(bookId));
+    if (deleted) {
+      LibraryChangeTracker.instance.markChanged();
+    }
   }
 
   Future<Isar> get _db async {

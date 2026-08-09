@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../app_settings.dart';
-import '../../../repositories/book_card_repository.dart';
+import '../../../repositories/library_repository.dart';
 import '../reader_background_settings.dart';
 import '../widgets/reader_background_surface.dart';
 import 'models/reading_analytics.dart';
@@ -20,7 +20,7 @@ class ReadingAnalysisPage extends StatefulWidget {
     this.shelfTitle = '全部书籍',
   });
 
-  final BookCardRepository repository;
+  final LibraryRepository repository;
   final List<int> bookIds;
   final String shelfTitle;
 

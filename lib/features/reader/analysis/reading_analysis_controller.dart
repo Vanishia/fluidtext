@@ -1,4 +1,5 @@
-import '../../../repositories/book_card_repository.dart';
+import '../../../repositories/library_repository.dart';
+import '../../../repositories/library_change_tracker.dart';
 import '../../../services/book_remark_service.dart';
 import 'models/reading_analytics.dart';
 
@@ -6,12 +7,15 @@ class ReadingAnalysisController {
   ReadingAnalysisController({
     required this.repository,
     required List<int> bookIds,
-  }) : bookIds = List<int>.unmodifiable(bookIds);
+    Future<Map<int, String>> Function()? loadRemarks,
+  }) : bookIds = List<int>.unmodifiable(bookIds),
+       _loadRemarks = loadRemarks ?? BookRemarkService.instance.load;
 
-  final BookCardRepository repository;
+  final LibraryRepository repository;
   final List<int> bookIds;
+  final Future<Map<int, String>> Function() _loadRemarks;
 
-  static final _analysisCache = <String, ReadingAnalytics>{};
+  static final _analysisCache = <String, _ReadingAnalyticsCacheEntry>{};
 
   static void clearCache() {
     _analysisCache.clear();
@@ -25,7 +29,13 @@ class ReadingAnalysisController {
 
   ReadingAnalytics? getCachedAnalytics({bool forceFullScan = false}) {
     if (forceFullScan) return null;
-    return _analysisCache[cacheKey];
+    final entry = _analysisCache[cacheKey];
+    if (entry == null) return null;
+    if (entry.revision != LibraryChangeTracker.instance.revision) {
+      _analysisCache.remove(cacheKey);
+      return null;
+    }
+    return entry.analytics;
   }
 
   Future<ReadingAnalytics> load({bool forceFullScan = false}) async {
@@ -33,13 +43,14 @@ class ReadingAnalysisController {
   }
 
   Future<ReadingAnalytics> _loadFull(String cacheKey) async {
+    final sourceRevision = LibraryChangeTracker.instance.revision;
     final books = bookIds.isEmpty
         ? await repository.loadBooks()
         : await repository.loadBooksByIds(bookIds);
     final resolvedBookIds = books
         .map((book) => book.id)
         .toList(growable: false);
-    final remarksFuture = BookRemarkService.instance.load();
+    final remarksFuture = _loadRemarks();
     final statsFuture = repository.loadBookStats(resolvedBookIds);
     final readEventsFuture = repository.loadReadActivityEvents(resolvedBookIds);
     final favoriteEventsFuture = repository.loadFavoriteActivityEvents(
@@ -61,7 +72,22 @@ class ReadingAnalysisController {
       readEvents: readEvents,
       favoriteEvents: favoriteEvents,
     );
-    _analysisCache[cacheKey] = analytics;
+    if (LibraryChangeTracker.instance.revision == sourceRevision) {
+      _analysisCache[cacheKey] = _ReadingAnalyticsCacheEntry(
+        revision: sourceRevision,
+        analytics: analytics,
+      );
+    }
     return analytics;
   }
+}
+
+class _ReadingAnalyticsCacheEntry {
+  const _ReadingAnalyticsCacheEntry({
+    required this.revision,
+    required this.analytics,
+  });
+
+  final int revision;
+  final ReadingAnalytics analytics;
 }

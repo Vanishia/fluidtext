@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../models/book_card.dart';
+import '../../../repositories/library_repository.dart';
 import '../../../widgets/glass.dart';
 import 'book_card_content_view.dart';
 
@@ -9,6 +10,7 @@ class BookCardTile extends StatelessWidget {
   const BookCardTile({
     super.key,
     required this.card,
+    required this.repository,
     required this.onToggleRead,
     required this.onToggleFavorite,
     required this.onShowContext,
@@ -17,6 +19,7 @@ class BookCardTile extends StatelessWidget {
   });
 
   final BookCard card;
+  final LibraryRepository repository;
   final VoidCallback onToggleRead;
   final VoidCallback onToggleFavorite;
   final VoidCallback onShowContext;
@@ -70,6 +73,7 @@ class BookCardTile extends StatelessWidget {
                     const SizedBox(height: 8),
                     BookCardContentView(
                       card: card,
+                      repository: repository,
                       style: Theme.of(
                         context,
                       ).textTheme.bodyMedium?.copyWith(fontSize: 15),

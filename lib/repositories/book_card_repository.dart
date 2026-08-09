@@ -7,41 +7,20 @@ import '../models/book_asset.dart';
 import '../models/book_card.dart';
 import '../models/book_card_activity_event.dart';
 import '../services/book_asset_store.dart';
+import 'library_change_tracker.dart';
+import 'library_repository.dart';
 
-class BookCardStats {
-  const BookCardStats({
-    required this.totalCount,
-    required this.readCount,
-    required this.favoriteCount,
-  });
-
-  static const empty = BookCardStats(
-    totalCount: 0,
-    readCount: 0,
-    favoriteCount: 0,
-  );
-
-  final int totalCount;
-  final int readCount;
-  final int favoriteCount;
-
-  double get readProgress {
-    if (totalCount == 0) return 0;
-    return readCount / totalCount;
-  }
-
-  int get unreadCount => totalCount - readCount;
-}
-
-class BookCardRepository {
+class BookCardRepository implements LibraryRepository {
   const BookCardRepository(this.isar);
 
   final Isar isar;
 
+  @override
   Future<List<Book>> loadBooks() {
     return isar.books.where().sortByCreatedAtDesc().findAll();
   }
 
+  @override
   Future<List<Book>> loadBooksByIds(List<int> ids) async {
     if (ids.isEmpty) return const <Book>[];
 
@@ -49,6 +28,7 @@ class BookCardRepository {
     return books.whereType<Book>().toList(growable: false);
   }
 
+  @override
   Future<List<int>> loadOrderedCardIds(List<int> bookIds) async {
     if (bookIds.isEmpty) return const <int>[];
 
@@ -58,6 +38,7 @@ class BookCardRepository {
     return idsByBook.expand((ids) => ids).toList(growable: false);
   }
 
+  @override
   Future<List<int>> loadUnreadOrderedCardIds(List<int> bookIds) async {
     if (bookIds.isEmpty) return const <int>[];
 
@@ -90,6 +71,7 @@ class BookCardRepository {
         );
   }
 
+  @override
   Future<List<BookCard>> loadReadCards(List<int> bookIds) {
     if (bookIds.isEmpty) {
       return isar.bookCards
@@ -108,6 +90,7 @@ class BookCardRepository {
         .findAll();
   }
 
+  @override
   Future<List<BookCard>> loadFavoriteCards(List<int> bookIds) {
     if (bookIds.isEmpty) {
       return isar.bookCards
@@ -126,6 +109,7 @@ class BookCardRepository {
         .findAll();
   }
 
+  @override
   Future<List<BookCardActivityEvent>> loadReadActivityEvents(
     List<int> bookIds,
   ) async {
@@ -147,6 +131,7 @@ class BookCardRepository {
     return _readCardsToActivityEvents(cards);
   }
 
+  @override
   Future<List<BookCardActivityEvent>> loadFavoriteActivityEvents(
     List<int> bookIds,
   ) async {
@@ -440,6 +425,7 @@ class BookCardRepository {
     return b.cardId.compareTo(a.cardId);
   }
 
+  @override
   Future<Map<int, BookCardStats>> loadBookStats(List<int> bookIds) async {
     if (bookIds.isEmpty) return const <int, BookCardStats>{};
 
@@ -475,6 +461,7 @@ class BookCardRepository {
     return Map<int, BookCardStats>.fromEntries(entries);
   }
 
+  @override
   Future<void> logDatabaseSnapshot(String reason) async {
     final books = await loadBooks();
     final stats = await loadBookStats(books.map((book) => book.id).toList());
@@ -511,6 +498,7 @@ class BookCardRepository {
     }
   }
 
+  @override
   Future<List<BookCard>> loadCardsByIds(List<int> ids) async {
     if (ids.isEmpty) return const <BookCard>[];
 
@@ -518,6 +506,7 @@ class BookCardRepository {
     return cards.whereType<BookCard>().toList(growable: false);
   }
 
+  @override
   Future<List<BookCard>> loadUnreadCardsByIds(List<int> ids) async {
     if (ids.isEmpty) return const <BookCard>[];
 
@@ -528,6 +517,21 @@ class BookCardRepository {
         .toList(growable: false);
   }
 
+  @override
+  Future<List<BookAsset>> loadBookAssets({
+    required int bookId,
+    required List<String> assetKeys,
+  }) {
+    if (assetKeys.isEmpty) return Future.value(const <BookAsset>[]);
+
+    return isar.bookAssets
+        .filter()
+        .bookIdEqualTo(bookId)
+        .anyOf(assetKeys, (query, key) => query.assetKeyEqualTo(key))
+        .findAll();
+  }
+
+  @override
   Future<List<BookCard>> loadContextCards({
     required int bookId,
     required int centerCardIndex,
@@ -544,22 +548,27 @@ class BookCardRepository {
         .findAll();
   }
 
-  Future<void> toggleFavorite(BookCard card) {
-    return isar.writeTxn(() async {
+  @override
+  Future<void> toggleFavorite(BookCard card) async {
+    await isar.writeTxn(() async {
       card.isFavorite = !card.isFavorite;
       card.favoritedAt = card.isFavorite ? DateTime.now() : null;
       await isar.bookCards.put(card);
     });
+    LibraryChangeTracker.instance.markChanged();
   }
 
-  Future<void> toggleRead(BookCard card) {
-    return isar.writeTxn(() async {
+  @override
+  Future<void> toggleRead(BookCard card) async {
+    await isar.writeTxn(() async {
       card.isRead = !card.isRead;
       card.readAt = card.isRead ? DateTime.now() : null;
       await isar.bookCards.put(card);
     });
+    LibraryChangeTracker.instance.markChanged();
   }
 
+  @override
   Future<void> deleteBook(int bookId) async {
     final book = await isar.books.get(bookId);
     final assetRootKey = book?.assetRootKey;
@@ -583,6 +592,7 @@ class BookCardRepository {
       }
       await isar.books.delete(bookId);
     });
+    LibraryChangeTracker.instance.markChanged();
 
     try {
       await BookAssetStore.instance.deleteAssetRoot(assetRootKey);

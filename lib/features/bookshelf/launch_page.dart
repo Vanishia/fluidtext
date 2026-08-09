@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../app_settings.dart';
-import '../../db/isar_db.dart';
 import '../../models/book.dart';
-import '../../repositories/book_card_repository.dart';
+import '../../repositories/library_data_access.dart';
 import '../../services/reader_session_service.dart';
 import '../reader/reader_page.dart';
 import '../reader/reader_background_settings.dart';
@@ -26,8 +25,7 @@ Future<LaunchState> loadLaunchState() async {
     return const LaunchState();
   }
 
-  final isar = await IsarDb.instance.isar;
-  final repository = BookCardRepository(isar);
+  final repository = (await LibraryDataAccess.instance).repository;
   final savedBooks = await repository.loadBooksByIds(savedBookIds);
   if (savedBooks.isEmpty) {
     return const LaunchState(statusMessage: '未找到上次阅读的书籍，请重新选择。');

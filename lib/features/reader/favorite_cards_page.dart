@@ -6,7 +6,7 @@ import '../../features/context/context_controller.dart';
 import '../../features/context/context_settings.dart';
 import '../../features/context/context_sheet.dart';
 import '../../models/book_card.dart';
-import '../../repositories/book_card_repository.dart';
+import '../../repositories/library_repository.dart';
 import '../../services/book_remark_service.dart';
 import 'reader_background_settings.dart';
 import 'widgets/reader_background_surface.dart';
@@ -22,7 +22,7 @@ class FavoriteCardsPage extends StatefulWidget {
 
   final List<int> bookIds;
   final String shelfTitle;
-  final BookCardRepository repository;
+  final LibraryRepository repository;
   final Map<int, String> bookTitlesById;
 
   @override

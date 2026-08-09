@@ -4,7 +4,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../../models/book_card.dart';
-import '../../repositories/book_card_repository.dart';
+import '../../repositories/library_repository.dart';
 import 'reading_order.dart';
 
 class ReaderController extends ChangeNotifier {
@@ -16,7 +16,7 @@ class ReaderController extends ChangeNotifier {
   }) : _readingOrder = initialReadingOrder,
        _showUnreadOnly = initialShowUnreadOnly;
 
-  final BookCardRepository repository;
+  final LibraryRepository repository;
   final List<int> bookIds;
   final ReadingOrder initialReadingOrder;
   final bool initialShowUnreadOnly;

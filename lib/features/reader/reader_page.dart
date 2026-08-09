@@ -4,10 +4,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../app_settings.dart';
-import '../../db/isar_db.dart';
 import '../../models/book.dart';
 import '../../models/book_card.dart';
-import '../../repositories/book_card_repository.dart';
+import '../../repositories/library_data_access.dart';
 import '../../services/book_remark_service.dart';
 import '../../services/reader_session_service.dart';
 import '../bookshelf/launch_page.dart';
@@ -67,8 +66,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
   }
 
   Future<void> _init() async {
-    final isar = await IsarDb.instance.isar;
-    final repository = BookCardRepository(isar);
+    final repository = (await LibraryDataAccess.instance).repository;
     final controller = ReaderController(
       repository: repository,
       bookIds: widget.bookIds,
@@ -355,6 +353,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
                         final card = controller.cards[index];
                         return BookCardTile(
                           card: card,
+                          repository: controller.repository,
                           onToggleRead: () => _toggleRead(card),
                           onToggleFavorite: () => _toggleFavorite(card),
                           onShowContext: () => _showContext(card),

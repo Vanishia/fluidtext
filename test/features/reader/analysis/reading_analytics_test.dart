@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluidtext/features/reader/analysis/models/reading_analytics.dart';
 import 'package:fluidtext/models/book.dart';
 import 'package:fluidtext/models/book_card_activity_event.dart';
-import 'package:fluidtext/repositories/book_card_repository.dart';
+import 'package:fluidtext/repositories/library_repository.dart';
 
 void main() {
   group('ReadingAnalytics.fromEvents', () {

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../models/book_card.dart';
-import '../../repositories/book_card_repository.dart';
+import '../../repositories/library_repository.dart';
 import 'context_settings.dart';
 
 class ContextController extends ChangeNotifier {
@@ -13,7 +13,7 @@ class ContextController extends ChangeNotifier {
   }) : _centerCard = initialCard,
        _settings = initialSettings;
 
-  final BookCardRepository repository;
+  final LibraryRepository repository;
   final int bookId;
 
   BookCard _centerCard;

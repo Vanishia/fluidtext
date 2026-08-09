@@ -2,11 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:isar/isar.dart';
 
-import '../../../db/isar_db.dart';
 import '../../../models/book_asset.dart';
 import '../../../models/book_card.dart';
+import '../../../repositories/library_repository.dart';
 import '../../../services/book_asset_store.dart';
 
 class BookCardContentView extends StatefulWidget {
@@ -14,10 +13,12 @@ class BookCardContentView extends StatefulWidget {
     super.key,
     required this.card,
     required this.style,
+    required this.repository,
   });
 
   final BookCard card;
   final TextStyle? style;
+  final LibraryRepository repository;
 
   @override
   State<BookCardContentView> createState() => _BookCardContentViewState();
@@ -125,12 +126,10 @@ class _BookCardContentViewState extends State<BookCardContentView> {
     required int bookId,
     required List<String> assetKeys,
   }) async {
-    final isar = await IsarDb.instance.isar;
-    final assets = await isar.bookAssets
-        .filter()
-        .bookIdEqualTo(bookId)
-        .anyOf(assetKeys, (query, key) => query.assetKeyEqualTo(key))
-        .findAll();
+    final assets = await widget.repository.loadBookAssets(
+      bookId: bookId,
+      assetKeys: assetKeys,
+    );
 
     final entries = await Future.wait(
       assets.map((asset) async {

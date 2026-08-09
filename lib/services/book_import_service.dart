@@ -11,6 +11,7 @@ import 'package:isar/isar.dart';
 import '../models/book.dart';
 import '../models/book_asset.dart';
 import '../models/book_card.dart';
+import '../repositories/library_change_tracker.dart';
 import 'book_asset_store.dart';
 import 'text_splitter.dart';
 
@@ -123,23 +124,27 @@ class BookImportService {
     );
 
     final imageIndex = _EpubImageIndex(images);
-    final contentChapters = _chapterContents(
-      chapters,
-      imageIndex: imageIndex,
-      report: report,
-    ).toList(growable: false);
-    _throwIfTooManyChaptersSkipped(report);
-    final draft = _buildImportDraft(
+    _ImportDraft? structuredDraft = _buildImportDraft(
       title: title,
-      chapters: contentChapters,
-      legacyChapters: contentChapters.any((chapter) => chapter.imageCount > 0)
-          ? const <_LegacyChapterContent>[]
-          : _legacyChapterContents(
-              chapters,
-              report: report,
-            ).toList(growable: false),
+      chapters: _chapterContents(
+        chapters,
+        imageIndex: imageIndex,
+        report: report,
+      ),
       targetCharsPerCard: targetCharsPerCard,
     );
+    _throwIfTooManyChaptersSkipped(report);
+    late final _ImportDraft draft;
+    if (structuredDraft.assets.isNotEmpty) {
+      draft = structuredDraft;
+    } else {
+      structuredDraft = null;
+      draft = _buildLegacyImportDraft(
+        title: title,
+        chapters: _legacyChapterContents(chapters, report: report),
+        targetCharsPerCard: targetCharsPerCard,
+      );
+    }
     if (draft.cards.isEmpty) {
       final detail = report.summary;
       throw BookImportException(
@@ -250,6 +255,7 @@ class BookImportService {
         await isar.bookCards.putAll(draft.cards);
         return newBookId;
       });
+      LibraryChangeTracker.instance.markChanged();
     } catch (_) {
       if (assetRootKey != null) {
         await BookAssetStore.instance.deleteAssetRoot(assetRootKey);
@@ -277,17 +283,29 @@ class BookImportService {
     final imageRefs = epub.content?.images ?? const {};
     final images = <String, EpubByteContentFile>{};
 
-    for (final entry in imageRefs.entries) {
-      try {
-        images[entry.key] = await EpubReader.readByteContentFile(entry.value);
-      } catch (error, stackTrace) {
-        report.rememberImageError(entry.value.fileName ?? entry.key, error);
-        developer.log(
-          'Skipping EPUB image that cannot be read: href="${entry.value.fileName ?? entry.key}"',
-          name: 'BookImportService',
-          error: error,
-          stackTrace: stackTrace,
-        );
+    try {
+      for (final entry in imageRefs.entries) {
+        try {
+          images[entry.key] = await EpubReader.readByteContentFile(entry.value);
+        } catch (error, stackTrace) {
+          report.rememberImageError(entry.value.fileName ?? entry.key, error);
+          developer.log(
+            'Skipping EPUB image that cannot be read: href="${entry.value.fileName ?? entry.key}"',
+            name: 'BookImportService',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      }
+    } finally {
+      // epub_plus copies each image out of ArchiveFile, whose decompressed
+      // cache otherwise remains alive alongside our image copy until import ends.
+      for (final imageRef in imageRefs.values) {
+        try {
+          imageRef.getContentFileEntry().closeSync();
+        } catch (_) {
+          // A missing/corrupt entry was already reported while reading it.
+        }
       }
     }
 
@@ -361,18 +379,9 @@ class BookImportService {
 
   _ImportDraft _buildImportDraft({
     required String title,
-    required List<_ChapterContent> chapters,
-    required List<_LegacyChapterContent> legacyChapters,
+    required Iterable<_ChapterContent> chapters,
     required int targetCharsPerCard,
   }) {
-    if (legacyChapters.isNotEmpty) {
-      return _buildLegacyImportDraft(
-        title: title,
-        chapters: legacyChapters,
-        targetCharsPerCard: targetCharsPerCard,
-      );
-    }
-
     final cards = <BookCard>[];
     final assets = <String, _ImageAssetDraft>{};
     var cardIndex = 0;
@@ -429,7 +438,7 @@ class BookImportService {
 
   _ImportDraft _buildLegacyImportDraft({
     required String title,
-    required List<_LegacyChapterContent> chapters,
+    required Iterable<_LegacyChapterContent> chapters,
     required int targetCharsPerCard,
   }) {
     final cards = <BookCard>[];

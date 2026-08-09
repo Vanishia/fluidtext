@@ -1,6 +1,6 @@
 import '../../../../models/book.dart';
 import '../../../../models/book_card_activity_event.dart';
-import '../../../../repositories/book_card_repository.dart';
+import '../../../../repositories/library_repository.dart';
 
 class BarDatum {
   const BarDatum({required this.label, required this.value});

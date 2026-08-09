@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../models/book_card.dart';
+import '../../../repositories/library_repository.dart';
 import '../../reader/widgets/book_card_content_view.dart';
 
 class ContextCardTile extends StatelessWidget {
   const ContextCardTile({
     super.key,
     required this.card,
+    required this.repository,
     required this.isCenter,
     required this.onToggleRead,
     required this.onToggleFavorite,
@@ -15,6 +17,7 @@ class ContextCardTile extends StatelessWidget {
   });
 
   final BookCard card;
+  final LibraryRepository repository;
   final bool isCenter;
   final VoidCallback onToggleRead;
   final VoidCallback onToggleFavorite;
@@ -74,6 +77,7 @@ class ContextCardTile extends StatelessWidget {
                 const SizedBox(height: 6),
                 BookCardContentView(
                   card: card,
+                  repository: repository,
                   style: Theme.of(
                     context,
                   ).textTheme.bodyMedium?.copyWith(fontSize: 15),
