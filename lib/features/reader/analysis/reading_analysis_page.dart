@@ -7,7 +7,6 @@ import '../widgets/reader_background_surface.dart';
 import 'models/reading_analytics.dart';
 import 'reading_analysis_controller.dart';
 import 'reading_analysis_module.dart';
-import 'theme/analysis_seed_color.dart';
 import 'widgets/analysis_common_widgets.dart';
 import 'widgets/analysis_modules.dart';
 import 'widgets/day_analysis_sheet.dart';
@@ -38,9 +37,6 @@ class _ReadingAnalysisPageState extends State<ReadingAnalysisPage> {
     repository: widget.repository,
     bookIds: widget.bookIds,
   );
-
-  Future<Color>? _seedColorFuture;
-  String? _seedColorCacheKey;
 
   @override
   void initState() {
@@ -87,20 +83,6 @@ class _ReadingAnalysisPageState extends State<ReadingAnalysisPage> {
       _moduleOrder.insert(newIndex, item);
     });
     saveAnalysisModuleOrderSetting(_moduleOrder);
-  }
-
-  void _ensureSeedColorFuture(ReaderBackgroundSettings settings) {
-    final key = [
-      settings.source.name,
-      settings.paletteKey,
-      settings.texture.name,
-      settings.imagePath ?? '',
-    ].join('|');
-    if (_seedColorCacheKey == key && _seedColorFuture != null) {
-      return;
-    }
-    _seedColorCacheKey = key;
-    _seedColorFuture = AnalysisSeedColorResolver.resolveSeedColor(settings);
   }
 
   void _openDayAnalysis(
@@ -310,67 +292,45 @@ class _ReadingAnalysisPageState extends State<ReadingAnalysisPage> {
     return ValueListenableBuilder<ReaderBackgroundSettings>(
       valueListenable: readerBackgroundSetting,
       builder: (context, backgroundSettings, _) {
-        _ensureSeedColorFuture(backgroundSettings);
-        return FutureBuilder<Color>(
-          future: _seedColorFuture,
-          builder: (context, snapshot) {
-            final seedColor =
-                snapshot.data ??
-                AnalysisSeedColorResolver.normalizeSeedColor(
-                  backgroundSettings.palette.color,
-                );
-            final themed = AnalysisSeedColorResolver.buildPageTheme(
-              Theme.of(context),
-              seedColor,
-            );
-            final cs = themed.colorScheme;
-
-            return Theme(
-              data: themed,
-              child: Scaffold(
-                backgroundColor: backgroundSettings.palette.color,
-                body: ReaderBackgroundSurface(
-                  settings: backgroundSettings,
+        final cs = Theme.of(context).colorScheme;
+        return Scaffold(
+          backgroundColor: backgroundSettings.palette.color,
+          body: ReaderBackgroundSurface(
+            settings: backgroundSettings,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        cs.primaryContainer.withValues(alpha: 0.20),
+                        cs.surface.withValues(alpha: 0.16),
+                        cs.tertiaryContainer.withValues(alpha: 0.18),
+                      ],
+                    ),
+                  ),
+                ),
+                SafeArea(
+                  bottom: false,
                   child: Stack(
-                    fit: StackFit.expand,
                     children: [
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              cs.primaryContainer.withValues(alpha: 0.20),
-                              cs.surface.withValues(alpha: 0.16),
-                              cs.tertiaryContainer.withValues(alpha: 0.18),
-                            ],
-                          ),
-                        ),
+                      Positioned.fill(
+                        child: _buildStateBody(context, backgroundSettings),
                       ),
-                      SafeArea(
-                        bottom: false,
-                        child: Stack(
-                          children: [
-                            Positioned.fill(
-                              child: _buildStateBody(
-                                context,
-                                backgroundSettings,
-                              ),
-                            ),
-                            const Positioned(
-                              top: 6,
-                              left: 10,
-                              child: AnalysisBackButton(),
-                            ),
-                          ],
-                        ),
+                      const Positioned(
+                        top: 6,
+                        left: 10,
+                        child: AnalysisBackButton(),
                       ),
                     ],
                   ),
                 ),
-              ),
-            );
-          },
+              ],
+            ),
+          ),
         );
       },
     );

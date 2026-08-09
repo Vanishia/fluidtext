@@ -4,6 +4,8 @@ import 'package:flutter/gestures.dart';
 
 import 'app_settings.dart';
 import 'features/bookshelf/launch_page.dart';
+import 'features/reader/reader_background_settings.dart';
+import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,65 +30,75 @@ SystemUiOverlayStyle _systemUiStyleForTheme(ThemeData theme) {
       );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key, required this.initialLaunchState});
 
   final LaunchState initialLaunchState;
 
-  ThemeData _buildTheme({required Brightness brightness}) {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF60A5FA),
-      brightness: brightness,
-    );
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
 
-    return ThemeData(
-      colorScheme: scheme,
-      useMaterial3: true,
-      scaffoldBackgroundColor: brightness == Brightness.light
-          ? const Color(0xFFF5FAFF)
-          : null,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
-      ),
-      cardTheme: CardThemeData(
-        elevation: 0,
-        color: scheme.surface.withValues(
-          alpha: brightness == Brightness.light ? 0.7 : 0.6,
-        ),
-        surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      ),
-      dividerTheme: DividerThemeData(
-        color: scheme.outlineVariant.withValues(alpha: 0.6),
-      ),
-    );
+class _MyAppState extends State<MyApp> {
+  Future<Color>? _seedColorFuture;
+  String? _seedColorCacheKey;
+
+  void _ensureSeedColorFuture(ReaderBackgroundSettings settings) {
+    final key = [
+      settings.source.name,
+      settings.paletteKey,
+      settings.imagePath ?? '',
+    ].join('|');
+    if (_seedColorCacheKey == key && _seedColorFuture != null) return;
+    _seedColorCacheKey = key;
+    _seedColorFuture = AppThemeSeedResolver.resolve(settings);
   }
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder(
-      valueListenable: themeModeSetting,
-      builder: (context, themeMode, _) {
-        return MaterialApp(
-          title: 'FluidText',
-          scrollBehavior: const _FluidScrollBehavior(),
-          theme: _buildTheme(brightness: Brightness.light),
-          darkTheme: _buildTheme(brightness: Brightness.dark),
-          themeMode: themeMode,
-          builder: (context, child) {
-            final theme = Theme.of(context);
-            return AnnotatedRegion<SystemUiOverlayStyle>(
-              value: _systemUiStyleForTheme(theme),
-              child: child ?? const SizedBox.shrink(),
+    return ValueListenableBuilder<ReaderBackgroundSettings>(
+      valueListenable: readerBackgroundSetting,
+      builder: (context, backgroundSettings, _) {
+        _ensureSeedColorFuture(backgroundSettings);
+        final fallbackSeed = AppThemeSeedResolver.normalize(
+          backgroundSettings.palette.color,
+        );
+        return FutureBuilder<Color>(
+          key: ValueKey(_seedColorCacheKey),
+          future: _seedColorFuture,
+          initialData: fallbackSeed,
+          builder: (context, seedSnapshot) {
+            final seedColor = seedSnapshot.data ?? fallbackSeed;
+            return ValueListenableBuilder<ThemeMode>(
+              valueListenable: themeModeSetting,
+              builder: (context, themeMode, _) {
+                return MaterialApp(
+                  title: 'FluidText',
+                  scrollBehavior: const _FluidScrollBehavior(),
+                  theme: buildAppTheme(
+                    brightness: Brightness.light,
+                    seedColor: seedColor,
+                  ),
+                  darkTheme: buildAppTheme(
+                    brightness: Brightness.dark,
+                    seedColor: seedColor,
+                  ),
+                  themeMode: themeMode,
+                  builder: (context, child) {
+                    final theme = Theme.of(context);
+                    return AnnotatedRegion<SystemUiOverlayStyle>(
+                      value: _systemUiStyleForTheme(theme),
+                      child: child ?? const SizedBox.shrink(),
+                    );
+                  },
+                  home: LaunchPage(
+                    resumeLastSession: false,
+                    initialState: widget.initialLaunchState,
+                  ),
+                );
+              },
             );
           },
-          home: LaunchPage(
-            resumeLastSession: false,
-            initialState: initialLaunchState,
-          ),
         );
       },
     );
