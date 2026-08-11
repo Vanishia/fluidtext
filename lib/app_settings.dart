@@ -4,6 +4,7 @@ import 'features/context/context_settings.dart';
 import 'features/reader/reading_analysis_module.dart';
 import 'features/reader/reader_background_settings.dart';
 import 'features/reader/reading_order.dart';
+import 'features/settings/app_font_settings.dart';
 import 'viewmodels/app_settings_viewmodel.dart';
 
 final _vm = AppSettingsViewModel.instance;
@@ -13,6 +14,7 @@ final readingOrderSetting = _vm.readingOrderSetting;
 final showUnreadOnlySetting = _vm.showUnreadOnlySetting;
 final contextSettingsSetting = _vm.contextSettingsSetting;
 final readerBackgroundSetting = _vm.readerBackgroundSetting;
+final appFontSetting = _vm.appFontSetting;
 final analysisModuleOrderSetting = _vm.analysisModuleOrderSetting;
 
 Future<void> initializeAppSettings() => _vm.init();
@@ -39,3 +41,7 @@ Future<ReaderBackgroundSettings?> importReaderBackgroundImage(
 Future<ReaderBackgroundSettings> clearReaderBackgroundImage(
   ReaderBackgroundSettings current,
 ) => _vm.clearReaderBackgroundImage(current);
+
+Future<AppFontSettings?> importAppFont() => _vm.importAppFont();
+
+Future<AppFontSettings> useSystemFont() => _vm.useSystemFont();

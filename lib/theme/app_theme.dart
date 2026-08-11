@@ -87,6 +87,7 @@ class AppThemeSeedResolver {
 ThemeData buildAppTheme({
   required Brightness brightness,
   required Color seedColor,
+  String? fontFamily,
 }) {
   final scheme = ColorScheme.fromSeed(
     seedColor: seedColor,
@@ -96,6 +97,7 @@ ThemeData buildAppTheme({
   return ThemeData(
     colorScheme: scheme,
     useMaterial3: true,
+    fontFamily: fontFamily,
     scaffoldBackgroundColor: scheme.surface,
     appBarTheme: const AppBarTheme(
       backgroundColor: Colors.transparent,

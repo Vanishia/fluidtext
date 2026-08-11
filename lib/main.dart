@@ -72,29 +72,36 @@ class _MyAppState extends State<MyApp> {
             return ValueListenableBuilder<ThemeMode>(
               valueListenable: themeModeSetting,
               builder: (context, themeMode, _) {
-                return MaterialApp(
-                  title: 'FluidText',
-                  scrollBehavior: const _FluidScrollBehavior(),
-                  theme: buildAppTheme(
-                    brightness: Brightness.light,
-                    seedColor: seedColor,
-                  ),
-                  darkTheme: buildAppTheme(
-                    brightness: Brightness.dark,
-                    seedColor: seedColor,
-                  ),
-                  themeMode: themeMode,
-                  builder: (context, child) {
-                    final theme = Theme.of(context);
-                    return AnnotatedRegion<SystemUiOverlayStyle>(
-                      value: _systemUiStyleForTheme(theme),
-                      child: child ?? const SizedBox.shrink(),
+                return ValueListenableBuilder(
+                  valueListenable: appFontSetting,
+                  builder: (context, fontSettings, _) {
+                    return MaterialApp(
+                      title: 'FluidText',
+                      scrollBehavior: const _FluidScrollBehavior(),
+                      theme: buildAppTheme(
+                        brightness: Brightness.light,
+                        seedColor: seedColor,
+                        fontFamily: fontSettings.fontFamily,
+                      ),
+                      darkTheme: buildAppTheme(
+                        brightness: Brightness.dark,
+                        seedColor: seedColor,
+                        fontFamily: fontSettings.fontFamily,
+                      ),
+                      themeMode: themeMode,
+                      builder: (context, child) {
+                        final theme = Theme.of(context);
+                        return AnnotatedRegion<SystemUiOverlayStyle>(
+                          value: _systemUiStyleForTheme(theme),
+                          child: child ?? const SizedBox.shrink(),
+                        );
+                      },
+                      home: LaunchPage(
+                        resumeLastSession: false,
+                        initialState: widget.initialLaunchState,
+                      ),
                     );
                   },
-                  home: LaunchPage(
-                    resumeLastSession: false,
-                    initialState: widget.initialLaunchState,
-                  ),
                 );
               },
             );

@@ -6,7 +6,9 @@ import '../features/context/context_settings.dart';
 import '../features/reader/reading_analysis_module.dart';
 import '../features/reader/reader_background_settings.dart';
 import '../features/reader/reading_order.dart';
+import '../features/settings/app_font_settings.dart';
 import '../services/app_behavior_settings_service.dart';
+import '../services/app_font_service.dart';
 import '../services/reader_background_service.dart';
 
 class AppSettingsViewModel {
@@ -21,6 +23,7 @@ class AppSettingsViewModel {
   final readerBackgroundSetting = ValueNotifier(
     const ReaderBackgroundSettings(),
   );
+  final appFontSetting = ValueNotifier(const AppFontSettings.system());
   final analysisModuleOrderSetting =
       ValueNotifier<List<ReadingAnalysisModuleType>>(
         defaultReadingAnalysisModuleOrder,
@@ -34,10 +37,13 @@ class AppSettingsViewModel {
   ContextSettings get contextSettings => contextSettingsSetting.value;
   ReaderBackgroundSettings get readerBackground =>
       readerBackgroundSetting.value;
+  AppFontSettings get appFont => appFontSetting.value;
   List<ReadingAnalysisModuleType> get analysisModuleOrder =>
       analysisModuleOrderSetting.value;
 
   Future<void> init() async {
+    final fontFuture = AppFontService.instance.load();
+    final backgroundFuture = ReaderBackgroundService.instance.load();
     final behaviorSettings = await AppBehaviorSettingsService.instance.load();
     themeModeSetting.value = behaviorSettings.themeMode;
     readingOrderSetting.value = behaviorSettings.readingOrder;
@@ -46,8 +52,8 @@ class AppSettingsViewModel {
     analysisModuleOrderSetting.value = List<ReadingAnalysisModuleType>.from(
       behaviorSettings.analysisModuleOrder,
     );
-    readerBackgroundSetting.value = await ReaderBackgroundService.instance
-        .load();
+    readerBackgroundSetting.value = await backgroundFuture;
+    appFontSetting.value = await fontFuture;
   }
 
   void setThemeMode(ThemeMode mode) {
@@ -102,6 +108,21 @@ class AppSettingsViewModel {
   Future<void> saveReaderBackground(ReaderBackgroundSettings settings) async {
     readerBackgroundSetting.value = settings;
     await ReaderBackgroundService.instance.save(settings);
+  }
+
+  Future<AppFontSettings?> importAppFont() async {
+    final next = await AppFontService.instance.importFont(appFontSetting.value);
+    if (next == null) return null;
+    appFontSetting.value = next;
+    return next;
+  }
+
+  Future<AppFontSettings> useSystemFont() async {
+    final next = await AppFontService.instance.useSystemFont(
+      appFontSetting.value,
+    );
+    appFontSetting.value = next;
+    return next;
   }
 
   void _scheduleBehaviorSave() {
