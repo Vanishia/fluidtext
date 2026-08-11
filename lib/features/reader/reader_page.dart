@@ -275,6 +275,9 @@ class _BookCardsPageState extends State<BookCardsPage> {
       onChanged: saveReaderBackgroundSettings,
       onImportImage: importReaderBackgroundImage,
       onClearImage: clearReaderBackgroundImage,
+      initialFontSettings: appFontSetting.value,
+      onImportFont: importAppFont,
+      onUseSystemFont: useSystemFont,
     );
   }
 

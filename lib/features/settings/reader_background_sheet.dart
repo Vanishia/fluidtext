@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../reader/reader_background_settings.dart';
 import '../reader/widgets/reader_background_surface.dart';
+import 'app_font_settings.dart';
 
 Future<void> showReaderBackgroundSheet(
   BuildContext context, {
@@ -17,6 +18,9 @@ Future<void> showReaderBackgroundSheet(
     ReaderBackgroundSettings settings,
   )
   onClearImage,
+  required AppFontSettings initialFontSettings,
+  required Future<AppFontSettings?> Function() onImportFont,
+  required Future<AppFontSettings> Function() onUseSystemFont,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -28,6 +32,9 @@ Future<void> showReaderBackgroundSheet(
       onChanged: onChanged,
       onImportImage: onImportImage,
       onClearImage: onClearImage,
+      initialFontSettings: initialFontSettings,
+      onImportFont: onImportFont,
+      onUseSystemFont: onUseSystemFont,
     ),
   );
 }
@@ -38,6 +45,9 @@ class _ReaderBackgroundSheet extends StatefulWidget {
     required this.onChanged,
     required this.onImportImage,
     required this.onClearImage,
+    required this.initialFontSettings,
+    required this.onImportFont,
+    required this.onUseSystemFont,
   });
 
   final ReaderBackgroundSettings initialSettings;
@@ -50,6 +60,9 @@ class _ReaderBackgroundSheet extends StatefulWidget {
     ReaderBackgroundSettings settings,
   )
   onClearImage;
+  final AppFontSettings initialFontSettings;
+  final Future<AppFontSettings?> Function() onImportFont;
+  final Future<AppFontSettings> Function() onUseSystemFont;
 
   @override
   State<_ReaderBackgroundSheet> createState() => _ReaderBackgroundSheetState();
@@ -57,7 +70,9 @@ class _ReaderBackgroundSheet extends StatefulWidget {
 
 class _ReaderBackgroundSheetState extends State<_ReaderBackgroundSheet> {
   late ReaderBackgroundSettings _settings = widget.initialSettings;
+  late AppFontSettings _fontSettings = widget.initialFontSettings;
   var _isImportingImage = false;
+  var _isChangingFont = false;
 
   void _apply(ReaderBackgroundSettings next) {
     setState(() {
@@ -110,6 +125,78 @@ class _ReaderBackgroundSheetState extends State<_ReaderBackgroundSheet> {
     }
   }
 
+  Future<void> _openFontSettings() async {
+    if (_isChangingFont) return;
+    final action = await showModalBottomSheet<_FontAction>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: Text(
+                  '字体设置',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+              ListTile(
+                leading: Icon(
+                  _fontSettings.usesCustomFont
+                      ? Icons.circle_outlined
+                      : Icons.check_circle,
+                ),
+                title: const Text('使用系统字体'),
+                subtitle: const Text('使用当前平台的默认界面字体'),
+                onTap: () => Navigator.of(context).pop(_FontAction.system),
+              ),
+              ListTile(
+                leading: Icon(
+                  _fontSettings.usesCustomFont
+                      ? Icons.check_circle
+                      : Icons.circle_outlined,
+                ),
+                title: const Text('导入字体'),
+                subtitle: const Text('选择 TTF 或 OTF 字体文件'),
+                onTap: () => Navigator.of(context).pop(_FontAction.import),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+
+    setState(() => _isChangingFont = true);
+    try {
+      final next = switch (action) {
+        _FontAction.system => await widget.onUseSystemFont(),
+        _FontAction.import => await widget.onImportFont(),
+      };
+      if (!mounted || next == null) return;
+      setState(() => _fontSettings = next);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text('字体设置失败：$error'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    } finally {
+      if (mounted) setState(() => _isChangingFont = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -123,14 +210,14 @@ class _ReaderBackgroundSheetState extends State<_ReaderBackgroundSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '阅读背景',
+              '外观设置',
               style: Theme.of(
                 context,
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             Text(
-              '可以使用纯色，或上传一张图片，再叠加固定纹理。',
+              '可以设置阅读背景和应用字体。',
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
@@ -292,12 +379,48 @@ class _ReaderBackgroundSheetState extends State<_ReaderBackgroundSheet> {
                   ),
               ],
             ),
+            const SizedBox(height: 24),
+            Text(
+              '字体',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 12),
+            Material(
+              color: cs.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(18),
+              clipBehavior: Clip.antiAlias,
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
+                leading: const Icon(Icons.font_download_outlined),
+                title: const Text('字体设置'),
+                subtitle: Text(
+                  _fontSettings.usesCustomFont
+                      ? (_fontSettings.displayName ?? '自定义字体')
+                      : '使用系统字体',
+                ),
+                trailing: _isChangingFont
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.chevron_right_rounded),
+                onTap: _isChangingFont ? null : _openFontSettings,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 }
+
+enum _FontAction { system, import }
 
 class _PaletteChip extends StatelessWidget {
   const _PaletteChip({

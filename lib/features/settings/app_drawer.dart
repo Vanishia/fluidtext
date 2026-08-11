@@ -151,7 +151,7 @@ class AppDrawer extends StatelessWidget {
                   child: Row(
                     children: [
                       _QuietIconButton(
-                        tooltip: '阅读背景',
+                        tooltip: '外观设置',
                         onTap: _popThen(
                           context,
                           onOpenReaderBackgroundSettings,

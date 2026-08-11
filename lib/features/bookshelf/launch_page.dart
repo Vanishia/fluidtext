@@ -110,6 +110,9 @@ class _LaunchPageState extends State<LaunchPage> {
       onChanged: saveReaderBackgroundSettings,
       onImportImage: importReaderBackgroundImage,
       onClearImage: clearReaderBackgroundImage,
+      initialFontSettings: appFontSetting.value,
+      onImportFont: importAppFont,
+      onUseSystemFont: useSystemFont,
     );
   }
 
