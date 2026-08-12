@@ -7,7 +7,6 @@ import '../../features/context/context_settings.dart';
 import '../../features/context/context_sheet.dart';
 import '../../models/book_card.dart';
 import '../../repositories/library_repository.dart';
-import '../../services/book_remark_service.dart';
 import 'reader_background_settings.dart';
 import 'widgets/reader_background_surface.dart';
 
@@ -58,7 +57,7 @@ class _FavoriteCardsPageState extends State<FavoriteCardsPage> {
 
   Future<Map<int, String>> _loadBookTitlesById() async {
     final books = await widget.repository.loadBooks();
-    final remarks = await BookRemarkService.instance.load();
+    final remarks = await widget.repository.loadRemarks();
     return {for (final book in books) book.id: remarks[book.id] ?? book.title};
   }
 

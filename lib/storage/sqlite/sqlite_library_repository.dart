@@ -8,6 +8,7 @@ import '../../models/book_card.dart';
 import '../../models/book_card_activity_event.dart';
 import '../../repositories/library_change_tracker.dart';
 import '../../repositories/library_repository.dart';
+import '../../repositories/library_snapshot.dart';
 import '../../services/book_asset_store.dart';
 import 'library_database.dart';
 
@@ -405,6 +406,395 @@ class SqliteLibraryRepository implements LibraryRepository {
       );
     }
   }
+
+  @override
+  Future<LibraryImportResult> importBookDraft(ImportBookDraft draft) async {
+    final existingByFileHash = await _findBestCompleteBookByFileHash(
+      fileHash: draft.fileHash,
+      contentFingerprint: draft.contentFingerprint,
+      cardCount: draft.cards.length,
+    );
+    if (existingByFileHash != null) {
+      developer.log(
+        'Duplicate import matched by fileHash: bookId=${existingByFileHash.id}',
+        name: 'SqliteLibraryRepository',
+      );
+      return LibraryImportResult(
+        book: existingByFileHash,
+        insertedCards: 0,
+        wasDuplicate: true,
+        matchedBy: 'fileHash',
+      );
+    }
+
+    final existingByFingerprint =
+        await _findBookByContentFingerprintWithLegacyBackfill(
+          contentFingerprint: draft.contentFingerprint,
+          fileHash: draft.fileHash,
+          sourceFileName: draft.sourceFileName,
+          cardCount: draft.cards.length,
+          textCharCount: draft.textCharCount,
+        );
+    if (existingByFingerprint != null) {
+      developer.log(
+        'Duplicate import matched by contentFingerprint: bookId=${existingByFingerprint.id}',
+        name: 'SqliteLibraryRepository',
+      );
+      return LibraryImportResult(
+        book: existingByFingerprint,
+        insertedCards: 0,
+        wasDuplicate: true,
+        matchedBy: 'contentFingerprint',
+      );
+    }
+
+    late final int bookId;
+    await database.transaction(() async {
+      bookId = await database
+          .into(database.sqliteBooks)
+          .insert(
+            SqliteBooksCompanion.insert(
+              title: draft.title,
+              createdAtMs: _msFromDate(draft.createdAt)!,
+              fileHash: Value(draft.fileHash),
+              contentFingerprint: Value(draft.contentFingerprint),
+              sourceFileName: Value(draft.sourceFileName),
+              importedAtMs: Value(_msFromDate(draft.importedAt)),
+              cardCount: Value(draft.cardCount),
+              textCharCount: Value(draft.textCharCount),
+              assetRootKey: Value(draft.assetRootKey),
+            ),
+          );
+
+      await database.batch((batch) {
+        if (draft.assets.isNotEmpty) {
+          batch.insertAll(database.sqliteBookAssets, [
+            for (final asset in draft.assets)
+              SqliteBookAssetsCompanion.insert(
+                bookId: bookId,
+                assetKey: asset.assetKey,
+                originalHref: Value(asset.originalHref),
+                normalizedHref: Value(asset.normalizedHref),
+                mimeType: Value(asset.mimeType),
+                relativePath: asset.relativePath,
+                byteLength: Value(asset.byteLength),
+                createdAtMs: _msFromDate(draft.importedAt)!,
+              ),
+          ]);
+        }
+
+        batch.insertAll(database.sqliteBookCards, [
+          for (final card in draft.cards)
+            SqliteBookCardsCompanion.insert(
+              bookId: bookId,
+              bookTitle: card.bookTitle,
+              cardIndex: card.cardIndex,
+              chapterIndex: card.chapterIndex,
+              chapterCardIndex: card.chapterCardIndex,
+              chapterTitle: Value(card.chapterTitle),
+              content: card.content,
+              blocksJson: Value(card.blocksJson),
+              isRead: false,
+              isFavorite: false,
+            ),
+        ]);
+      });
+    });
+
+    _changeTracker.markChanged();
+    final inserted = (await loadBooksByIds([bookId])).single;
+    return LibraryImportResult(
+      book: inserted,
+      insertedCards: draft.cards.length,
+      wasDuplicate: false,
+      matchedBy: null,
+    );
+  }
+
+  Future<Book?> _findBestCompleteBookByFileHash({
+    required String fileHash,
+    required String contentFingerprint,
+    required int cardCount,
+  }) async {
+    final rows = await (database.select(
+      database.sqliteBooks,
+    )..where((table) => table.fileHash.equals(fileHash))).get();
+    if (rows.isEmpty) return null;
+
+    final completeMatches = <Book>[];
+    for (final row in rows) {
+      final actualCardCount = await _cardCountForBook(row.id);
+      if (actualCardCount != cardCount) {
+        developer.log(
+          'Skipping incomplete fileHash duplicate: bookId=${row.id}, actualCards=$actualCardCount, expectedCards=$cardCount',
+          name: 'SqliteLibraryRepository',
+        );
+        continue;
+      }
+
+      if (row.contentFingerprint == contentFingerprint) {
+        completeMatches.add(_bookFromRow(row));
+        continue;
+      }
+
+      if (row.contentFingerprint == null) {
+        final cards = await _loadCardsForBook(row.id);
+        if (LibraryContentIdentity.contentFingerprintForCards(cards) ==
+            contentFingerprint) {
+          completeMatches.add(_bookFromRow(row));
+        }
+      }
+    }
+
+    if (completeMatches.isEmpty) return null;
+    return _bestDuplicateMatch(completeMatches);
+  }
+
+  Future<Book?> _findBookByContentFingerprintWithLegacyBackfill({
+    required String contentFingerprint,
+    required String fileHash,
+    required String? sourceFileName,
+    required int cardCount,
+    required int textCharCount,
+  }) async {
+    final matches =
+        await (database.select(database.sqliteBooks)..where(
+              (table) => table.contentFingerprint.equals(contentFingerprint),
+            ))
+            .get();
+    final completeMatches = <Book>[];
+    for (final row in matches) {
+      final actualCardCount = await _cardCountForBook(row.id);
+      if (actualCardCount == cardCount) {
+        completeMatches.add(_bookFromRow(row));
+      } else {
+        developer.log(
+          'Skipping incomplete contentFingerprint duplicate: bookId=${row.id}, actualCards=$actualCardCount, expectedCards=$cardCount',
+          name: 'SqliteLibraryRepository',
+        );
+      }
+    }
+
+    final legacyRows = await (database.select(
+      database.sqliteBooks,
+    )..where((table) => table.contentFingerprint.isNull())).get();
+    for (final row in legacyRows) {
+      final legacyCards = await _loadCardsForBook(row.id);
+      if (legacyCards.isEmpty) continue;
+
+      final legacyFingerprint =
+          LibraryContentIdentity.contentFingerprintForCards(legacyCards);
+      final legacyTextCharCount = LibraryContentIdentity.textCharCountForCards(
+        legacyCards,
+      );
+      final isMatch = legacyFingerprint == contentFingerprint;
+      await _fillMissingIdentity(
+        bookId: row.id,
+        contentFingerprint: legacyFingerprint,
+        fileHash: null,
+        sourceFileName: null,
+        cardCount: legacyCards.length,
+        textCharCount: legacyTextCharCount,
+      );
+
+      if (isMatch && legacyCards.length == cardCount) {
+        completeMatches.add(
+          _bookFromRow(row).toBackfilledIdentity(
+            contentFingerprint: legacyFingerprint,
+            cardCount: legacyCards.length,
+            textCharCount: legacyTextCharCount,
+          ),
+        );
+      } else if (isMatch) {
+        developer.log(
+          'Skipping incomplete legacy duplicate: bookId=${row.id}, actualCards=${legacyCards.length}, expectedCards=$cardCount',
+          name: 'SqliteLibraryRepository',
+        );
+      }
+    }
+
+    if (completeMatches.isEmpty) return null;
+    final best = await _bestDuplicateMatch(completeMatches);
+    await _fillMissingIdentity(
+      bookId: best.id,
+      contentFingerprint: contentFingerprint,
+      fileHash: fileHash,
+      sourceFileName: sourceFileName,
+      cardCount: cardCount,
+      textCharCount: textCharCount,
+    );
+    return (await loadBooksByIds([best.id])).single;
+  }
+
+  Future<int> _cardCountForBook(int bookId) async {
+    final row = await database
+        .customSelect(
+          'SELECT COUNT(*) AS count FROM book_cards WHERE book_id = ?',
+          variables: [Variable<int>(bookId)],
+          readsFrom: {database.sqliteBookCards},
+        )
+        .getSingle();
+    return row.read<int>('count');
+  }
+
+  Future<List<BookCard>> _loadCardsForBook(int bookId) async {
+    final rows =
+        await (database.select(database.sqliteBookCards)
+              ..where((table) => table.bookId.equals(bookId))
+              ..orderBy([(table) => OrderingTerm.asc(table.cardIndex)]))
+            .get();
+    return rows.map(_bookCardFromRow).toList(growable: false);
+  }
+
+  Future<Book> _bestDuplicateMatch(List<Book> matches) async {
+    if (matches.length == 1) return matches.single;
+
+    Book? best;
+    var bestScore = -1;
+    for (final book in matches) {
+      final stats = await loadBookStats([book.id]);
+      final item = stats[book.id] ?? BookCardStats.empty;
+      final score = item.favoriteCount * 1000000 + item.readCount;
+      if (score > bestScore) {
+        best = book;
+        bestScore = score;
+      }
+    }
+
+    return best ?? matches.first;
+  }
+
+  Future<void> _fillMissingIdentity({
+    required int bookId,
+    required String contentFingerprint,
+    String? fileHash,
+    required String? sourceFileName,
+    required int cardCount,
+    required int textCharCount,
+  }) async {
+    final rows = await loadBooksByIds([bookId]);
+    if (rows.isEmpty) return;
+    final book = rows.single;
+    final needsUpdate =
+        book.contentFingerprint == null ||
+        (fileHash != null && book.fileHash == null) ||
+        (sourceFileName != null && book.sourceFileName == null) ||
+        book.cardCount == null ||
+        book.textCharCount == null ||
+        book.importedAt == null;
+    if (!needsUpdate) return;
+
+    await (database.update(
+      database.sqliteBooks,
+    )..where((table) => table.id.equals(bookId))).write(
+      SqliteBooksCompanion(
+        contentFingerprint: book.contentFingerprint == null
+            ? Value(contentFingerprint)
+            : const Value.absent(),
+        fileHash: fileHash != null && book.fileHash == null
+            ? Value(fileHash)
+            : const Value.absent(),
+        sourceFileName: sourceFileName != null && book.sourceFileName == null
+            ? Value(sourceFileName)
+            : const Value.absent(),
+        importedAtMs: book.importedAt == null
+            ? Value(_msFromDate(book.createdAt))
+            : const Value.absent(),
+        cardCount: book.cardCount == null
+            ? Value(cardCount)
+            : const Value.absent(),
+        textCharCount: book.textCharCount == null
+            ? Value(textCharCount)
+            : const Value.absent(),
+      ),
+    );
+  }
+
+  @override
+  Future<Map<int, String>> loadRemarks() async {
+    final rows = await (database.select(
+      database.sqliteBookRemarks,
+    )..orderBy([(table) => OrderingTerm.asc(table.bookId)])).get();
+    return {
+      for (final row in rows)
+        if (row.title.trim().isNotEmpty) row.bookId: row.title.trim(),
+    };
+  }
+
+  @override
+  Future<void> saveRemark(int bookId, String remark) async {
+    final trimmed = remark.trim();
+    await database.transaction(() async {
+      if (trimmed.isEmpty) {
+        await (database.delete(
+          database.sqliteBookRemarks,
+        )..where((table) => table.bookId.equals(bookId))).go();
+        return;
+      }
+
+      await database
+          .into(database.sqliteBookRemarks)
+          .insertOnConflictUpdate(
+            SqliteBookRemarksCompanion.insert(
+              bookId: Value(bookId),
+              title: trimmed,
+              updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+            ),
+          );
+    });
+    _changeTracker.markChanged();
+  }
+
+  @override
+  Future<void> removeRemark(int bookId) async {
+    final deleted = await (database.delete(
+      database.sqliteBookRemarks,
+    )..where((table) => table.bookId.equals(bookId))).go();
+    if (deleted > 0) {
+      _changeTracker.markChanged();
+    }
+  }
+
+  @override
+  Future<LibraryBackupSnapshot> buildBackupSnapshot() async {
+    final books = await (database.select(
+      database.sqliteBooks,
+    )..orderBy([(table) => OrderingTerm.asc(table.id)])).get();
+    final cards = await (database.select(
+      database.sqliteBookCards,
+    )..orderBy([(table) => OrderingTerm.asc(table.id)])).get();
+    final assets = await (database.select(
+      database.sqliteBookAssets,
+    )..orderBy([(table) => OrderingTerm.asc(table.id)])).get();
+    final remarks = await (database.select(
+      database.sqliteBookRemarks,
+    )..orderBy([(table) => OrderingTerm.asc(table.bookId)])).get();
+
+    return LibraryBackupSnapshot(
+      books: books.map(_bookFromRow).toList(growable: false),
+      bookCards: cards.map(_bookCardFromRow).toList(growable: false),
+      bookAssets: assets.map(_bookAssetFromRow).toList(growable: false),
+      bookRemarks: remarks
+          .map(
+            (remark) => BookRemarkSnapshot(
+              bookId: remark.bookId,
+              title: remark.title,
+              updatedAt: _dateFromMs(remark.updatedAtMs),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  @override
+  Future<void> checkpoint() {
+    return database.checkpoint();
+  }
+
+  @override
+  Future<void> close() {
+    return database.close();
+  }
 }
 
 extension on SqliteBook {
@@ -420,6 +810,20 @@ extension on SqliteBook {
       ..cardCount = cardCount
       ..textCharCount = textCharCount
       ..assetRootKey = assetRootKey;
+  }
+}
+
+extension on Book {
+  Book toBackfilledIdentity({
+    required String contentFingerprint,
+    required int cardCount,
+    required int textCharCount,
+  }) {
+    return this
+      ..contentFingerprint ??= contentFingerprint
+      ..importedAt ??= createdAt
+      ..cardCount ??= cardCount
+      ..textCharCount ??= textCharCount;
   }
 }
 

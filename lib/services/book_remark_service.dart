@@ -2,9 +2,11 @@ import 'package:isar/isar.dart';
 
 import '../models/book_remark.dart';
 import '../repositories/library_change_tracker.dart';
+import '../repositories/library_repository.dart';
+import '../repositories/library_snapshot.dart';
 import '../storage/storage_layout.dart';
 
-class BookRemarkService {
+class BookRemarkService implements RemarkRepository, BackupSnapshotRepository {
   BookRemarkService({
     StorageLayoutProvider? storageLayout,
     LibraryChangeTracker? changeTracker,
@@ -18,7 +20,10 @@ class BookRemarkService {
   final LibraryChangeTracker _changeTracker;
   Isar? _isar;
 
-  Future<Map<int, String>> load() async {
+  Future<Map<int, String>> load() => loadRemarks();
+
+  @override
+  Future<Map<int, String>> loadRemarks() async {
     final isar = await _db;
     final remarks = await isar.bookRemarks.where().findAll();
     return {
@@ -28,10 +33,19 @@ class BookRemarkService {
   }
 
   Future<List<Map<String, dynamic>>> exportJson() async {
-    final isar = await _db;
-    return isar.bookRemarks.where().exportJson();
+    final snapshot = await buildBackupSnapshot();
+    return snapshot.bookRemarks
+        .map(
+          (remark) => {
+            'id': remark.bookId,
+            'title': remark.title,
+            'updatedAt': remark.updatedAt.toIso8601String(),
+          },
+        )
+        .toList(growable: false);
   }
 
+  @override
   Future<void> saveRemark(int bookId, String remark) async {
     final isar = await _db;
     final trimmed = remark.trim();
@@ -51,6 +65,7 @@ class BookRemarkService {
     _changeTracker.markChanged();
   }
 
+  @override
   Future<void> removeRemark(int bookId) async {
     final isar = await _db;
     final deleted = await isar.writeTxn(() => isar.bookRemarks.delete(bookId));
@@ -59,9 +74,34 @@ class BookRemarkService {
     }
   }
 
+  @override
+  Future<LibraryBackupSnapshot> buildBackupSnapshot() async {
+    final isar = await _db;
+    final remarks = await isar.bookRemarks.where().findAll();
+    return LibraryBackupSnapshot(
+      books: const [],
+      bookCards: const [],
+      bookAssets: const [],
+      bookRemarks: remarks
+          .map(
+            (remark) => BookRemarkSnapshot(
+              bookId: remark.id,
+              title: remark.title,
+              updatedAt: remark.updatedAt,
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  Future<void> close() async {
+    await _isar?.close();
+    _isar = null;
+  }
+
   Future<Isar> get _db async {
     final existing = _isar;
-    if (existing != null) return existing;
+    if (existing != null && existing.isOpen) return existing;
 
     final layout = await _storageLayout();
     final opened = await Isar.open(

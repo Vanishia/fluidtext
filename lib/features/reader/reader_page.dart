@@ -7,7 +7,6 @@ import '../../app_settings.dart';
 import '../../models/book.dart';
 import '../../models/book_card.dart';
 import '../../repositories/library_data_access.dart';
-import '../../services/book_remark_service.dart';
 import '../../services/reader_session_service.dart';
 import '../bookshelf/launch_page.dart';
 import '../bookshelf/bookshelf_sheet.dart';
@@ -66,14 +65,15 @@ class _BookCardsPageState extends State<BookCardsPage> {
   }
 
   Future<void> _init() async {
-    final repository = (await LibraryDataAccess.instance).repository;
+    final dataAccess = await LibraryDataAccess.instance;
+    final repository = dataAccess.repository;
     final controller = ReaderController(
       repository: repository,
       bookIds: widget.bookIds,
       initialReadingOrder: readingOrderSetting.value,
       initialShowUnreadOnly: showUnreadOnlySetting.value,
     );
-    final remarksFuture = BookRemarkService.instance.load();
+    final remarksFuture = dataAccess.loadRemarks();
     await controller.reloadCards();
     final remarks = await remarksFuture;
 
@@ -170,7 +170,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
     );
     if (!mounted || selected == null) return;
 
-    final remarks = await BookRemarkService.instance.load();
+    final remarks = await (await LibraryDataAccess.instance).loadRemarks();
     if (!mounted) return;
     setState(() {
       _bookRemarks

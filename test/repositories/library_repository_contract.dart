@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluidtext/repositories/library_repository.dart';
+import 'package:fluidtext/repositories/library_snapshot.dart';
 
 abstract interface class LibraryRepositoryContractDriver {
   LibraryRepository get repository;
@@ -153,5 +154,99 @@ void runLibraryRepositoryContract(
       ),
       isEmpty,
     );
+  });
+
+  test('persists remarks through the storage-neutral API', () async {
+    final current = driver!;
+
+    await current.repository.saveRemark(current.firstBookId, '  Alias  ');
+    expect(await current.repository.loadRemarks(), {
+      current.firstBookId: 'Alias',
+    });
+
+    await current.repository.removeRemark(current.firstBookId);
+    expect(
+      await current.repository.loadRemarks(),
+      isNot(contains(current.firstBookId)),
+    );
+  });
+
+  test('exports a storage-neutral backup snapshot', () async {
+    final current = driver!;
+    await current.repository.saveRemark(current.firstBookId, 'Snapshot title');
+
+    final snapshot = await current.repository.buildBackupSnapshot();
+
+    expect(
+      snapshot.books.map((book) => book.id),
+      contains(current.firstBookId),
+    );
+    expect(
+      snapshot.bookCards.map((card) => card.id),
+      containsAll([current.firstCardId, current.secondCardId]),
+    );
+    expect(
+      snapshot.bookAssets.map((asset) => asset.assetKey),
+      contains(current.assetKey),
+    );
+    expect(snapshot.bookRemarks.single.bookId, current.firstBookId);
+    expect(snapshot.bookRemarks.single.title, 'Snapshot title');
+  });
+
+  test('imports a neutral draft transaction and detects duplicates', () async {
+    final current = driver!;
+    const cards = [
+      BookCardDraft(
+        bookTitle: 'Draft book',
+        cardIndex: 0,
+        chapterIndex: 0,
+        chapterCardIndex: 0,
+        chapterTitle: 'Start',
+        content: 'Draft first card.',
+        blocksJson: null,
+      ),
+      BookCardDraft(
+        bookTitle: 'Draft book',
+        cardIndex: 1,
+        chapterIndex: 0,
+        chapterCardIndex: 1,
+        chapterTitle: 'Start',
+        content: 'Draft second card.',
+        blocksJson: null,
+      ),
+    ];
+    final draft = ImportBookDraft(
+      title: 'Draft book',
+      createdAt: DateTime(2026, 4, 1),
+      fileHash: 'contract-draft-file-hash',
+      contentFingerprint:
+          LibraryContentIdentity.contentFingerprintForCardDrafts(cards),
+      sourceFileName: 'draft.epub',
+      importedAt: DateTime(2026, 4, 1, 1),
+      cardCount: cards.length,
+      textCharCount: cards.fold<int>(
+        0,
+        (sum, card) =>
+            sum +
+            LibraryContentIdentity.normalizeForFingerprint(card.content).length,
+      ),
+      assetRootKey: null,
+      cards: cards,
+      assets: const [],
+    );
+
+    final inserted = await current.repository.importBookDraft(draft);
+    expect(inserted.wasDuplicate, isFalse);
+    expect(inserted.insertedCards, cards.length);
+    expect(
+      await current.repository.loadOrderedCardIds([inserted.book.id]),
+      hasLength(cards.length),
+    );
+
+    final duplicate = await current.repository.importBookDraft(draft);
+    expect(duplicate.wasDuplicate, isTrue);
+    expect(duplicate.book.id, inserted.book.id);
+    expect(duplicate.insertedCards, 0);
+    expect(duplicate.matchedBy, 'fileHash');
   });
 }

@@ -1,6 +1,10 @@
 import 'dart:typed_data';
 
+import 'package:isar/isar.dart';
+
 import '../db/isar_db.dart';
+import '../models/book_remark.dart';
+import '../services/book_asset_store.dart';
 import '../services/book_import_service.dart';
 import '../services/data_backup_service.dart';
 import '../storage/sqlite/library_database.dart';
@@ -10,12 +14,7 @@ import 'book_card_repository.dart';
 import 'library_repository.dart';
 
 class LibraryDataAccess {
-  LibraryDataAccess._({
-    required this.repository,
-    required BookCardRepository? isarRepository,
-    LibraryDatabase? sqliteDatabase,
-  }) : _isarRepository = isarRepository,
-       _sqliteDatabase = sqliteDatabase;
+  LibraryDataAccess._({required this.repository});
 
   static Future<LibraryDataAccess>? _instanceFuture;
   static const _sqliteRepositoryEnabled = bool.fromEnvironment(
@@ -25,26 +24,31 @@ class LibraryDataAccess {
   static Future<LibraryDataAccess> get instance => _instanceFuture ??= _open();
 
   final LibraryRepository repository;
-  final BookCardRepository? _isarRepository;
-  final LibraryDatabase? _sqliteDatabase;
+  var _closed = false;
 
   static Future<LibraryDataAccess> _open() async {
     if (_sqliteRepositoryEnabled) {
-      final database = await openLibraryDatabaseForLayout(
-        AppStorageResolver.targetRuntimeLayout,
-      );
+      final layoutProvider = AppStorageResolver.targetRuntimeLayout;
+      final database = await openLibraryDatabaseForLayout(layoutProvider);
+      final assetStore = BookAssetStore(storageLayout: layoutProvider);
       return LibraryDataAccess._(
-        repository: SqliteLibraryRepository(database),
-        isarRepository: null,
-        sqliteDatabase: database,
+        repository: SqliteLibraryRepository(database, assetStore: assetStore),
       );
     }
 
     final isar = await IsarDb.instance.isar;
-    final repository = BookCardRepository(isar);
-    return LibraryDataAccess._(
-      repository: repository,
-      isarRepository: repository,
+    final remarkIsar = await _openLegacyRemarkIsar();
+    final repository = BookCardRepository(isar, remarkIsar: remarkIsar);
+    return LibraryDataAccess._(repository: repository);
+  }
+
+  static Future<Isar> _openLegacyRemarkIsar() async {
+    final layout = await AppStorageResolver.legacyRuntimeLayout();
+    return Isar.open(
+      [BookRemarkSchema],
+      directory: layout.bookRemarkDatabaseDirectory.path,
+      name: 'book_remarks',
+      inspector: true,
     );
   }
 
@@ -53,14 +57,8 @@ class LibraryDataAccess {
     String? sourceFileName,
     int targetCharsPerCard = 300,
   }) {
-    final isarRepository = _isarRepository;
-    if (isarRepository == null) {
-      throw UnsupportedError(
-        'SQLite import is not enabled before the phase 3 import abstraction.',
-      );
-    }
     return BookImportService().importEpubBytes(
-      isar: isarRepository.isar,
+      repository: repository,
       bytes: bytes,
       sourceFileName: sourceFileName,
       targetCharsPerCard: targetCharsPerCard,
@@ -68,16 +66,27 @@ class LibraryDataAccess {
   }
 
   Future<String?> exportBackup() {
-    final isarRepository = _isarRepository;
-    if (isarRepository == null) {
-      throw UnsupportedError(
-        'SQLite backup export is not enabled before the phase 3 snapshot abstraction.',
-      );
-    }
-    return const DataBackupService().exportBackup(isarRepository.isar);
+    return const DataBackupService().exportBackup(repository);
+  }
+
+  Future<Map<int, String>> loadRemarks() {
+    return repository.loadRemarks();
+  }
+
+  Future<void> saveRemark(int bookId, String remark) {
+    return repository.saveRemark(bookId, remark);
+  }
+
+  Future<void> removeRemark(int bookId) {
+    return repository.removeRemark(bookId);
   }
 
   Future<void> close() async {
-    await _sqliteDatabase?.close();
+    if (_closed) return;
+    _closed = true;
+    if (identical(await _instanceFuture, this)) {
+      _instanceFuture = null;
+    }
+    await repository.close();
   }
 }

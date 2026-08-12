@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluidtext/models/book.dart';
 import 'package:fluidtext/models/book_asset.dart';
 import 'package:fluidtext/models/book_card.dart';
+import 'package:fluidtext/repositories/book_card_repository.dart';
 import 'package:fluidtext/services/book_asset_store.dart';
 import 'package:fluidtext/services/book_import_service.dart';
 import 'package:fluidtext/services/data_backup_service.dart';
@@ -45,14 +46,19 @@ void main() {
       final assetStore = BookAssetStore(
         documentsDirectory: () async => documentsDirectory,
       );
+      final repository = BookCardRepository(isar, assetStore: assetStore);
       final imported = await BookImportService(
         assetStore: assetStore,
-      ).importEpubBytes(isar: isar, bytes: buildTestEpub());
-      final backup = await DataBackupService(
-        assetStore: assetStore,
-        remarksExporter: () async => const [],
-        readerSessionExporter: () async => null,
-      ).buildBackup(isar, exportedAt: DateTime.utc(2026, 8, 9, 10, 11, 12));
+      ).importEpubBytes(repository: repository, bytes: buildTestEpub());
+      final backup =
+          await DataBackupService(
+            assetStore: assetStore,
+            remarksExporter: () async => const [],
+            readerSessionExporter: () async => null,
+          ).buildBackup(
+            repository,
+            exportedAt: DateTime.utc(2026, 8, 9, 10, 11, 12),
+          );
 
       expect(backup.extension, 'zip');
       final archive = ZipDecoder().decodeBytes(backup.bytes);

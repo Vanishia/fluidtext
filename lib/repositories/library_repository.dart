@@ -2,6 +2,7 @@ import '../models/book.dart';
 import '../models/book_asset.dart';
 import '../models/book_card.dart';
 import '../models/book_card_activity_event.dart';
+import 'library_snapshot.dart';
 
 class BookCardStats {
   const BookCardStats({
@@ -28,7 +29,16 @@ class BookCardStats {
   int get unreadCount => totalCount - readCount;
 }
 
-abstract interface class LibraryRepository {
+abstract interface class LibraryRepository
+    implements
+        LibraryReadRepository,
+        LibraryWriteRepository,
+        LibraryImportRepository,
+        RemarkRepository,
+        BackupSnapshotRepository,
+        DatabaseLifecycle {}
+
+abstract interface class LibraryReadRepository {
   Future<List<Book>> loadBooks();
 
   Future<List<Book>> loadBooksByIds(List<int> ids);
@@ -66,10 +76,34 @@ abstract interface class LibraryRepository {
     required int before,
     required int after,
   });
+}
 
+abstract interface class LibraryWriteRepository {
   Future<void> toggleFavorite(BookCard card);
 
   Future<void> toggleRead(BookCard card);
 
   Future<void> deleteBook(int bookId);
+}
+
+abstract interface class LibraryImportRepository {
+  Future<LibraryImportResult> importBookDraft(ImportBookDraft draft);
+}
+
+abstract interface class RemarkRepository {
+  Future<Map<int, String>> loadRemarks();
+
+  Future<void> saveRemark(int bookId, String remark);
+
+  Future<void> removeRemark(int bookId);
+}
+
+abstract interface class BackupSnapshotRepository {
+  Future<LibraryBackupSnapshot> buildBackupSnapshot();
+}
+
+abstract interface class DatabaseLifecycle {
+  Future<void> checkpoint();
+
+  Future<void> close();
 }

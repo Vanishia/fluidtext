@@ -21,7 +21,7 @@ class IsarDb {
 
   Future<Isar> get isar async {
     final existing = _isar;
-    if (existing != null) return existing;
+    if (existing != null && existing.isOpen) return existing;
 
     final layout = await _storageLayout();
     final opened = await Isar.open(
@@ -35,5 +35,10 @@ class IsarDb {
     );
     _isar = opened;
     return opened;
+  }
+
+  Future<void> close() async {
+    await _isar?.close();
+    _isar = null;
   }
 }

@@ -6,15 +6,19 @@ import '../models/book.dart';
 import '../models/book_asset.dart';
 import '../models/book_card.dart';
 import '../models/book_card_activity_event.dart';
+import '../models/book_remark.dart';
 import '../services/book_asset_store.dart';
 import 'library_change_tracker.dart';
 import 'library_repository.dart';
+import 'library_snapshot.dart';
 
 class BookCardRepository implements LibraryRepository {
-  BookCardRepository(this.isar, {BookAssetStore? assetStore})
-    : _assetStore = assetStore ?? BookAssetStore.instance;
+  BookCardRepository(this.isar, {Isar? remarkIsar, BookAssetStore? assetStore})
+    : _remarkIsar = remarkIsar,
+      _assetStore = assetStore ?? BookAssetStore.instance;
 
   final Isar isar;
+  final Isar? _remarkIsar;
   final BookAssetStore _assetStore;
 
   @override
@@ -606,5 +610,364 @@ class BookCardRepository implements LibraryRepository {
         stackTrace: stackTrace,
       );
     }
+  }
+
+  @override
+  Future<LibraryImportResult> importBookDraft(ImportBookDraft draft) async {
+    final existingByFileHash = await _findBestCompleteBookByFileHash(
+      fileHash: draft.fileHash,
+      contentFingerprint: draft.contentFingerprint,
+      cardCount: draft.cards.length,
+    );
+    if (existingByFileHash != null) {
+      developer.log(
+        'Duplicate import matched by fileHash: bookId=${existingByFileHash.id}',
+        name: 'BookCardRepository',
+      );
+      return LibraryImportResult(
+        book: existingByFileHash,
+        insertedCards: 0,
+        wasDuplicate: true,
+        matchedBy: 'fileHash',
+      );
+    }
+
+    final existingByFingerprint =
+        await _findBookByContentFingerprintWithLegacyBackfill(
+          contentFingerprint: draft.contentFingerprint,
+          fileHash: draft.fileHash,
+          sourceFileName: draft.sourceFileName,
+          cardCount: draft.cards.length,
+          textCharCount: draft.textCharCount,
+        );
+    if (existingByFingerprint != null) {
+      developer.log(
+        'Duplicate import matched by contentFingerprint: bookId=${existingByFingerprint.id}',
+        name: 'BookCardRepository',
+      );
+      return LibraryImportResult(
+        book: existingByFingerprint,
+        insertedCards: 0,
+        wasDuplicate: true,
+        matchedBy: 'contentFingerprint',
+      );
+    }
+
+    final book = Book()
+      ..title = draft.title
+      ..createdAt = draft.createdAt
+      ..fileHash = draft.fileHash
+      ..contentFingerprint = draft.contentFingerprint
+      ..sourceFileName = draft.sourceFileName
+      ..importedAt = draft.importedAt
+      ..cardCount = draft.cardCount
+      ..textCharCount = draft.textCharCount
+      ..assetRootKey = draft.assetRootKey;
+
+    final bookId = await isar.writeTxn(() async {
+      final newBookId = await isar.books.put(book);
+      final cards = draft.cards
+          .map((card) {
+            return BookCard()
+              ..bookId = newBookId
+              ..bookTitle = card.bookTitle
+              ..cardIndex = card.cardIndex
+              ..chapterIndex = card.chapterIndex
+              ..chapterCardIndex = card.chapterCardIndex
+              ..chapterTitle = card.chapterTitle
+              ..content = card.content
+              ..blocksJson = card.blocksJson;
+          })
+          .toList(growable: false);
+      final assets = draft.assets
+          .map((asset) {
+            return BookAsset()
+              ..bookId = newBookId
+              ..assetKey = asset.assetKey
+              ..originalHref = asset.originalHref
+              ..normalizedHref = asset.normalizedHref
+              ..mimeType = asset.mimeType
+              ..relativePath = asset.relativePath
+              ..byteLength = asset.byteLength
+              ..createdAt = draft.importedAt;
+          })
+          .toList(growable: false);
+      if (assets.isNotEmpty) {
+        await isar.bookAssets.putAll(assets);
+      }
+      await isar.bookCards.putAll(cards);
+      return newBookId;
+    });
+
+    LibraryChangeTracker.instance.markChanged();
+    return LibraryImportResult(
+      book: book..id = bookId,
+      insertedCards: draft.cards.length,
+      wasDuplicate: false,
+      matchedBy: null,
+    );
+  }
+
+  Future<Book?> _findBestCompleteBookByFileHash({
+    required String fileHash,
+    required String contentFingerprint,
+    required int cardCount,
+  }) async {
+    final matches = await isar.books
+        .filter()
+        .fileHashEqualTo(fileHash)
+        .findAll();
+    if (matches.isEmpty) return null;
+
+    final completeMatches = <Book>[];
+    for (final book in matches) {
+      final actualCardCount = await isar.bookCards
+          .filter()
+          .bookIdEqualTo(book.id)
+          .count();
+      if (actualCardCount != cardCount) {
+        developer.log(
+          'Skipping incomplete fileHash duplicate: bookId=${book.id}, actualCards=$actualCardCount, expectedCards=$cardCount',
+          name: 'BookCardRepository',
+        );
+        continue;
+      }
+
+      if (book.contentFingerprint == contentFingerprint) {
+        completeMatches.add(book);
+        continue;
+      }
+
+      if (book.contentFingerprint == null) {
+        final cards = await isar.bookCards
+            .filter()
+            .bookIdEqualTo(book.id)
+            .sortByCardIndex()
+            .findAll();
+        if (LibraryContentIdentity.contentFingerprintForCards(cards) ==
+            contentFingerprint) {
+          completeMatches.add(book);
+        }
+      }
+    }
+
+    if (completeMatches.isEmpty) return null;
+    return _bestDuplicateMatch(completeMatches);
+  }
+
+  Future<Book?> _findBookByContentFingerprintWithLegacyBackfill({
+    required String contentFingerprint,
+    required String fileHash,
+    required String? sourceFileName,
+    required int cardCount,
+    required int textCharCount,
+  }) async {
+    final matches = await isar.books
+        .filter()
+        .contentFingerprintEqualTo(contentFingerprint)
+        .findAll();
+    final completeMatches = <Book>[];
+    for (final book in matches) {
+      final actualCardCount = await isar.bookCards
+          .filter()
+          .bookIdEqualTo(book.id)
+          .count();
+      if (actualCardCount == cardCount) {
+        completeMatches.add(book);
+      } else {
+        developer.log(
+          'Skipping incomplete contentFingerprint duplicate: bookId=${book.id}, actualCards=$actualCardCount, expectedCards=$cardCount',
+          name: 'BookCardRepository',
+        );
+      }
+    }
+
+    final legacyBooks = await isar.books
+        .filter()
+        .contentFingerprintIsNull()
+        .findAll();
+    for (final legacyBook in legacyBooks) {
+      final legacyCards = await isar.bookCards
+          .filter()
+          .bookIdEqualTo(legacyBook.id)
+          .sortByCardIndex()
+          .findAll();
+      if (legacyCards.isEmpty) continue;
+
+      final legacyFingerprint =
+          LibraryContentIdentity.contentFingerprintForCards(legacyCards);
+      final legacyTextCharCount = LibraryContentIdentity.textCharCountForCards(
+        legacyCards,
+      );
+      final isMatch = legacyFingerprint == contentFingerprint;
+      await _fillMissingIdentity(
+        book: legacyBook,
+        contentFingerprint: legacyFingerprint,
+        fileHash: null,
+        sourceFileName: null,
+        cardCount: legacyCards.length,
+        textCharCount: legacyTextCharCount,
+      );
+
+      if (isMatch && legacyCards.length == cardCount) {
+        completeMatches.add(legacyBook);
+      } else if (isMatch) {
+        developer.log(
+          'Skipping incomplete legacy duplicate: bookId=${legacyBook.id}, actualCards=${legacyCards.length}, expectedCards=$cardCount',
+          name: 'BookCardRepository',
+        );
+      }
+    }
+
+    if (completeMatches.isEmpty) return null;
+    final best = await _bestDuplicateMatch(completeMatches);
+    await _fillMissingIdentity(
+      book: best,
+      contentFingerprint: contentFingerprint,
+      fileHash: fileHash,
+      sourceFileName: sourceFileName,
+      cardCount: cardCount,
+      textCharCount: textCharCount,
+    );
+    return best;
+  }
+
+  Future<Book> _bestDuplicateMatch(List<Book> matches) async {
+    if (matches.length == 1) return matches.single;
+
+    Book? best;
+    var bestScore = -1;
+    for (final book in matches) {
+      final readCount = await isar.bookCards
+          .filter()
+          .bookIdEqualTo(book.id)
+          .and()
+          .isReadEqualTo(true)
+          .count();
+      final favoriteCount = await isar.bookCards
+          .filter()
+          .bookIdEqualTo(book.id)
+          .and()
+          .isFavoriteEqualTo(true)
+          .count();
+      final score = favoriteCount * 1000000 + readCount;
+      if (score > bestScore) {
+        best = book;
+        bestScore = score;
+      }
+    }
+
+    return best ?? matches.first;
+  }
+
+  Future<void> _fillMissingIdentity({
+    required Book book,
+    required String contentFingerprint,
+    String? fileHash,
+    required String? sourceFileName,
+    required int cardCount,
+    required int textCharCount,
+  }) async {
+    final needsUpdate =
+        book.contentFingerprint == null ||
+        (fileHash != null && book.fileHash == null) ||
+        (sourceFileName != null && book.sourceFileName == null) ||
+        book.cardCount == null ||
+        book.textCharCount == null ||
+        book.importedAt == null;
+    if (!needsUpdate) {
+      return;
+    }
+
+    await isar.writeTxn(() async {
+      book.contentFingerprint ??= contentFingerprint;
+      if (fileHash != null) book.fileHash ??= fileHash;
+      if (sourceFileName != null) book.sourceFileName ??= sourceFileName;
+      book.importedAt ??= book.createdAt;
+      book.cardCount ??= cardCount;
+      book.textCharCount ??= textCharCount;
+      await isar.books.put(book);
+    });
+  }
+
+  @override
+  Future<Map<int, String>> loadRemarks() async {
+    final remarkIsar = _remarkIsar;
+    if (remarkIsar == null) return const <int, String>{};
+
+    final remarks = await remarkIsar.bookRemarks.where().findAll();
+    return {
+      for (final remark in remarks)
+        if (remark.title.trim().isNotEmpty) remark.id: remark.title.trim(),
+    };
+  }
+
+  @override
+  Future<void> saveRemark(int bookId, String remark) async {
+    final remarkIsar = _remarkIsar;
+    if (remarkIsar == null) {
+      throw StateError('Remark repository is not configured for Isar.');
+    }
+
+    final trimmed = remark.trim();
+    await remarkIsar.writeTxn(() async {
+      if (trimmed.isEmpty) {
+        await remarkIsar.bookRemarks.delete(bookId);
+        return;
+      }
+
+      await remarkIsar.bookRemarks.put(
+        BookRemark()
+          ..id = bookId
+          ..title = trimmed
+          ..updatedAt = DateTime.now(),
+      );
+    });
+    LibraryChangeTracker.instance.markChanged();
+  }
+
+  @override
+  Future<void> removeRemark(int bookId) async {
+    final remarkIsar = _remarkIsar;
+    if (remarkIsar == null) return;
+
+    final deleted = await remarkIsar.writeTxn(
+      () => remarkIsar.bookRemarks.delete(bookId),
+    );
+    if (deleted) {
+      LibraryChangeTracker.instance.markChanged();
+    }
+  }
+
+  @override
+  Future<LibraryBackupSnapshot> buildBackupSnapshot() async {
+    final remarkIsar = _remarkIsar;
+    final remarks = remarkIsar == null
+        ? const <BookRemarkSnapshot>[]
+        : (await remarkIsar.bookRemarks.where().findAll())
+              .map(
+                (remark) => BookRemarkSnapshot(
+                  bookId: remark.id,
+                  title: remark.title,
+                  updatedAt: remark.updatedAt,
+                ),
+              )
+              .toList(growable: false);
+
+    return LibraryBackupSnapshot(
+      books: await isar.books.where().findAll(),
+      bookCards: await isar.bookCards.where().findAll(),
+      bookAssets: await isar.bookAssets.where().findAll(),
+      bookRemarks: remarks,
+    );
+  }
+
+  @override
+  Future<void> checkpoint() async {}
+
+  @override
+  Future<void> close() async {
+    await isar.close();
+    await _remarkIsar?.close();
   }
 }

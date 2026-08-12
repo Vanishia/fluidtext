@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fluidtext/models/book.dart';
 import 'package:fluidtext/models/book_asset.dart';
 import 'package:fluidtext/models/book_card.dart';
+import 'package:fluidtext/models/book_remark.dart';
 import 'package:fluidtext/repositories/book_card_repository.dart';
 import 'package:fluidtext/repositories/library_repository.dart';
 import 'package:isar/isar.dart';
@@ -40,6 +41,7 @@ void main() {
 class _IsarRepositoryDriver implements LibraryRepositoryContractDriver {
   _IsarRepositoryDriver._({
     required this.isar,
+    required this.remarkIsar,
     required this.directory,
     required this.repository,
   });
@@ -52,6 +54,7 @@ class _IsarRepositoryDriver implements LibraryRepositoryContractDriver {
   static const _assetKey = 'asset-key';
 
   final Isar isar;
+  final Isar remarkIsar;
   final Directory directory;
 
   @override
@@ -85,9 +88,16 @@ class _IsarRepositoryDriver implements LibraryRepositoryContractDriver {
       name: 'contract_${DateTime.now().microsecondsSinceEpoch}',
       inspector: false,
     );
-    final repository = BookCardRepository(isar);
+    final remarkIsar = await Isar.open(
+      [BookRemarkSchema],
+      directory: directory.path,
+      name: 'remarks_${DateTime.now().microsecondsSinceEpoch}',
+      inspector: false,
+    );
+    final repository = BookCardRepository(isar, remarkIsar: remarkIsar);
     final driver = _IsarRepositoryDriver._(
       isar: isar,
+      remarkIsar: remarkIsar,
       directory: directory,
       repository: repository,
     );
@@ -153,6 +163,7 @@ class _IsarRepositoryDriver implements LibraryRepositoryContractDriver {
   @override
   Future<void> close() async {
     await isar.close(deleteFromDisk: true);
+    await remarkIsar.close(deleteFromDisk: true);
     if (await directory.exists()) {
       await directory.delete(recursive: true);
     }

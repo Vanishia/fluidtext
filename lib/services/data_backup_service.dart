@@ -3,13 +3,13 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:isar/isar.dart';
 
 import '../models/book.dart';
 import '../models/book_asset.dart';
 import '../models/book_card.dart';
+import '../repositories/library_repository.dart';
+import '../repositories/library_snapshot.dart';
 import 'book_asset_store.dart';
-import 'book_remark_service.dart';
 import 'reader_session_service.dart';
 
 class DataBackupService {
@@ -27,8 +27,8 @@ class DataBackupService {
   final Future<List<Map<String, dynamic>>> Function()? _remarksExporter;
   final Future<Map<String, dynamic>?> Function()? _readerSessionExporter;
 
-  Future<String?> exportBackup(Isar isar) async {
-    final backup = await buildBackup(isar);
+  Future<String?> exportBackup(BackupSnapshotRepository repository) async {
+    final backup = await buildBackup(repository);
 
     final savedPath = await FilePicker.platform.saveFile(
       dialogTitle: '导出 FluidText 备份',
@@ -43,19 +43,25 @@ class DataBackupService {
     return savedPath;
   }
 
-  Future<BackupFile> buildBackup(Isar isar, {DateTime? exportedAt}) async {
+  Future<BackupFile> buildBackup(
+    BackupSnapshotRepository repository, {
+    DateTime? exportedAt,
+  }) async {
+    final snapshot = await repository.buildBackupSnapshot();
     final timestamp = (exportedAt ?? DateTime.now()).toUtc();
-    final bookAssets = await isar.bookAssets.where().findAll();
+    final bookAssets = snapshot.bookAssets;
     final payload = <String, Object?>{
       'format': 'fluidtext.backup',
       'version': backupFormatVersion,
       'exportedAt': timestamp.toIso8601String(),
-      'books': await isar.books.where().exportJson(),
+      'books': snapshot.books.map(_bookToJson).toList(),
       'bookAssets': bookAssets.map(_bookAssetToJson).toList(),
-      'bookCards': await isar.bookCards.where().exportJson(),
+      'bookCards': snapshot.bookCards.map(_bookCardToJson).toList(),
       'bookRemarks':
           await (_remarksExporter?.call() ??
-              BookRemarkService.instance.exportJson()),
+              Future.value(
+                snapshot.bookRemarks.map(_bookRemarkToJson).toList(),
+              )),
       'readerSession':
           await (_readerSessionExporter?.call() ??
               ReaderSessionService.instance.exportJson()),
@@ -100,6 +106,39 @@ class DataBackupService {
     return Uint8List.fromList(ZipEncoder().encode(archive));
   }
 
+  Map<String, Object?> _bookToJson(Book book) {
+    return {
+      'id': book.id,
+      'assetRootKey': book.assetRootKey,
+      'cardCount': book.cardCount,
+      'contentFingerprint': book.contentFingerprint,
+      'createdAt': book.createdAt.toIso8601String(),
+      'fileHash': book.fileHash,
+      'importedAt': book.importedAt?.toIso8601String(),
+      'sourceFileName': book.sourceFileName,
+      'textCharCount': book.textCharCount,
+      'title': book.title,
+    };
+  }
+
+  Map<String, Object?> _bookCardToJson(BookCard card) {
+    return {
+      'id': card.id,
+      'blocksJson': card.blocksJson,
+      'bookId': card.bookId,
+      'bookTitle': card.bookTitle,
+      'cardIndex': card.cardIndex,
+      'chapterCardIndex': card.chapterCardIndex,
+      'chapterIndex': card.chapterIndex,
+      'chapterTitle': card.chapterTitle,
+      'content': card.content,
+      'favoritedAt': card.favoritedAt?.toIso8601String(),
+      'isFavorite': card.isFavorite,
+      'isRead': card.isRead,
+      'readAt': card.readAt?.toIso8601String(),
+    };
+  }
+
   Map<String, Object?> _bookAssetToJson(BookAsset asset) {
     return {
       'id': asset.id,
@@ -111,6 +150,14 @@ class DataBackupService {
       'relativePath': asset.relativePath,
       'byteLength': asset.byteLength,
       'createdAt': asset.createdAt.toIso8601String(),
+    };
+  }
+
+  Map<String, Object?> _bookRemarkToJson(BookRemarkSnapshot remark) {
+    return {
+      'id': remark.bookId,
+      'title': remark.title,
+      'updatedAt': remark.updatedAt.toIso8601String(),
     };
   }
 

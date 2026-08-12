@@ -7,6 +7,8 @@ import 'package:fluidtext/models/book_card.dart';
 import 'package:fluidtext/repositories/book_card_repository.dart';
 import 'package:fluidtext/services/book_asset_store.dart';
 import 'package:fluidtext/services/book_import_service.dart';
+import 'package:fluidtext/storage/sqlite/library_database.dart';
+import 'package:fluidtext/storage/sqlite/sqlite_library_repository.dart';
 import 'package:isar/isar.dart';
 
 import '../support/epub_fixture.dart';
@@ -18,6 +20,7 @@ void main() {
   Isar? isar;
   late BookAssetStore assetStore;
   late BookImportService importService;
+  late BookCardRepository repository;
 
   setUpAll(initializeIsarTestCore);
 
@@ -38,6 +41,7 @@ void main() {
       documentsDirectory: () async => documentsDirectory!,
     );
     importService = BookImportService(assetStore: assetStore);
+    repository = BookCardRepository(isar!, assetStore: assetStore);
   });
 
   tearDown(() async {
@@ -52,7 +56,7 @@ void main() {
 
   test('imports a real EPUB and keeps only referenced staged images', () async {
     final result = await importService.importEpubBytes(
-      isar: isar!,
+      repository: repository,
       bytes: buildTestEpub(),
       sourceFileName: 'integration.epub',
       targetCharsPerCard: 20,
@@ -94,9 +98,12 @@ void main() {
 
   test('cleans staging files when a duplicate import is detected', () async {
     final epub = buildTestEpub();
-    final first = await importService.importEpubBytes(isar: isar!, bytes: epub);
+    final first = await importService.importEpubBytes(
+      repository: repository,
+      bytes: epub,
+    );
     final second = await importService.importEpubBytes(
-      isar: isar!,
+      repository: repository,
       bytes: epub,
     );
 
@@ -115,7 +122,7 @@ void main() {
   test('cleans staged images when chapter parsing fails', () async {
     await expectLater(
       importService.importEpubBytes(
-        isar: isar!,
+        repository: repository,
         bytes: buildTestEpub(includeChapterFile: false),
       ),
       throwsA(isA<BookImportException>()),
@@ -135,7 +142,7 @@ void main() {
 
   test('deleting an imported book removes its staged resource root', () async {
     final result = await importService.importEpubBytes(
-      isar: isar!,
+      repository: repository,
       bytes: buildTestEpub(),
     );
     final book = await isar!.books.get(result.bookId);
@@ -144,9 +151,35 @@ void main() {
     );
     expect(await root.exists(), isTrue);
 
-    final repository = BookCardRepository(isar!, assetStore: assetStore);
     await repository.deleteBook(result.bookId);
 
     expect(await root.exists(), isFalse);
+  });
+
+  test('imports the same real EPUB through the SQLite repository', () async {
+    final database = LibraryDatabase.inMemory();
+    addTearDown(database.close);
+    final sqliteRepository = SqliteLibraryRepository(
+      database,
+      assetStore: assetStore,
+    );
+
+    final result = await importService.importEpubBytes(
+      repository: sqliteRepository,
+      bytes: buildTestEpub(),
+      sourceFileName: 'sqlite.epub',
+      targetCharsPerCard: 20,
+    );
+
+    expect(result.wasDuplicate, isFalse);
+    final books = await sqliteRepository.loadBooksByIds([result.bookId]);
+    final cards = await sqliteRepository.loadOrderedCardIds([result.bookId]);
+    final snapshot = await sqliteRepository.buildBackupSnapshot();
+    final assets = snapshot.bookAssets
+        .where((asset) => asset.bookId == result.bookId)
+        .toList(growable: false);
+    expect(books.single.sourceFileName, 'sqlite.epub');
+    expect(cards, hasLength(result.insertedCards));
+    expect(assets, hasLength(1));
   });
 }

@@ -6,12 +6,10 @@ import 'package:crypto/crypto.dart';
 import 'package:epub_plus/epub_plus.dart';
 import 'package:html/dom.dart' as html_dom;
 import 'package:html/parser.dart' as html_parser;
-import 'package:isar/isar.dart';
 
-import '../models/book.dart';
-import '../models/book_asset.dart';
 import '../models/book_card.dart';
-import '../repositories/library_change_tracker.dart';
+import '../repositories/library_repository.dart';
+import '../repositories/library_snapshot.dart';
 import 'book_asset_store.dart';
 import 'text_splitter.dart';
 
@@ -90,7 +88,7 @@ class BookImportService {
   static const _minChaptersBeforeRatioFailure = 4;
 
   Future<BookImportResult> importEpubBytes({
-    required Isar isar,
+    required LibraryImportRepository repository,
     required Uint8List bytes,
     String? sourceFileName,
     int targetCharsPerCard = 300,
@@ -166,61 +164,8 @@ class BookImportService {
         );
       }
 
-      final existingByFileHash = await _findBestCompleteBookByFileHash(
-        isar: isar,
-        fileHash: fileHash,
-        contentFingerprint: draft.contentFingerprint,
-        cardCount: draft.cards.length,
-      );
-      if (existingByFileHash != null) {
-        developer.log(
-          'Duplicate EPUB import matched by fileHash: bookId=${existingByFileHash.id}',
-          name: 'BookImportService',
-        );
-        return BookImportResult(
-          bookId: existingByFileHash.id,
-          bookTitle: existingByFileHash.title,
-          insertedCards: 0,
-          wasDuplicate: true,
-          matchedBy: 'fileHash',
-        );
-      }
-
-      final existingByFingerprint =
-          await _findBookByContentFingerprintWithLegacyBackfill(
-            isar: isar,
-            contentFingerprint: draft.contentFingerprint,
-            fileHash: fileHash,
-            sourceFileName: sourceFileName,
-            cardCount: draft.cards.length,
-            textCharCount: draft.textCharCount,
-          );
-      if (existingByFingerprint != null) {
-        developer.log(
-          'Duplicate EPUB import matched by contentFingerprint: bookId=${existingByFingerprint.id}',
-          name: 'BookImportService',
-        );
-        return BookImportResult(
-          bookId: existingByFingerprint.id,
-          bookTitle: existingByFingerprint.title,
-          insertedCards: 0,
-          wasDuplicate: true,
-          matchedBy: 'contentFingerprint',
-        );
-      }
-
       final now = DateTime.now();
       final assetRootKey = draft.assets.isEmpty ? null : stagedAssetRootKey;
-      final book = Book()
-        ..title = title
-        ..createdAt = now
-        ..fileHash = fileHash
-        ..contentFingerprint = draft.contentFingerprint
-        ..sourceFileName = sourceFileName
-        ..importedAt = now
-        ..cardCount = draft.cards.length
-        ..textCharCount = draft.textCharCount
-        ..assetRootKey = assetRootKey;
 
       if (assetRootKey != null) {
         await _assetStore.pruneAssetRoot(
@@ -231,46 +176,47 @@ class BookImportService {
         );
       }
 
-      late final int bookId;
-      bookId = await isar.writeTxn(() async {
-        final newBookId = await isar.books.put(book);
-        for (final card in draft.cards) {
-          card.bookId = newBookId;
-        }
-
-        if (assetRootKey != null) {
-          final assets = draft.assets.values
-              .map((asset) {
-                return BookAsset()
-                  ..bookId = newBookId
-                  ..assetKey = asset.assetKey
-                  ..originalHref = asset.originalHref
-                  ..normalizedHref = asset.normalizedHref
-                  ..mimeType = asset.mimeType
-                  ..relativePath = asset.relativePath
-                  ..byteLength = asset.byteLength
-                  ..createdAt = now;
-              })
-              .toList(growable: false);
-          await isar.bookAssets.putAll(assets);
-        }
-
-        await isar.bookCards.putAll(draft.cards);
-        return newBookId;
-      });
-      retainStagedAssets = assetRootKey != null;
-      LibraryChangeTracker.instance.markChanged();
+      final imported = await repository.importBookDraft(
+        ImportBookDraft(
+          title: title,
+          createdAt: now,
+          fileHash: fileHash,
+          contentFingerprint: draft.contentFingerprint,
+          sourceFileName: sourceFileName,
+          importedAt: now,
+          cardCount: draft.cards.length,
+          textCharCount: draft.textCharCount,
+          assetRootKey: assetRootKey,
+          cards: draft.cards
+              .map(BookCardDraft.fromBookCard)
+              .toList(growable: false),
+          assets: draft.assets.values
+              .map(
+                (asset) => BookAssetDraft(
+                  assetKey: asset.assetKey,
+                  originalHref: asset.originalHref,
+                  normalizedHref: asset.normalizedHref,
+                  mimeType: asset.mimeType,
+                  relativePath: asset.relativePath,
+                  byteLength: asset.byteLength,
+                ),
+              )
+              .toList(growable: false),
+        ),
+      );
+      retainStagedAssets = assetRootKey != null && !imported.wasDuplicate;
 
       developer.log(
-        'Finished EPUB import: bookId=$bookId, insertedCards=${draft.cards.length}',
+        'Finished EPUB import: bookId=${imported.book.id}, insertedCards=${imported.insertedCards}, duplicate=${imported.wasDuplicate}',
         name: 'BookImportService',
       );
 
       return BookImportResult(
-        bookId: bookId,
-        bookTitle: title,
-        insertedCards: draft.cards.length,
-        wasDuplicate: false,
+        bookId: imported.book.id,
+        bookTitle: imported.book.title,
+        insertedCards: imported.insertedCards,
+        wasDuplicate: imported.wasDuplicate,
+        matchedBy: imported.matchedBy,
       );
     } finally {
       if (!retainStagedAssets) {
@@ -559,189 +505,6 @@ class BookImportService {
     );
   }
 
-  Future<Book?> _findBestCompleteBookByFileHash({
-    required Isar isar,
-    required String fileHash,
-    required String contentFingerprint,
-    required int cardCount,
-  }) async {
-    final matches = await isar.books
-        .filter()
-        .fileHashEqualTo(fileHash)
-        .findAll();
-    if (matches.isEmpty) return null;
-
-    final completeMatches = <Book>[];
-    for (final book in matches) {
-      final actualCardCount = await isar.bookCards
-          .filter()
-          .bookIdEqualTo(book.id)
-          .count();
-      if (actualCardCount != cardCount) {
-        developer.log(
-          'Skipping incomplete fileHash duplicate: bookId=${book.id}, actualCards=$actualCardCount, expectedCards=$cardCount',
-          name: 'BookImportService',
-        );
-        continue;
-      }
-
-      if (book.contentFingerprint == contentFingerprint) {
-        completeMatches.add(book);
-        continue;
-      }
-
-      if (book.contentFingerprint == null) {
-        final cards = await isar.bookCards
-            .filter()
-            .bookIdEqualTo(book.id)
-            .sortByCardIndex()
-            .findAll();
-        if (_contentFingerprintForCards(cards) == contentFingerprint) {
-          completeMatches.add(book);
-        }
-      }
-    }
-
-    if (completeMatches.isEmpty) return null;
-    return _bestDuplicateMatch(isar, completeMatches);
-  }
-
-  Future<Book?> _findBookByContentFingerprintWithLegacyBackfill({
-    required Isar isar,
-    required String contentFingerprint,
-    required String fileHash,
-    required String? sourceFileName,
-    required int cardCount,
-    required int textCharCount,
-  }) async {
-    final matches = await isar.books
-        .filter()
-        .contentFingerprintEqualTo(contentFingerprint)
-        .findAll();
-    final completeMatches = <Book>[];
-    for (final book in matches) {
-      final actualCardCount = await isar.bookCards
-          .filter()
-          .bookIdEqualTo(book.id)
-          .count();
-      if (actualCardCount == cardCount) {
-        completeMatches.add(book);
-      } else {
-        developer.log(
-          'Skipping incomplete contentFingerprint duplicate: bookId=${book.id}, actualCards=$actualCardCount, expectedCards=$cardCount',
-          name: 'BookImportService',
-        );
-      }
-    }
-
-    final legacyBooks = await isar.books
-        .filter()
-        .contentFingerprintIsNull()
-        .findAll();
-    for (final legacyBook in legacyBooks) {
-      final legacyCards = await isar.bookCards
-          .filter()
-          .bookIdEqualTo(legacyBook.id)
-          .sortByCardIndex()
-          .findAll();
-      if (legacyCards.isEmpty) continue;
-
-      final legacyFingerprint = _contentFingerprintForCards(legacyCards);
-      final legacyTextCharCount = _textCharCountForCards(legacyCards);
-      final isMatch = legacyFingerprint == contentFingerprint;
-      await _fillMissingIdentity(
-        isar: isar,
-        book: legacyBook,
-        contentFingerprint: legacyFingerprint,
-        fileHash: null,
-        sourceFileName: null,
-        cardCount: legacyCards.length,
-        textCharCount: legacyTextCharCount,
-      );
-
-      if (isMatch && legacyCards.length == cardCount) {
-        completeMatches.add(legacyBook);
-      } else if (isMatch) {
-        developer.log(
-          'Skipping incomplete legacy duplicate: bookId=${legacyBook.id}, actualCards=${legacyCards.length}, expectedCards=$cardCount',
-          name: 'BookImportService',
-        );
-      }
-    }
-
-    if (completeMatches.isEmpty) return null;
-    final best = await _bestDuplicateMatch(isar, completeMatches);
-    await _fillMissingIdentity(
-      isar: isar,
-      book: best,
-      contentFingerprint: contentFingerprint,
-      fileHash: fileHash,
-      sourceFileName: sourceFileName,
-      cardCount: cardCount,
-      textCharCount: textCharCount,
-    );
-    return best;
-  }
-
-  Future<Book> _bestDuplicateMatch(Isar isar, List<Book> matches) async {
-    if (matches.length == 1) return matches.single;
-
-    Book? best;
-    var bestScore = -1;
-    for (final book in matches) {
-      final readCount = await isar.bookCards
-          .filter()
-          .bookIdEqualTo(book.id)
-          .and()
-          .isReadEqualTo(true)
-          .count();
-      final favoriteCount = await isar.bookCards
-          .filter()
-          .bookIdEqualTo(book.id)
-          .and()
-          .isFavoriteEqualTo(true)
-          .count();
-      final score = favoriteCount * 1000000 + readCount;
-      if (score > bestScore) {
-        best = book;
-        bestScore = score;
-      }
-    }
-
-    return best ?? matches.first;
-  }
-
-  Future<void> _fillMissingIdentity({
-    required Isar isar,
-    required Book book,
-    required String contentFingerprint,
-    String? fileHash,
-    required String? sourceFileName,
-    required int cardCount,
-    required int textCharCount,
-  }) async {
-    final needsUpdate =
-        book.contentFingerprint == null ||
-        (fileHash != null && book.fileHash == null) ||
-        (sourceFileName != null && book.sourceFileName == null) ||
-        book.cardCount == null ||
-        book.textCharCount == null ||
-        book.importedAt == null;
-    if (!needsUpdate) {
-      return;
-    }
-
-    await isar.writeTxn(() async {
-      book.contentFingerprint ??= contentFingerprint;
-      if (fileHash != null) book.fileHash ??= fileHash;
-      if (sourceFileName != null) book.sourceFileName ??= sourceFileName;
-      book.importedAt ??= book.createdAt;
-      book.cardCount ??= cardCount;
-      book.textCharCount ??= textCharCount;
-      await isar.books.put(book);
-    });
-  }
-
   Iterable<_ChapterContent> _chapterContents(
     List<EpubChapter> chapters, {
     required _EpubImageIndex imageIndex,
@@ -979,34 +742,11 @@ class BookImportService {
   }
 
   String _normalizeForFingerprint(String text) {
-    return text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return LibraryContentIdentity.normalizeForFingerprint(text);
   }
 
   String _contentFingerprintForCards(List<BookCard> cards) {
-    final sorted = List<BookCard>.of(cards)
-      ..sort((a, b) => a.cardIndex.compareTo(b.cardIndex));
-    final buffer = StringBuffer()..writeln(sorted.length);
-
-    for (final card in sorted) {
-      final normalized = _normalizeForFingerprint(card.content);
-      buffer
-        ..write(card.chapterIndex)
-        ..write('|')
-        ..write(card.chapterCardIndex)
-        ..write('|')
-        ..writeln(normalized.length)
-        ..writeln(normalized)
-        ..writeln(card.blocksJson ?? '');
-    }
-
-    return sha256.convert(utf8.encode(buffer.toString())).toString();
-  }
-
-  int _textCharCountForCards(List<BookCard> cards) {
-    return cards.fold<int>(
-      0,
-      (sum, card) => sum + _normalizeForFingerprint(card.content).length,
-    );
+    return LibraryContentIdentity.contentFingerprintForCards(cards);
   }
 }
 

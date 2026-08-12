@@ -1,6 +1,5 @@
 import '../../../repositories/library_repository.dart';
 import '../../../repositories/library_change_tracker.dart';
-import '../../../services/book_remark_service.dart';
 import 'models/reading_analytics.dart';
 
 class ReadingAnalysisController {
@@ -9,7 +8,7 @@ class ReadingAnalysisController {
     required List<int> bookIds,
     Future<Map<int, String>> Function()? loadRemarks,
   }) : bookIds = List<int>.unmodifiable(bookIds),
-       _loadRemarks = loadRemarks ?? BookRemarkService.instance.load;
+       _loadRemarks = loadRemarks ?? repository.loadRemarks;
 
   final LibraryRepository repository;
   final List<int> bookIds;

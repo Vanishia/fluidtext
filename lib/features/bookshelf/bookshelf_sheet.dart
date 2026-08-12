@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import '../../models/book.dart';
 import '../../repositories/library_data_access.dart';
 import '../../repositories/library_repository.dart';
-import '../../services/book_remark_service.dart';
 import '../../widgets/blocking_loader.dart';
 import '../../widgets/glass.dart';
 
@@ -60,7 +59,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     final dataAccess = await LibraryDataAccess.instance;
     final repository = dataAccess.repository;
     final books = await repository.loadBooks();
-    final remarks = await BookRemarkService.instance.load();
+    final remarks = await dataAccess.loadRemarks();
     final stats = await repository.loadBookStats(
       books.map((book) => book.id).toList(),
     );
@@ -267,7 +266,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
 
     try {
       await repository.deleteBook(book.id);
-      await BookRemarkService.instance.removeRemark(book.id);
+      await _dataAccess?.removeRemark(book.id);
       await _reloadBooks();
       if (!mounted) return;
       setState(() {
@@ -306,7 +305,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     });
 
     try {
-      await BookRemarkService.instance.saveRemark(book.id, result);
+      await _dataAccess?.saveRemark(book.id, result);
       final trimmed = result.trim();
       if (!mounted) return;
       setState(() {
