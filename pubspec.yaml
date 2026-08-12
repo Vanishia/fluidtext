@@ -43,6 +43,9 @@ dependencies:
   collection: ^1.19.1
   crypto: ^3.0.7
   archive: ^4.0.9
+  drift: ^2.15.0
+  sqlite3_flutter_libs: ^0.6.0+eol
+  sqlite3: ^2.9.4
 
 dev_dependencies:
   flutter_test:
@@ -57,6 +60,7 @@ dev_dependencies:
   isar_generator: ^3.1.0+1
   build_runner: ^2.4.13
   flutter_launcher_icons: ^0.13.1
+  drift_dev: ^2.15.0
 
 flutter_launcher_icons:
   android: true
