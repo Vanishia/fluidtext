@@ -48,6 +48,7 @@ class _IsarRepositoryDriver implements LibraryRepositoryContractDriver {
   static const _secondBookId = 2;
   static const _firstCardId = 10;
   static const _secondCardId = 11;
+  static const _thirdCardId = 12;
   static const _assetKey = 'asset-key';
 
   final Isar isar;
@@ -67,6 +68,9 @@ class _IsarRepositoryDriver implements LibraryRepositoryContractDriver {
 
   @override
   int get secondCardId => _secondCardId;
+
+  @override
+  int get thirdCardId => _thirdCardId;
 
   @override
   String get assetKey => _assetKey;
@@ -120,6 +124,18 @@ class _IsarRepositoryDriver implements LibraryRepositoryContractDriver {
       ..readAt = DateTime(2026, 1, 2)
       ..isFavorite = true
       ..favoritedAt = DateTime(2026, 1, 3);
+    final thirdCard = BookCard()
+      ..id = _thirdCardId
+      ..bookId = _firstBookId
+      ..bookTitle = firstBook.title
+      ..cardIndex = 2
+      ..chapterIndex = 0
+      ..chapterCardIndex = 2
+      ..content = 'Third card'
+      ..isRead = true
+      ..readAt = DateTime(2026, 1, 2)
+      ..isFavorite = true
+      ..favoritedAt = DateTime(2026, 1, 3);
     final asset = BookAsset()
       ..id = 20
       ..bookId = _firstBookId
@@ -129,7 +145,7 @@ class _IsarRepositoryDriver implements LibraryRepositoryContractDriver {
 
     await isar.writeTxn(() async {
       await isar.books.putAll([firstBook, secondBook]);
-      await isar.bookCards.putAll([firstCard, secondCard]);
+      await isar.bookCards.putAll([firstCard, secondCard, thirdCard]);
       await isar.bookAssets.put(asset);
     });
   }

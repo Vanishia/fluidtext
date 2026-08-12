@@ -12,6 +12,8 @@ abstract interface class LibraryRepositoryContractDriver {
 
   int get secondCardId;
 
+  int get thirdCardId;
+
   String get assetKey;
 
   Future<void> close();
@@ -40,7 +42,7 @@ void runLibraryRepositoryContract(
 
       expect(
         await current.repository.loadOrderedCardIds([current.firstBookId]),
-        [current.firstCardId, current.secondCardId],
+        [current.firstCardId, current.secondCardId, current.thirdCardId],
       );
       expect(
         await current.repository.loadUnreadOrderedCardIds([
@@ -52,9 +54,41 @@ void runLibraryRepositoryContract(
       final stats = await current.repository.loadBookStats([
         current.firstBookId,
       ]);
-      expect(stats[current.firstBookId]?.totalCount, 2);
-      expect(stats[current.firstBookId]?.readCount, 1);
-      expect(stats[current.firstBookId]?.favoriteCount, 1);
+      expect(stats[current.firstBookId]?.totalCount, 3);
+      expect(stats[current.firstBookId]?.readCount, 2);
+      expect(stats[current.firstBookId]?.favoriteCount, 2);
+    },
+  );
+
+  test(
+    'loads cards by caller order and keeps activity tie breakers stable',
+    () async {
+      final current = driver!;
+      final cards = await current.repository.loadCardsByIds([
+        current.thirdCardId,
+        current.firstCardId,
+        current.secondCardId,
+      ]);
+      expect(cards.map((card) => card.id), [
+        current.thirdCardId,
+        current.firstCardId,
+        current.secondCardId,
+      ]);
+
+      final readEvents = await current.repository.loadReadActivityEvents([
+        current.firstBookId,
+      ]);
+      expect(readEvents.map((event) => event.cardId), [
+        current.thirdCardId,
+        current.secondCardId,
+      ]);
+
+      final favoriteEvents = await current.repository
+          .loadFavoriteActivityEvents([current.firstBookId]);
+      expect(favoriteEvents.map((event) => event.cardId), [
+        current.thirdCardId,
+        current.secondCardId,
+      ]);
     },
   );
 
@@ -71,6 +105,7 @@ void runLibraryRepositoryContract(
       expect(contextCards.map((card) => card.id), [
         current.firstCardId,
         current.secondCardId,
+        current.thirdCardId,
       ]);
 
       final assets = await current.repository.loadBookAssets(
