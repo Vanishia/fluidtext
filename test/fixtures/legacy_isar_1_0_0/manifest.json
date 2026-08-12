@@ -1,0 +1,19 @@
+{
+  "format": "fluidtext.legacy_fixture",
+  "sourceVersion": "1.0.0",
+  "generatedAt": "2026-08-12T01:00:00.000Z",
+  "expected": {
+    "books": 2,
+    "bookCards": 3,
+    "bookAssets": 1,
+    "bookRemarks": 2,
+    "lastOpenedBookIds": [
+      1,
+      2
+    ]
+  },
+  "notes": [
+    "Generate this fixture from a git worktree checked out at the source tag.",
+    "Do not replace it with data generated from the current schema unless the source tag matches."
+  ]
+}

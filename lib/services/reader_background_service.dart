@@ -5,16 +5,59 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../features/reader/reader_background_settings.dart';
+import '../storage/storage_layout.dart';
 
 class ReaderBackgroundService {
-  ReaderBackgroundService({Future<Directory> Function()? documentsDirectory})
-    : _documentsDirectory =
-          documentsDirectory ?? getApplicationDocumentsDirectory;
+  ReaderBackgroundService({
+    StorageLayoutProvider? storageLayout,
+    Future<Directory> Function()? documentsDirectory,
+  }) : _fileProvider = _settingsFileProvider(
+         storageLayout: storageLayout,
+         documentsDirectory: documentsDirectory,
+       ),
+       _imageDirectoryProvider = _managedImageDirectoryProvider(
+         storageLayout: storageLayout,
+         documentsDirectory: documentsDirectory,
+       );
 
   static final instance = ReaderBackgroundService();
-  static const _fileName = 'reader_background.json';
+  static const _fileName = StorageLayout.readerBackgroundSettingsFileName;
 
-  final Future<Directory> Function() _documentsDirectory;
+  final Future<File> Function() _fileProvider;
+  final Future<Directory> Function() _imageDirectoryProvider;
+
+  static Future<File> Function() _settingsFileProvider({
+    required StorageLayoutProvider? storageLayout,
+    required Future<Directory> Function()? documentsDirectory,
+  }) {
+    if (storageLayout != null) {
+      return () async => (await storageLayout()).readerBackgroundSettingsFile;
+    }
+    final directoryProvider =
+        documentsDirectory ?? getApplicationDocumentsDirectory;
+    return () async {
+      final dir = await directoryProvider();
+      return File('${dir.path}${Platform.pathSeparator}$_fileName');
+    };
+  }
+
+  static Future<Directory> Function() _managedImageDirectoryProvider({
+    required StorageLayoutProvider? storageLayout,
+    required Future<Directory> Function()? documentsDirectory,
+  }) {
+    if (storageLayout != null) {
+      return () async => (await storageLayout()).readerBackgroundsDirectory;
+    }
+    final directoryProvider =
+        documentsDirectory ?? getApplicationDocumentsDirectory;
+    return () async {
+      final dir = await directoryProvider();
+      return Directory(
+        '${dir.path}${Platform.pathSeparator}'
+        '${StorageLayout.readerBackgroundsDirectoryName}',
+      );
+    };
+  }
 
   Future<ReaderBackgroundSettings> load() async {
     try {
@@ -42,6 +85,9 @@ class ReaderBackgroundService {
 
   Future<void> save(ReaderBackgroundSettings settings) async {
     final file = await _settingsFile();
+    if (!await file.parent.exists()) {
+      await file.parent.create(recursive: true);
+    }
     final payload = <String, Object?>{
       ...settings.toJson(),
       'savedAt': DateTime.now().toIso8601String(),
@@ -80,8 +126,7 @@ class ReaderBackgroundService {
   }
 
   Future<File> _settingsFile() async {
-    final dir = await _documentsDirectory();
-    return File('${dir.path}${Platform.pathSeparator}$_fileName');
+    return _fileProvider();
   }
 
   Future<String?> _persistPickedImage(PlatformFile file) async {
@@ -104,10 +149,7 @@ class ReaderBackgroundService {
   }
 
   Future<Directory> _imageDirectory() async {
-    final dir = await _documentsDirectory();
-    final imageDir = Directory(
-      '${dir.path}${Platform.pathSeparator}reader_backgrounds',
-    );
+    final imageDir = await _imageDirectoryProvider();
     if (!await imageDir.exists()) {
       await imageDir.create(recursive: true);
     }

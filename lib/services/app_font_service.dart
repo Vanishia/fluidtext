@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../features/settings/app_font_settings.dart';
+import '../storage/storage_layout.dart';
 
 typedef AppFontDirectoryProvider = Future<Directory> Function();
 typedef AppFontPicker = Future<PlatformFile?> Function();
@@ -14,22 +15,68 @@ typedef AppFontRegistrar = Future<void> Function(String family, File file);
 
 class AppFontService {
   AppFontService({
+    StorageLayoutProvider? storageLayout,
     AppFontDirectoryProvider? supportDirectory,
     AppFontPicker? picker,
     AppFontRegistrar? registrar,
-  }) : _supportDirectory = supportDirectory ?? getApplicationSupportDirectory,
+  }) : _settingsFileProvider = _settingsFileProviderFor(
+         storageLayout: storageLayout,
+         supportDirectory: supportDirectory,
+       ),
+       _fontsDirectoryProvider = _fontsDirectoryProviderFor(
+         storageLayout: storageLayout,
+         supportDirectory: supportDirectory,
+       ),
        _picker = picker ?? _pickFontFile,
        _registrar = registrar ?? _registerFont;
 
   static final instance = AppFontService();
-  static const _settingsFileName = 'app_font_settings.json';
-  static const _fontsDirectoryName = 'app_fonts';
+  static const _settingsFileName = StorageLayout.appFontSettingsFileName;
+  static const _fontsDirectoryName = StorageLayout.appFontsDirectoryName;
   static const maxFontBytes = 32 * 1024 * 1024;
 
-  final AppFontDirectoryProvider _supportDirectory;
+  final Future<File> Function() _settingsFileProvider;
+  final Future<Directory> Function() _fontsDirectoryProvider;
   final AppFontPicker _picker;
   final AppFontRegistrar _registrar;
   final Set<String> _registeredFamilies = <String>{};
+
+  static Future<File> Function() _settingsFileProviderFor({
+    required StorageLayoutProvider? storageLayout,
+    required AppFontDirectoryProvider? supportDirectory,
+  }) {
+    if (storageLayout != null) {
+      return () async => (await storageLayout()).appFontSettingsFile;
+    }
+    final directoryProvider =
+        supportDirectory ?? getApplicationSupportDirectory;
+    return () async {
+      final directory = await directoryProvider();
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+      }
+      return File(
+        '${directory.path}${Platform.pathSeparator}$_settingsFileName',
+      );
+    };
+  }
+
+  static Future<Directory> Function() _fontsDirectoryProviderFor({
+    required StorageLayoutProvider? storageLayout,
+    required AppFontDirectoryProvider? supportDirectory,
+  }) {
+    if (storageLayout != null) {
+      return () async => (await storageLayout()).appFontsDirectory;
+    }
+    final directoryProvider =
+        supportDirectory ?? getApplicationSupportDirectory;
+    return () async {
+      final support = await directoryProvider();
+      return Directory(
+        '${support.path}${Platform.pathSeparator}$_fontsDirectoryName',
+      );
+    };
+  }
 
   Future<AppFontSettings> load() async {
     try {
@@ -141,18 +188,15 @@ class AppFontService {
   }
 
   Future<File> _settingsFile() async {
-    final directory = await _supportDirectory();
-    if (!await directory.exists()) {
-      await directory.create(recursive: true);
+    final file = await _settingsFileProvider();
+    if (!await file.parent.exists()) {
+      await file.parent.create(recursive: true);
     }
-    return File('${directory.path}${Platform.pathSeparator}$_settingsFileName');
+    return file;
   }
 
   Future<Directory> _fontsDirectory() async {
-    final support = await _supportDirectory();
-    final directory = Directory(
-      '${support.path}${Platform.pathSeparator}$_fontsDirectoryName',
-    );
+    final directory = await _fontsDirectoryProvider();
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }

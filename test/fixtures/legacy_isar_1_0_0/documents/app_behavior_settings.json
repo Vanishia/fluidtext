@@ -1,0 +1,13 @@
+{
+  "themeMode": "system",
+  "readingOrder": "sequential",
+  "showUnreadOnly": false,
+  "contextBefore": 2,
+  "contextAfter": 2,
+  "analysisModuleOrder": [
+    "overview",
+    "daily",
+    "books"
+  ],
+  "savedAt": "2026-08-12T01:00:00.000Z"
+}

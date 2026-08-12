@@ -2,11 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../features/context/context_settings.dart';
 import '../features/reader/reading_analysis_module.dart';
 import '../features/reader/reading_order.dart';
+import '../storage/storage_layout.dart';
 
 class AppBehaviorSettings {
   const AppBehaviorSettings({
@@ -41,10 +41,12 @@ class AppBehaviorSettings {
 }
 
 class AppBehaviorSettingsService {
-  AppBehaviorSettingsService._();
+  AppBehaviorSettingsService({StorageLayoutProvider? storageLayout})
+    : _storageLayout = storageLayout ?? AppStorageResolver.legacyRuntimeLayout;
 
-  static final instance = AppBehaviorSettingsService._();
-  static const _fileName = 'app_behavior_settings.json';
+  static final instance = AppBehaviorSettingsService();
+
+  final StorageLayoutProvider _storageLayout;
 
   Future<AppBehaviorSettings> load() async {
     try {
@@ -72,6 +74,9 @@ class AppBehaviorSettingsService {
 
   Future<void> save(AppBehaviorSettings settings) async {
     final file = await _settingsFile();
+    if (!await file.parent.exists()) {
+      await file.parent.create(recursive: true);
+    }
     final payload = <String, Object?>{
       'themeMode': settings.themeMode.name,
       'readingOrder': settings.readingOrder.name,
@@ -87,8 +92,7 @@ class AppBehaviorSettingsService {
   }
 
   Future<File> _settingsFile() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}${Platform.pathSeparator}$_fileName');
+    return (await _storageLayout()).appBehaviorSettingsFile;
   }
 
   ThemeMode _themeModeFromJson(Object? value) {

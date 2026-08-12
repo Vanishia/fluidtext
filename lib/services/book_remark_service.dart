@@ -1,15 +1,21 @@
 import 'package:isar/isar.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../models/book_remark.dart';
 import '../repositories/library_change_tracker.dart';
+import '../storage/storage_layout.dart';
 
 class BookRemarkService {
-  BookRemarkService._();
+  BookRemarkService({
+    StorageLayoutProvider? storageLayout,
+    LibraryChangeTracker? changeTracker,
+  }) : _storageLayout = storageLayout ?? AppStorageResolver.legacyRuntimeLayout,
+       _changeTracker = changeTracker ?? LibraryChangeTracker.instance;
 
-  static final instance = BookRemarkService._();
+  static final instance = BookRemarkService();
   static const _isarName = 'book_remarks';
 
+  final StorageLayoutProvider _storageLayout;
+  final LibraryChangeTracker _changeTracker;
   Isar? _isar;
 
   Future<Map<int, String>> load() async {
@@ -42,14 +48,14 @@ class BookRemarkService {
           ..updatedAt = DateTime.now(),
       );
     });
-    LibraryChangeTracker.instance.markChanged();
+    _changeTracker.markChanged();
   }
 
   Future<void> removeRemark(int bookId) async {
     final isar = await _db;
     final deleted = await isar.writeTxn(() => isar.bookRemarks.delete(bookId));
     if (deleted) {
-      LibraryChangeTracker.instance.markChanged();
+      _changeTracker.markChanged();
     }
   }
 
@@ -57,10 +63,10 @@ class BookRemarkService {
     final existing = _isar;
     if (existing != null) return existing;
 
-    final dir = await getApplicationDocumentsDirectory();
+    final layout = await _storageLayout();
     final opened = await Isar.open(
       [BookRemarkSchema],
-      directory: dir.path,
+      directory: layout.bookRemarkDatabaseDirectory.path,
       name: _isarName,
       inspector: true,
     );

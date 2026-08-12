@@ -1,13 +1,15 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider/path_provider.dart';
+import '../storage/storage_layout.dart';
 
 class ReaderSessionService {
-  ReaderSessionService._();
+  ReaderSessionService({StorageLayoutProvider? storageLayout})
+    : _storageLayout = storageLayout ?? AppStorageResolver.legacyRuntimeLayout;
 
-  static final instance = ReaderSessionService._();
-  static const _fileName = 'reader_session.json';
+  static final instance = ReaderSessionService();
+
+  final StorageLayoutProvider _storageLayout;
 
   Future<List<int>> loadLastOpenedBookIds() async {
     try {
@@ -27,6 +29,9 @@ class ReaderSessionService {
 
   Future<void> saveLastOpenedBookIds(List<int> bookIds) async {
     final file = await _sessionFile();
+    if (!await file.parent.exists()) {
+      await file.parent.create(recursive: true);
+    }
     final payload = <String, Object?>{
       'lastOpenedBookIds': bookIds,
       'savedAt': DateTime.now().toIso8601String(),
@@ -47,7 +52,6 @@ class ReaderSessionService {
   }
 
   Future<File> _sessionFile() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}${Platform.pathSeparator}$_fileName');
+    return (await _storageLayout()).readerSessionFile;
   }
 }

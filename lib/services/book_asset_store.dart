@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/book.dart';
 import '../models/book_asset.dart';
+import '../storage/storage_layout.dart';
 
 class BookAssetFileDraft {
   const BookAssetFileDraft({
@@ -20,14 +21,28 @@ class BookAssetFileDraft {
 }
 
 class BookAssetStore {
-  BookAssetStore({Future<Directory> Function()? documentsDirectory})
-    : _documentsDirectory =
-          documentsDirectory ?? getApplicationDocumentsDirectory;
+  BookAssetStore({
+    StorageLayoutProvider? storageLayout,
+    Future<Directory> Function()? documentsDirectory,
+  }) : _storageRootDirectory = _storageRootProvider(
+         storageLayout: storageLayout,
+         documentsDirectory: documentsDirectory,
+       );
 
   static final instance = BookAssetStore();
-  static const assetsDirectoryName = 'book_assets';
+  static const assetsDirectoryName = StorageLayout.bookAssetsDirectoryName;
 
-  final Future<Directory> Function() _documentsDirectory;
+  final Future<Directory> Function() _storageRootDirectory;
+
+  static Future<Directory> Function() _storageRootProvider({
+    required StorageLayoutProvider? storageLayout,
+    required Future<Directory> Function()? documentsDirectory,
+  }) {
+    if (storageLayout != null) {
+      return () async => (await storageLayout()).rootDirectory;
+    }
+    return documentsDirectory ?? getApplicationDocumentsDirectory;
+  }
 
   String createAssetRootKey(String fileHash) {
     final stamp = DateTime.now().toUtc().microsecondsSinceEpoch;
@@ -106,7 +121,7 @@ class BookAssetStore {
       retainedPaths.add(_joinPath(segments));
     }
 
-    final dir = await _documentsDirectory();
+    final dir = await _storageRootDirectory();
     final root = Directory(
       _joinPath([dir.path, assetsDirectoryName, assetRootKey]),
     );
@@ -122,7 +137,7 @@ class BookAssetStore {
   }
 
   Future<File> resolveRelativeFile(String relativePath) async {
-    final dir = await _documentsDirectory();
+    final dir = await _storageRootDirectory();
     final segments = _safeRelativeSegments(relativePath);
     if (segments.length != 4 ||
         segments[0] != assetsDirectoryName ||
@@ -139,7 +154,7 @@ class BookAssetStore {
       return;
     }
 
-    final dir = await _documentsDirectory();
+    final dir = await _storageRootDirectory();
     final root = Directory(_joinPath([dir.path, assetsDirectoryName, key]));
     if (!await root.exists()) return;
     await root.delete(recursive: true);
@@ -147,7 +162,7 @@ class BookAssetStore {
 
   Future<void> cleanupOrphanAssetRoots(Isar isar) async {
     try {
-      final dir = await _documentsDirectory();
+      final dir = await _storageRootDirectory();
       final assetsRoot = Directory(_joinPath([dir.path, assetsDirectoryName]));
       if (!await assetsRoot.exists()) return;
 

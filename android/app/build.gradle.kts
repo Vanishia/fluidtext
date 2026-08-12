@@ -65,6 +65,12 @@ android {
             versionNameSuffix = "-debug"
             manifestPlaceholders["appLabel"] = "FluidText Debug"
         }
+        maybeCreate("profile").apply {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".profile"
+            versionNameSuffix = "-profile"
+            manifestPlaceholders["appLabel"] = "FluidText Profile"
+        }
         release {
             signingConfig = signingConfigs.getByName("release")
         }
