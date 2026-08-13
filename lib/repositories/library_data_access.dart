@@ -1,11 +1,12 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:isar/isar.dart';
 
 import '../db/isar_db.dart';
 import '../models/book_remark.dart';
+import '../services/backup/backup_export_service.dart';
 import '../services/book_asset_store.dart';
 import '../services/book_import_service.dart';
-import '../services/data_backup_service.dart';
 import '../storage/sqlite/library_database.dart';
 import '../storage/sqlite/sqlite_library_repository.dart';
 import '../storage/storage_layout.dart';
@@ -77,8 +78,21 @@ class LibraryDataAccess {
     );
   }
 
-  Future<String?> exportBackup() {
-    return const DataBackupService().exportBackup(repository);
+  /// Exports a full v3 backup archive. Works for both the SQLite repository
+  /// and the forced-Isar rollback path because the snapshot DTO is
+  /// backend-neutral; the picker flow lives here, not in the export service.
+  Future<String?> exportBackup() async {
+    final backup = await const BackupExportService().exportV3(
+      repository: repository,
+      layout: await AppStorageResolver.activeRuntimeLayout(),
+    );
+    return FilePicker.platform.saveFile(
+      dialogTitle: '导出 FluidText 备份',
+      fileName: backup.fileName,
+      type: FileType.custom,
+      allowedExtensions: [backup.extension],
+      bytes: backup.bytes,
+    );
   }
 
   Future<Map<int, String>> loadRemarks() {

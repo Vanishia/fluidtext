@@ -1,6 +1,6 @@
 # FluidText SQLite 与应用数据目录迁移计划
 
-> 文档状态：阶段一至四已实施（分支 codex/sqlite-migration），阶段五/六待实施  
+> 文档状态：阶段一至四已实施（分支 codex/sqlite-migration），阶段五恢复核心已实施，书架入口与阶段六待实施  
 > 编写日期：2026-08-12  
 > 适用平台：Windows、Android  
 > 当前正式版本基线：`1.0.0`  
@@ -821,6 +821,14 @@ SQLite 尚未成为生产数据源，删除新实现和依赖即可回到 Isar�
 **回滚点**
 
 ZIP 恢复入口可单独关闭，不影响已完成的 SQLite 迁移和正常读写。
+
+> 实施记录（2026-08-13，提交一「升级备份格式并兼容版本2恢复」）：
+>
+> - v3 归档结构按 7.2 落地：`manifest.json`（format/version=3/sqliteSchemaVersion/appVersion/platform/exportedAt/counts/files，files 收录除 manifest.json 外每条目的 path/bytes/sha256）、`data/library.json`（backend-neutral DTO，键名与 v2 完全一致，仅去掉 format/version/exportedAt 头）、`settings/` 下四个设置 JSON（存在才收录、原样读入）、`book_assets/`（snapshot 引用且实际存在、路径安全的文件）、`reader_backgrounds/` 与 `app_fonts/` 下全部 regular file（跳过 symlink 并记 warning）。书架「导出备份」已切换为 v3 ZIP；v2 导出（`DataBackupService`）保持原样，legacy 迁移页继续使用。
+> - 恢复入口同时接受 v2 `.json`（无图书库的直出 JSON）与 `.zip`（按扩展名+魔数判定；ZIP 内有 `manifest.json` 走 v3，否则找 `backup.json` 走 v2）。恢复语义为原子替换：staging SQLite 单事务写入并校验 integrity/外键/counts，密封（checkpoint(TRUNCATE)→close→删 -wal/-shm，逻辑与 `MigrationPromotion.seal` 同语义，抽为 `SqliteSealer`）后关闭正式库，再把正式条目 rename 进 `recovery/attempts/<id>/previous/`、payload rename 进 root，失败从 previous 回滚。
+> - ZIP 安全层（`ZipSecurity`）不依赖 archive 包内部行为：用 `RandomAccessFile` 自解析 EOCD 与 Central Directory，并逐一比对 CDE 与 Local File Header 文件名（防 filename spoofing）；拒绝加密条目、symlink 条目（externalAttributes 高 16 位 0xA000）、绝对路径/盘符/UNC、`..`/`.`/空 segment、控制字符、重复路径与大小写折叠重复；拒绝多卷与 ZIP64。限额：压缩包 ≤2GB、解压总大小 ≤4GB、单文件 ≤512MB、条目数 ≤100000、单条压缩比 ≤100（仅解压大小 >1MB 时检查，避免小 JSON 误伤；deflate 对重复内容极限约 1032:1，真实图片几乎不可再压缩，100 足够拦截 ZIP bomb）。解压经 `decodeStream` 逐条目进行，同一时刻内存只持有一个文件的 bytes，写盘前再经 `StoragePathSafety` 与目录包含校验防 ZIP Slip。
+> - 阶段五预备：删除已无调用点的 `BookRemarkService`；`IsarDb.isar` 增加运行时兜底——active 布局非 legacy 时直接抛 `StateError`，避免在新数据目录静默创建空 `default.isar`（forceIsar 回滚路径会先重置为 legacy 布局，不受影响）。
+> - 书架「导入备份」入口、非空库二次确认与恢复前自动备份在提交二实施。
 
 ### 阶段六：双端验收、性能调优和发布保护
 
