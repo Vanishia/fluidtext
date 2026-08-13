@@ -149,10 +149,12 @@ void main() {
         stagingRoot: reader.stagingRoot,
         mainDatabaseCopy: File(
           '${reader.stagingRoot.path}'
+          '${Platform.pathSeparator}legacy'
           '${Platform.pathSeparator}$legacyMainDatabaseFileName',
         ),
         remarkDatabaseCopy: File(
           '${reader.stagingRoot.path}'
+          '${Platform.pathSeparator}legacy'
           '${Platform.pathSeparator}$legacyRemarkDatabaseFileName',
         ),
       ),

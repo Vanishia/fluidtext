@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../storage/json_file_store.dart';
 import '../storage/storage_layout.dart';
 
 class ReaderSessionService {
@@ -29,14 +30,11 @@ class ReaderSessionService {
 
   Future<void> saveLastOpenedBookIds(List<int> bookIds) async {
     final file = await _sessionFile();
-    if (!await file.parent.exists()) {
-      await file.parent.create(recursive: true);
-    }
     final payload = <String, Object?>{
       'lastOpenedBookIds': bookIds,
       'savedAt': DateTime.now().toIso8601String(),
     };
-    await file.writeAsString(jsonEncode(payload), flush: true);
+    await JsonFileStore.writeAtomic(file, payload);
   }
 
   Future<Map<String, dynamic>?> exportJson() async {

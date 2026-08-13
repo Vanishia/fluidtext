@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../features/reader/reader_background_settings.dart';
+import '../storage/json_file_store.dart';
 import '../storage/storage_layout.dart';
 
 class ReaderBackgroundService {
@@ -71,8 +72,11 @@ class ReaderBackgroundService {
       final settings = ReaderBackgroundSettings.fromJson(json);
       if (!settings.hasCustomImage) return settings;
 
-      final imageFile = File(settings.imagePath!);
-      if (await imageFile.exists()) return settings;
+      final imageFile = await _resolveStoredImagePath(settings.imagePath!);
+      if (imageFile != null && await imageFile.exists()) {
+        // Consumers use imagePath directly; always expose a resolved path.
+        return settings.copyWith(imagePath: imageFile.path);
+      }
 
       return settings.copyWith(
         source: ReaderBackgroundSource.color,
@@ -85,14 +89,17 @@ class ReaderBackgroundService {
 
   Future<void> save(ReaderBackgroundSettings settings) async {
     final file = await _settingsFile();
-    if (!await file.parent.exists()) {
-      await file.parent.create(recursive: true);
-    }
     final payload = <String, Object?>{
       ...settings.toJson(),
       'savedAt': DateTime.now().toIso8601String(),
     };
-    await file.writeAsString(jsonEncode(payload), flush: true);
+    if (settings.hasCustomImage) {
+      // Persist managed images as controlled relative paths so the settings
+      // survive storage directory moves; foreign paths stay absolute.
+      final relative = await _managedRelativeImagePath(settings.imagePath!);
+      if (relative != null) payload['imagePath'] = relative;
+    }
+    await JsonFileStore.writeAtomic(file, payload);
   }
 
   Future<ReaderBackgroundSettings?> importImage(
@@ -158,10 +165,55 @@ class ReaderBackgroundService {
 
   Future<void> _deleteManagedImage(String? imagePath) async {
     if (imagePath == null || imagePath.isEmpty) return;
-    final file = File(imagePath);
-    if (!await file.exists()) return;
+    final file = await _resolveStoredImagePath(imagePath);
+    if (file == null || !await file.exists()) return;
     if (!await _isManagedImage(file)) return;
     await file.delete();
+  }
+
+  /// Resolves a stored image path to a file. Absolute paths are used as-is;
+  /// controlled relative paths (`reader_backgrounds/<name>`) resolve inside
+  /// the managed backgrounds directory. Returns null for unsafe paths.
+  Future<File?> _resolveStoredImagePath(String imagePath) async {
+    if (StoragePathSafety.isAbsolutePath(imagePath)) return File(imagePath);
+    final SafeRelativePath safePath;
+    try {
+      safePath = StoragePathSafety.parseRelativePath(
+        imagePath,
+        label: 'background image path',
+      );
+    } on FormatException {
+      return null;
+    }
+    const directoryName = StorageLayout.readerBackgroundsDirectoryName;
+    if (safePath.segments.length < 2 || safePath.segments.first != directoryName) {
+      return null;
+    }
+    final directory = await _imageDirectoryProvider();
+    return File(
+      StorageLayout.joinPath([
+        directory.path,
+        ...safePath.segments.sublist(1),
+      ], separator: Platform.pathSeparator),
+    );
+  }
+
+  /// Returns `reader_backgrounds/<name>` when [imagePath] points inside the
+  /// managed backgrounds directory, or null otherwise.
+  Future<String?> _managedRelativeImagePath(String imagePath) async {
+    if (!StoragePathSafety.isAbsolutePath(imagePath)) return null;
+    final directory = await _imageDirectory();
+    if (!StoragePathSafety.isLexicallyWithinDirectory(
+      directoryPath: directory.path,
+      filePath: imagePath,
+    )) {
+      return null;
+    }
+    final directoryPath = directory.path.replaceAll(r'\', '/');
+    final relative = imagePath
+        .replaceAll(r'\', '/')
+        .substring(directoryPath.length + 1);
+    return '${StorageLayout.readerBackgroundsDirectoryName}/$relative';
   }
 
   Future<bool> _isManagedImage(File imageFile) async {

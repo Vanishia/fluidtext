@@ -347,6 +347,14 @@ class SafeRelativePath {
 class StoragePathSafety {
   const StoragePathSafety._();
 
+  /// Whether [path] is an absolute path on either Windows or POSIX style
+  /// (drive letter, UNC or leading separator).
+  static bool isAbsolutePath(String path) {
+    final normalized = path.replaceAll(r'\', '/');
+    return normalized.startsWith('/') ||
+        RegExp(r'^[A-Za-z]:/').hasMatch(normalized);
+  }
+
   static SafeRelativePath parseRelativePath(
     String relativePath, {
     String label = 'relative path',

@@ -148,6 +148,18 @@ class LegacyIsarReader {
     );
   }
 
+  Future<int> countBooks() => _requireMain().books.count();
+
+  Future<int> countBookCards() => _requireMain().bookCards.count();
+
+  Future<int> countBookAssets() => _requireMain().bookAssets.count();
+
+  Future<int> countBookRemarks() async {
+    final isar = _remarkIsar;
+    if (isar == null || !isar.isOpen) return 0;
+    return isar.bookRemarks.count();
+  }
+
   Isar _requireMain() {
     final isar = _mainIsar;
     if (isar == null || !isar.isOpen) {

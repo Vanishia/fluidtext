@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../features/settings/app_font_settings.dart';
+import '../storage/json_file_store.dart';
 import '../storage/storage_layout.dart';
 
 typedef AppFontDirectoryProvider = Future<Directory> Function();
@@ -93,14 +94,20 @@ class AppFontService {
       final settings = AppFontSettings.fromJson(decoded);
       if (!settings.usesCustomFont) return settings;
 
-      final fontFile = File(settings.fontPath!);
-      if (!await fontFile.exists()) {
+      final fontFile = await _resolveStoredFontPath(settings.fontPath!);
+      if (fontFile == null || !await fontFile.exists()) {
         await _restoreSystemSettings();
         return const AppFontSettings.system();
       }
 
       await _register(settings.fontFamily!, fontFile);
-      return settings;
+      // Consumers use fontPath directly; always expose a resolved path.
+      return AppFontSettings(
+        source: settings.source,
+        fontFamily: settings.fontFamily,
+        displayName: settings.displayName,
+        fontPath: fontFile.path,
+      );
     } catch (_) {
       await _restoreSystemSettings();
       return const AppFontSettings.system();
@@ -205,13 +212,64 @@ class AppFontService {
 
   Future<void> _writeSettings(AppFontSettings settings) async {
     final file = await _settingsFile();
-    await file.writeAsString(
-      jsonEncode(<String, Object?>{
-        ...settings.toJson(),
-        'savedAt': DateTime.now().toIso8601String(),
-      }),
-      flush: true,
+    final payload = <String, Object?>{
+      ...settings.toJson(),
+      'savedAt': DateTime.now().toIso8601String(),
+    };
+    final fontPath = settings.fontPath;
+    if (settings.usesCustomFont && fontPath != null) {
+      // Persist managed fonts as controlled relative paths so the settings
+      // survive storage directory moves; foreign paths stay absolute.
+      final relative = await _managedRelativeFontPath(fontPath);
+      if (relative != null) payload['fontPath'] = relative;
+    }
+    await JsonFileStore.writeAtomic(file, payload);
+  }
+
+  /// Resolves a stored font path to a file. Absolute paths are used as-is;
+  /// controlled relative paths (`app_fonts/<name>`) resolve inside the
+  /// managed fonts directory. Returns null for unsafe paths.
+  Future<File?> _resolveStoredFontPath(String fontPath) async {
+    if (StoragePathSafety.isAbsolutePath(fontPath)) return File(fontPath);
+    final SafeRelativePath safePath;
+    try {
+      safePath = StoragePathSafety.parseRelativePath(
+        fontPath,
+        label: 'font path',
+      );
+    } on FormatException {
+      return null;
+    }
+    const directoryName = StorageLayout.appFontsDirectoryName;
+    if (safePath.segments.length < 2 ||
+        safePath.segments.first != directoryName) {
+      return null;
+    }
+    final directory = await _fontsDirectoryProvider();
+    return File(
+      StorageLayout.joinPath([
+        directory.path,
+        ...safePath.segments.sublist(1),
+      ], separator: Platform.pathSeparator),
     );
+  }
+
+  /// Returns `app_fonts/<name>` when [fontPath] points inside the managed
+  /// fonts directory, or null otherwise.
+  Future<String?> _managedRelativeFontPath(String fontPath) async {
+    if (!StoragePathSafety.isAbsolutePath(fontPath)) return null;
+    final directory = await _fontsDirectory();
+    if (!StoragePathSafety.isLexicallyWithinDirectory(
+      directoryPath: directory.path,
+      filePath: fontPath,
+    )) {
+      return null;
+    }
+    final directoryPath = directory.path.replaceAll(r'\', '/');
+    final relative = fontPath
+        .replaceAll(r'\', '/')
+        .substring(directoryPath.length + 1);
+    return '${StorageLayout.appFontsDirectoryName}/$relative';
   }
 
   Future<void> _restoreSystemSettings() async {

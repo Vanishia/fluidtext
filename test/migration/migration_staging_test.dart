@@ -109,7 +109,9 @@ void main() {
       expect(progressEvents[index].$2, expectedTotal);
     }
 
-    await for (final entity in staging.attemptDirectory.list()) {
+    await for (final entity in staging.attemptDirectory.list(
+      recursive: true,
+    )) {
       expect(entity.path.endsWith('.lock'), isFalse);
     }
   });

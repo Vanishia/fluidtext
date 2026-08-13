@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../features/context/context_settings.dart';
 import '../features/reader/reading_analysis_module.dart';
 import '../features/reader/reading_order.dart';
+import '../storage/json_file_store.dart';
 import '../storage/storage_layout.dart';
 
 class AppBehaviorSettings {
@@ -74,9 +75,6 @@ class AppBehaviorSettingsService {
 
   Future<void> save(AppBehaviorSettings settings) async {
     final file = await _settingsFile();
-    if (!await file.parent.exists()) {
-      await file.parent.create(recursive: true);
-    }
     final payload = <String, Object?>{
       'themeMode': settings.themeMode.name,
       'readingOrder': settings.readingOrder.name,
@@ -88,7 +86,7 @@ class AppBehaviorSettingsService {
           .toList(growable: false),
       'savedAt': DateTime.now().toIso8601String(),
     };
-    await file.writeAsString(jsonEncode(payload), flush: true);
+    await JsonFileStore.writeAtomic(file, payload);
   }
 
   Future<File> _settingsFile() async {

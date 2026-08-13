@@ -28,8 +28,14 @@ class MigrationStagingCopyResult {
 /// Manages one migration staging attempt directory.
 ///
 /// Staging lives under `migration/attempts/<attemptId>/` of the target
-/// (modern) storage layout. Only the two legacy database files are copied;
-/// runtime `.lock` files are never copied.
+/// (modern) storage layout and is split into:
+///
+/// - `payload/`: a complete mirror of the future live storage directory
+///   (SQLite database, settings/, book_assets/, reader_backgrounds/,
+///   app_fonts/). The atomic promotion step only needs to rename `payload/`.
+/// - `legacy/`: read-only copies of the two legacy Isar databases.
+///
+/// Runtime `.lock` files are never copied.
 class MigrationStaging {
   MigrationStaging._({required this.attemptId, required this.attemptDirectory});
 
@@ -39,16 +45,48 @@ class MigrationStaging {
   /// `migration/attempts/<attemptId>/` of the target layout.
   final Directory attemptDirectory;
 
-  File get mainDatabaseCopy => File(
+  /// Mirror of the future live storage directory.
+  Directory get payloadDirectory => Directory(
     StorageLayout.joinPath([
       attemptDirectory.path,
+      'payload',
+    ], separator: _separator),
+  );
+
+  /// Read-only copies of the legacy Isar databases.
+  Directory get legacyDirectory => Directory(
+    StorageLayout.joinPath([
+      attemptDirectory.path,
+      'legacy',
+    ], separator: _separator),
+  );
+
+  /// Staging SQLite database inside the payload mirror.
+  File get payloadDatabaseFile => File(
+    StorageLayout.joinPath([
+      payloadDirectory.path,
+      StorageLayout.sqliteDatabaseFileName,
+    ], separator: _separator),
+  );
+
+  /// Settings directory inside the payload mirror.
+  Directory get payloadSettingsDirectory => Directory(
+    StorageLayout.joinPath([
+      payloadDirectory.path,
+      'settings',
+    ], separator: _separator),
+  );
+
+  File get mainDatabaseCopy => File(
+    StorageLayout.joinPath([
+      legacyDirectory.path,
       legacyMainDatabaseFileName,
     ], separator: _separator),
   );
 
   File get remarkDatabaseCopy => File(
     StorageLayout.joinPath([
-      attemptDirectory.path,
+      legacyDirectory.path,
       legacyRemarkDatabaseFileName,
     ], separator: _separator),
   );
@@ -75,7 +113,13 @@ class MigrationStaging {
       throw StateError('Migration attempt already exists: ${directory.path}');
     }
     await directory.create(recursive: true);
-    return MigrationStaging._(attemptId: id, attemptDirectory: directory);
+    final staging = MigrationStaging._(
+      attemptId: id,
+      attemptDirectory: directory,
+    );
+    await staging.payloadDirectory.create();
+    await staging.legacyDirectory.create();
+    return staging;
   }
 
   /// Copies the legacy Isar databases into this staging attempt.
