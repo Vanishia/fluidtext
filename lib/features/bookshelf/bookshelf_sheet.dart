@@ -438,6 +438,17 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                           ],
                         ),
                       ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 6),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '如书库中没有图片，将会导出json',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                        ),
+                      ),
                       if (_status != null)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),

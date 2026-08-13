@@ -463,6 +463,8 @@ Windows 的 `default.isar` 不能仅凭文件名认定为 FluidText 数据。可
 ### 7.1 兼容策略
 
 - 必须支持导入当前 backup format v2，保证用户现在导出的 ZIP 可用于 SQLite 恢复。
+
+> 实施记录（2026-08-14）：v2 导出的实际形态取决于是否有图片——书库无图片时导出为单个 `.json`（非 ZIP）；阶段五导入端必须同时接受 `.json` 与 `.zip`，不能只认压缩包。
 - 新增 backend-neutral backup format v3，SQLite 和 legacy Isar 都先转换成相同 DTO，再交给归档层。
 - v2 缺失行为设置、背景和字体，导入时应明确提示“核心书库已恢复，外观设置未包含在旧版备份中”。
 - v3 才定义为完整应用备份。
