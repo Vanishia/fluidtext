@@ -1,4 +1,5 @@
 import 'dart:developer' as developer;
+import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
@@ -8,6 +9,8 @@ import '../../models/book.dart';
 import '../../repositories/library_data_access.dart';
 import '../../repositories/library_repository.dart';
 import '../../migration/migration_state.dart';
+import '../../services/backup/backup_restore_service.dart';
+import '../../services/backup/pre_restore_backup.dart';
 import '../../storage/storage_layout.dart';
 import '../../widgets/blocking_loader.dart';
 import '../../widgets/glass.dart';
@@ -32,9 +35,23 @@ class BookshelfSheet extends StatefulWidget {
   const BookshelfSheet({
     super.key,
     this.initialSelectedBookIds = const <int>[],
+    this.dataAccessLoader,
+    this.migrationEntryChecker,
+    this.backupFilePicker,
+    this.preRestoreBackup,
+    this.backupRestoreRunner,
   });
 
   final List<int> initialSelectedBookIds;
+
+  /// Injectable seams for widget tests (the production defaults hit real IO
+  /// which never completes inside the fake-async test zone).
+  final Future<LibraryDataAccess> Function()? dataAccessLoader;
+  final Future<bool> Function()? migrationEntryChecker;
+  final Future<String?> Function()? backupFilePicker;
+  final Future<String> Function()? preRestoreBackup;
+  final Future<BackupRestoreResult> Function(File backupFile)?
+  backupRestoreRunner;
 
   @override
   State<BookshelfSheet> createState() => _BookshelfSheetState();
@@ -60,7 +77,8 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
   }
 
   Future<void> _init() async {
-    final dataAccess = await LibraryDataAccess.instance;
+    final dataAccess =
+        await (widget.dataAccessLoader ?? () => LibraryDataAccess.instance)();
     final repository = dataAccess.repository;
     final books = await repository.loadBooks();
     final remarks = await dataAccess.loadRemarks();
@@ -69,17 +87,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     );
     await repository.logDatabaseSnapshot('bookshelf init');
 
-    // Offer re-detection when the user previously abandoned a migration.
-    var showMigrationEntry = false;
-    try {
-      final targetLayout = await AppStorageResolver.targetRuntimeLayout();
-      final state = await MigrationStateStore(
-        targetLayout: targetLayout,
-      ).load();
-      showMigrationEntry = state.status == MigrationLifecycleStatus.abandoned;
-    } catch (_) {
-      showMigrationEntry = false;
-    }
+    final showMigrationEntry = await _checkMigrationEntry();
 
     if (!mounted) return;
     setState(() {
@@ -98,6 +106,21 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       _showMigrationEntry = showMigrationEntry;
       _isLoading = false;
     });
+  }
+
+  /// Offers re-detection when the user previously abandoned a migration.
+  Future<bool> _checkMigrationEntry() async {
+    final checker = widget.migrationEntryChecker;
+    if (checker != null) return checker();
+    try {
+      final targetLayout = await AppStorageResolver.targetRuntimeLayout();
+      final state = await MigrationStateStore(
+        targetLayout: targetLayout,
+      ).load();
+      return state.status == MigrationLifecycleStatus.abandoned;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _redetectMigration() async {
@@ -119,6 +142,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     if (repository == null) return;
 
     final books = await repository.loadBooks();
+    final remarks = await repository.loadRemarks();
     final stats = await repository.loadBookStats(
       books.map((book) => book.id).toList(),
     );
@@ -127,6 +151,9 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       _books
         ..clear()
         ..addAll(books);
+      _remarks
+        ..clear()
+        ..addAll(remarks);
       _stats
         ..clear()
         ..addAll(stats);
@@ -264,6 +291,175 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
         setState(() => _isBusy = false);
       }
     }
+  }
+
+  /// Imports a v2/v3 backup with whole-library replacement (plan 7.4):
+  /// confirm on a non-empty library, write a pre-restore insurance backup,
+  /// then swap atomically and reload everything.
+  Future<void> _importBackup() async {
+    final dataAccess = _dataAccess;
+    if (dataAccess == null || _isBusy) return;
+
+    final path = await (widget.backupFilePicker ?? _pickBackupFilePath)();
+    if (!mounted) return;
+    if (path == null || path.isEmpty) {
+      setState(() => _status = '未选择文件');
+      return;
+    }
+
+    if (_books.isNotEmpty) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('导入备份'),
+          content: Text('恢复备份将替换当前书库（${_books.length} 本书），是否继续？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('继续恢复'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || confirmed != true) return;
+    }
+
+    setState(() {
+      _isBusy = true;
+      _status = '正在备份当前书库…';
+    });
+
+    try {
+      // Pre-restore insurance backup of the current library (pointless and
+      // therefore skipped when the library is empty).
+      try {
+        if (_books.isNotEmpty) {
+          await (widget.preRestoreBackup ?? _writePreRestoreBackup)();
+        }
+      } catch (error) {
+        developer.log(
+          'Pre-restore backup failed in bookshelf sheet',
+          name: 'BookshelfSheet',
+          error: error,
+        );
+        if (!mounted) return;
+        setState(() => _isBusy = false);
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('自动备份失败'),
+            content: Text('恢复前备份当前书库失败：$error\n仍要继续恢复吗？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('仍要继续恢复'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted) return;
+        if (proceed != true) {
+          setState(() => _status = '已取消恢复');
+          return;
+        }
+        setState(() => _isBusy = true);
+      }
+
+      setState(() => _status = '正在恢复备份…');
+      final runner = widget.backupRestoreRunner ?? _runBackupRestore;
+      final result = await runner(File(path));
+
+      // The restore closed and swapped the live database; drop the stale
+      // repository before reloading so every read hits the restored data.
+      final freshAccess =
+          await (widget.dataAccessLoader ??
+              () => LibraryDataAccess.instance)();
+      if (!mounted) return;
+      setState(() {
+        _dataAccess = freshAccess;
+        _repository = freshAccess.repository;
+      });
+      await _reloadBooks();
+      if (!mounted) return;
+
+      final legacyNote = result.formatVersion == 2
+          ? '；核心书库已恢复，外观设置未包含在旧版备份中'
+          : '';
+      setState(() {
+        _status =
+            '已恢复备份（v${result.formatVersion}）：书籍 ${result.bookCount} 本 · '
+            '卡片 ${result.cardCount} 张 · 警告 ${result.warnings.length} 条'
+            '$legacyNote';
+      });
+    } catch (error, stackTrace) {
+      developer.log(
+        'Backup restore failed in bookshelf sheet',
+        name: 'BookshelfSheet',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      // The restore may have closed the live database before failing (the
+      // swap then rolled back); reopen the singleton so the sheet does not
+      // keep a stale, closed repository.
+      try {
+        final freshAccess =
+            await (widget.dataAccessLoader ??
+                () => LibraryDataAccess.instance)();
+        if (!mounted) return;
+        _dataAccess = freshAccess;
+        _repository = freshAccess.repository;
+      } catch (_) {
+        // Reopen is best effort; the next launch rebuilds the singleton.
+      }
+      setState(() => _status = '恢复失败：$error，当前书库未受影响');
+    } finally {
+      if (mounted) {
+        setState(() => _isBusy = false);
+      }
+    }
+  }
+
+  Future<String?> _pickBackupFilePath() async {
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: '选择 FluidText 备份',
+      type: FileType.custom,
+      allowedExtensions: const ['zip', 'json'],
+      withData: false,
+    );
+    return result?.files.firstOrNull?.path;
+  }
+
+  Future<String> _writePreRestoreBackup() async {
+    final repository = _repository;
+    if (repository == null) {
+      throw StateError('书库尚未加载，无法备份');
+    }
+    final layout = await AppStorageResolver.activeRuntimeLayout();
+    final file = await PreRestoreBackup.write(
+      repository: repository,
+      layout: layout,
+    );
+    return file.path;
+  }
+
+  Future<BackupRestoreResult> _runBackupRestore(File backupFile) async {
+    final layout = await AppStorageResolver.activeRuntimeLayout();
+    return const BackupRestoreService().restore(
+      backupFile: backupFile,
+      targetLayout: layout,
+      closeLiveDatabase: () async {
+        await (await LibraryDataAccess.instance).close();
+      },
+    );
   }
 
   Future<void> _deleteBook(Book book) async {
@@ -431,6 +627,13 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                               icon: const Icon(Icons.ios_share_rounded),
                             ),
                             IconButton(
+                              tooltip: '导入备份',
+                              onPressed: _isBusy ? null : _importBackup,
+                              icon: const Icon(
+                                Icons.settings_backup_restore_rounded,
+                              ),
+                            ),
+                            IconButton(
                               tooltip: '关闭',
                               onPressed: _close,
                               icon: const Icon(Icons.close_rounded),
@@ -443,7 +646,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            '如书库中没有图片，将会导出json',
+                            '备份为 ZIP 格式，包含书库、外观设置与阅读背景；可导入 v2/v3 备份恢复',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: cs.onSurfaceVariant),
                           ),

@@ -16,6 +16,13 @@ import 'library_repository.dart';
 class LibraryDataAccess {
   LibraryDataAccess._({required this.repository});
 
+  /// Wraps an arbitrary repository without touching the singleton. Only for
+  /// widget tests that inject a fake repository into UI code.
+  @visibleForTesting
+  factory LibraryDataAccess.forTesting(LibraryRepository repository) {
+    return LibraryDataAccess._(repository: repository);
+  }
+
   static Future<LibraryDataAccess>? _instanceFuture;
 
   /// Rollback switch: force the legacy Isar repository (and legacy runtime

@@ -1,6 +1,6 @@
 # FluidText SQLite 与应用数据目录迁移计划
 
-> 文档状态：阶段一至四已实施（分支 codex/sqlite-migration），阶段五恢复核心已实施，书架入口与阶段六待实施  
+> 文档状态：阶段一至五已实施（分支 codex/sqlite-migration），阶段六待实施  
 > 编写日期：2026-08-12  
 > 适用平台：Windows、Android  
 > 当前正式版本基线：`1.0.0`  
@@ -829,6 +829,8 @@ ZIP 恢复入口可单独关闭，不影响已完成的 SQLite 迁移和正常�
 > - ZIP 安全层（`ZipSecurity`）不依赖 archive 包内部行为：用 `RandomAccessFile` 自解析 EOCD 与 Central Directory，并逐一比对 CDE 与 Local File Header 文件名（防 filename spoofing）；拒绝加密条目、symlink 条目（externalAttributes 高 16 位 0xA000）、绝对路径/盘符/UNC、`..`/`.`/空 segment、控制字符、重复路径与大小写折叠重复；拒绝多卷与 ZIP64。限额：压缩包 ≤2GB、解压总大小 ≤4GB、单文件 ≤512MB、条目数 ≤100000、单条压缩比 ≤100（仅解压大小 >1MB 时检查，避免小 JSON 误伤；deflate 对重复内容极限约 1032:1，真实图片几乎不可再压缩，100 足够拦截 ZIP bomb）。解压经 `decodeStream` 逐条目进行，同一时刻内存只持有一个文件的 bytes，写盘前再经 `StoragePathSafety` 与目录包含校验防 ZIP Slip。
 > - 阶段五预备：删除已无调用点的 `BookRemarkService`；`IsarDb.isar` 增加运行时兜底——active 布局非 legacy 时直接抛 `StateError`，避免在新数据目录静默创建空 `default.isar`（forceIsar 回滚路径会先重置为 legacy 布局，不受影响）。
 > - 书架「导入备份」入口、非空库二次确认与恢复前自动备份在提交二实施。
+>
+> 实施记录（2026-08-13，提交二「在书架增加 ZIP 备份恢复入口」）：书架顶部操作区新增「导入备份」（`Icons.settings_backup_restore_rounded`），接通 7.3/7.4 交互——FilePicker 选择 `.zip`/`.json`、非空库二次确认（「恢复备份将替换当前书库（X 本书），是否继续？」）、恢复前经 `PreRestoreBackup` 自动导出 v3 保险备份到 `recovery/pre-restore-<时间戳>.zip`（失败时弹窗由用户选择继续或取消、空库跳过）、BlockingLoader 期间禁用全部操作、成功后重建 `LibraryDataAccess` 单例并刷新书籍/备注/统计，失败文案含「当前书库未受影响」。恢复编排通过构造参数注入（picker/保险备份/restore runner/dataAccessLoader），widget 测试以 fake repository 覆盖确认对话框、busy 禁用、成功/失败文案与保险备份失败分支。
 
 ### 阶段六：双端验收、性能调优和发布保护
 
