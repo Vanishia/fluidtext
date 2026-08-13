@@ -181,7 +181,7 @@ void main() {
     final markerFile = MigrationCompletion.markerFile(harness.targetLayout);
     final decoded =
         jsonDecode(await markerFile.readAsString()) as Map<String, dynamic>;
-    (decoded['counts'] as Map<String, dynamic>)['books'] = 99;
+    decoded['sqliteSchemaVersion'] = 99;
     await markerFile.writeAsString(jsonEncode(decoded));
 
     final decision = await coordinatorFor(harness).decide();

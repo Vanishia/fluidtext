@@ -213,11 +213,11 @@ void main() {
   test('interrupted promotion without marker is recoverable', () async {
     await migrateValidateSealPromote();
 
-    // Corrupt the marker to simulate an incomplete switch.
+    // Corrupt the marker to simulate an inconsistent switch.
     final markerFile = MigrationCompletion.markerFile(harness.targetLayout);
     final decoded =
         jsonDecode(await markerFile.readAsString()) as Map<String, dynamic>;
-    (decoded['counts'] as Map<String, dynamic>)['books'] = 99;
+    decoded['sqliteSchemaVersion'] = 99;
     await markerFile.writeAsString(jsonEncode(decoded));
 
     final loaded = await MigrationCompletion.load(harness.targetLayout);

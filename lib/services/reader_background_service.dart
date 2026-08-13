@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../features/reader/reader_background_settings.dart';
 import '../storage/json_file_store.dart';
@@ -34,8 +33,12 @@ class ReaderBackgroundService {
     if (storageLayout != null) {
       return () async => (await storageLayout()).readerBackgroundSettingsFile;
     }
-    final directoryProvider =
-        documentsDirectory ?? getApplicationDocumentsDirectory;
+    final directoryProvider = documentsDirectory;
+    if (directoryProvider == null) {
+      return () async =>
+          (await AppStorageResolver.activeRuntimeLayout())
+              .readerBackgroundSettingsFile;
+    }
     return () async {
       final dir = await directoryProvider();
       return File('${dir.path}${Platform.pathSeparator}$_fileName');
@@ -49,8 +52,12 @@ class ReaderBackgroundService {
     if (storageLayout != null) {
       return () async => (await storageLayout()).readerBackgroundsDirectory;
     }
-    final directoryProvider =
-        documentsDirectory ?? getApplicationDocumentsDirectory;
+    final directoryProvider = documentsDirectory;
+    if (directoryProvider == null) {
+      return () async =>
+          (await AppStorageResolver.activeRuntimeLayout())
+              .readerBackgroundsDirectory;
+    }
     return () async {
       final dir = await directoryProvider();
       return Directory(

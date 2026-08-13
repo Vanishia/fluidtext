@@ -10,7 +10,7 @@ class BookRemarkService implements RemarkRepository, BackupSnapshotRepository {
   BookRemarkService({
     StorageLayoutProvider? storageLayout,
     LibraryChangeTracker? changeTracker,
-  }) : _storageLayout = storageLayout ?? AppStorageResolver.legacyRuntimeLayout,
+  }) : _storageLayout = storageLayout ?? AppStorageResolver.activeRuntimeLayout,
        _changeTracker = changeTracker ?? LibraryChangeTracker.instance;
 
   static final instance = BookRemarkService();

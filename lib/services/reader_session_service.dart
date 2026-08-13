@@ -6,7 +6,7 @@ import '../storage/storage_layout.dart';
 
 class ReaderSessionService {
   ReaderSessionService({StorageLayoutProvider? storageLayout})
-    : _storageLayout = storageLayout ?? AppStorageResolver.legacyRuntimeLayout;
+    : _storageLayout = storageLayout ?? AppStorageResolver.activeRuntimeLayout;
 
   static final instance = ReaderSessionService();
 

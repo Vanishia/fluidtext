@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../features/settings/app_font_settings.dart';
 import '../storage/json_file_store.dart';
@@ -49,8 +48,11 @@ class AppFontService {
     if (storageLayout != null) {
       return () async => (await storageLayout()).appFontSettingsFile;
     }
-    final directoryProvider =
-        supportDirectory ?? getApplicationSupportDirectory;
+    final directoryProvider = supportDirectory;
+    if (directoryProvider == null) {
+      return () async =>
+          (await AppStorageResolver.activeRuntimeLayout()).appFontSettingsFile;
+    }
     return () async {
       final directory = await directoryProvider();
       if (!await directory.exists()) {
@@ -69,8 +71,11 @@ class AppFontService {
     if (storageLayout != null) {
       return () async => (await storageLayout()).appFontsDirectory;
     }
-    final directoryProvider =
-        supportDirectory ?? getApplicationSupportDirectory;
+    final directoryProvider = supportDirectory;
+    if (directoryProvider == null) {
+      return () async =>
+          (await AppStorageResolver.activeRuntimeLayout()).appFontsDirectory;
+    }
     return () async {
       final support = await directoryProvider();
       return Directory(

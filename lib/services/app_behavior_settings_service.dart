@@ -43,7 +43,7 @@ class AppBehaviorSettings {
 
 class AppBehaviorSettingsService {
   AppBehaviorSettingsService({StorageLayoutProvider? storageLayout})
-    : _storageLayout = storageLayout ?? AppStorageResolver.legacyRuntimeLayout;
+    : _storageLayout = storageLayout ?? AppStorageResolver.activeRuntimeLayout;
 
   static final instance = AppBehaviorSettingsService();
 

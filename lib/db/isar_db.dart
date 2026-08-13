@@ -10,7 +10,7 @@ import '../storage/storage_layout.dart';
 
 class IsarDb {
   IsarDb({StorageLayoutProvider? storageLayout, BookAssetStore? assetStore})
-    : _storageLayout = storageLayout ?? AppStorageResolver.legacyRuntimeLayout,
+    : _storageLayout = storageLayout ?? AppStorageResolver.activeRuntimeLayout,
       _assetStore = assetStore;
 
   static final IsarDb instance = IsarDb();

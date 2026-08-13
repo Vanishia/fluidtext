@@ -13,6 +13,7 @@ import 'migration_validator.dart';
 /// Completion marker written after a successful promotion (plan step 13).
 class MigrationCompletionMarker {
   const MigrationCompletionMarker({
+    required this.source,
     required this.sourceFingerprint,
     required this.sqliteSchemaVersion,
     required this.bookCount,
@@ -26,8 +27,21 @@ class MigrationCompletionMarker {
   static const format = 'fluidtext.migration_complete';
   static const formatVersion = 1;
 
+  /// Marker written by a real legacy migration.
+  static const sourceMigration = 'migration';
+
+  /// Marker written when a fresh install initializes an empty database, so
+  /// the next launch takes the normal-start path instead of recovery.
+  static const sourceFreshInstall = 'fresh';
+
+  /// `migration` or `fresh`.
+  final String source;
   final String? sourceFingerprint;
   final int sqliteSchemaVersion;
+
+  /// Table counts at promotion time, kept for diagnostics. They are NOT
+  /// re-verified against the live database on later launches: legitimate
+  /// user writes change the counts after migration.
   final int bookCount;
   final int cardCount;
   final int assetCount;
@@ -38,6 +52,7 @@ class MigrationCompletionMarker {
   Map<String, Object?> toJson() => <String, Object?>{
     'format': format,
     'formatVersion': formatVersion,
+    'source': source,
     'sourceFingerprint': sourceFingerprint,
     'sqliteSchemaVersion': sqliteSchemaVersion,
     'counts': <String, Object?>{
@@ -74,6 +89,7 @@ class MigrationCompletionMarker {
       throw const FormatException('completion marker misses versions');
     }
     return MigrationCompletionMarker(
+      source: json['source'] as String? ?? sourceMigration,
       sourceFingerprint: json['sourceFingerprint'] as String?,
       sqliteSchemaVersion: schemaVersion.toInt(),
       bookCount: countOf('books'),
@@ -121,9 +137,28 @@ class MigrationCompletion {
     return JsonFileStore.writeAtomic(markerFile(targetLayout), marker.toJson());
   }
 
+  /// Writes the fresh-install marker for a newly initialized empty database.
+  static Future<void> writeFreshInstall(StorageLayout targetLayout) {
+    return write(
+      targetLayout,
+      MigrationCompletionMarker(
+        source: MigrationCompletionMarker.sourceFreshInstall,
+        sourceFingerprint: null,
+        sqliteSchemaVersion: LibraryDatabase.currentSchemaVersion,
+        bookCount: 0,
+        cardCount: 0,
+        assetCount: 0,
+        remarkCount: 0,
+        verifiedResourceCount: 0,
+        completedAt: DateTime.now().toUtc(),
+      ),
+    );
+  }
+
   /// Verifies the marker against the live database: it must open, pass
-  /// integrity and foreign key checks and match the recorded schema version
-  /// and table counts.
+  /// integrity and foreign key checks and match the recorded schema version.
+  /// Table counts are intentionally not compared because legitimate user
+  /// writes change them after migration.
   static Future<bool> verifyLiveDatabase(
     StorageLayout targetLayout,
     MigrationCompletionMarker marker,
@@ -146,17 +181,7 @@ class MigrationCompletion {
               marker.sqliteSchemaVersion.toString()) {
         return false;
       }
-      Future<int> count(String table) async {
-        final row = await database!
-            .customSelect('SELECT COUNT(*) AS c FROM $table')
-            .getSingle();
-        return row.read<int>('c');
-      }
-
-      return await count('books') == marker.bookCount &&
-          await count('book_cards') == marker.cardCount &&
-          await count('book_assets') == marker.assetCount &&
-          await count('book_remarks') == marker.remarkCount;
+      return true;
     } catch (_) {
       return false;
     } finally {
@@ -316,6 +341,7 @@ class MigrationPromotion {
     }
 
     final marker = MigrationCompletionMarker(
+      source: MigrationCompletionMarker.sourceMigration,
       sourceFingerprint: result.sourceFingerprint,
       sqliteSchemaVersion: LibraryDatabase.currentSchemaVersion,
       bookCount: result.bookCount,

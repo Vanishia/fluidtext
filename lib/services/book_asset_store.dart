@@ -2,7 +2,6 @@ import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:isar/isar.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../models/book.dart';
 import '../models/book_asset.dart';
@@ -41,7 +40,12 @@ class BookAssetStore {
     if (storageLayout != null) {
       return () async => (await storageLayout()).rootDirectory;
     }
-    return documentsDirectory ?? getApplicationDocumentsDirectory;
+    final directoryProvider = documentsDirectory;
+    if (directoryProvider == null) {
+      return () async =>
+          (await AppStorageResolver.activeRuntimeLayout()).rootDirectory;
+    }
+    return directoryProvider;
   }
 
   String createAssetRootKey(String fileHash) {

@@ -7,8 +7,11 @@ import 'package:flutter/material.dart';
 import '../../models/book.dart';
 import '../../repositories/library_data_access.dart';
 import '../../repositories/library_repository.dart';
+import '../../migration/migration_state.dart';
+import '../../storage/storage_layout.dart';
 import '../../widgets/blocking_loader.dart';
 import '../../widgets/glass.dart';
+import '../migration/migration_page.dart';
 
 Future<List<Book>?> showBookshelfSheet(
   BuildContext context, {
@@ -47,6 +50,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
   LibraryDataAccess? _dataAccess;
   bool _isLoading = true;
   bool _isBusy = false;
+  bool _showMigrationEntry = false;
   String? _status;
 
   @override
@@ -65,6 +69,18 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     );
     await repository.logDatabaseSnapshot('bookshelf init');
 
+    // Offer re-detection when the user previously abandoned a migration.
+    var showMigrationEntry = false;
+    try {
+      final targetLayout = await AppStorageResolver.targetRuntimeLayout();
+      final state = await MigrationStateStore(
+        targetLayout: targetLayout,
+      ).load();
+      showMigrationEntry = state.status == MigrationLifecycleStatus.abandoned;
+    } catch (_) {
+      showMigrationEntry = false;
+    }
+
     if (!mounted) return;
     setState(() {
       _dataAccess = dataAccess;
@@ -79,8 +95,23 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
         ..clear()
         ..addAll(stats);
       _selectedIds.removeWhere((id) => !_books.any((book) => book.id == id));
+      _showMigrationEntry = showMigrationEntry;
       _isLoading = false;
     });
+  }
+
+  Future<void> _redetectMigration() async {
+    final targetLayout = await AppStorageResolver.targetRuntimeLayout();
+    await MigrationStateStore(targetLayout: targetLayout).markIdle();
+    if (!mounted) return;
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const MigrationBootstrapPage(),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _showMigrationEntry = false);
+    await _reloadBooks();
   }
 
   Future<void> _reloadBooks() async {
@@ -383,6 +414,12 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                                   ?.copyWith(fontWeight: FontWeight.w700),
                             ),
                             const Spacer(),
+                            if (_showMigrationEntry)
+                              IconButton(
+                                tooltip: '重新检测旧数据并迁移',
+                                onPressed: _isBusy ? null : _redetectMigration,
+                                icon: const Icon(Icons.restore_rounded),
+                              ),
                             IconButton(
                               tooltip: '导入 EPUB',
                               onPressed: _isBusy ? null : _pickAndImportEpub,

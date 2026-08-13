@@ -200,11 +200,14 @@ void main() {
       isTrue,
     );
 
-    // Tampered counts invalidate the marker.
+    // Tampering with the recorded schema version invalidates the marker.
+    // (Table counts are intentionally not re-verified: legitimate user
+    // writes change them after migration.)
     final tampered = MigrationCompletionMarker(
+      source: loaded.source,
       sourceFingerprint: loaded.sourceFingerprint,
-      sqliteSchemaVersion: loaded.sqliteSchemaVersion,
-      bookCount: loaded.bookCount + 1,
+      sqliteSchemaVersion: loaded.sqliteSchemaVersion + 1,
+      bookCount: loaded.bookCount,
       cardCount: loaded.cardCount,
       assetCount: loaded.assetCount,
       remarkCount: loaded.remarkCount,

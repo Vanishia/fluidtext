@@ -4,11 +4,57 @@ import 'package:flutter/gestures.dart';
 
 import 'app_settings.dart';
 import 'features/bookshelf/launch_page.dart';
+import 'features/migration/migration_page.dart';
 import 'features/reader/reader_background_settings.dart';
+import 'migration/app_bootstrap_coordinator.dart';
+import 'migration/migration_runner.dart';
+import 'repositories/library_data_access.dart';
+import 'storage/storage_layout.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Rollback switch: keep the pre-migration startup path entirely.
+  if (LibraryDataAccess.forceIsarLibrary) {
+    await startNormalApplication();
+    return;
+  }
+
+  final decision = await const AppBootstrapCoordinator().decide();
+  switch (decision.action) {
+    case AppBootstrapAction.normalStart:
+      AppStorageResolver.useActiveRuntimeLayout(
+        AppStorageResolver.targetRuntimeLayout,
+      );
+      await startNormalApplication();
+    case AppBootstrapAction.freshInstall:
+      AppStorageResolver.useActiveRuntimeLayout(
+        AppStorageResolver.targetRuntimeLayout,
+      );
+      await initializeFreshStorage(decision.targetLayout);
+      await startNormalApplication();
+    case AppBootstrapAction.migrationRequired:
+    case AppBootstrapAction.recoveryRequired:
+    case AppBootstrapAction.migrationUnavailable:
+      // Do not initialize settings or repositories here: they could write
+      // defaults over legacy data or open the old database.
+      runApp(
+        MigrationRootApp(
+          decision: decision,
+          onEnterApp: () async {
+            AppStorageResolver.useActiveRuntimeLayout(
+              AppStorageResolver.targetRuntimeLayout,
+            );
+            await startNormalApplication();
+          },
+        ),
+      );
+  }
+}
+
+/// Loads settings and the previous session, then runs the normal app tree.
+Future<void> startNormalApplication() async {
   final settingsFuture = initializeAppSettings();
   final launchStateFuture = loadLaunchState();
   await settingsFuture;
