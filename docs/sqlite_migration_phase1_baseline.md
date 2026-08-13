@@ -72,3 +72,20 @@ The report format is `fluidtext.isar_baseline.v1`:
 
 Commit baseline reports only when they represent an intentional reference
 environment. Ad-hoc local runs should stay under `build/reports/`.
+
+## SQLite Import Benchmark
+
+The SQLite counterpart runs through the Flutter test runner, because plain
+`dart run` cannot compile the Flutter imports used by the repository layer:
+
+```powershell
+$env:FLUIDTEXT_SQLITE_BENCHMARK = '1'
+flutter test test/sqlite_import_benchmark_test.dart
+```
+
+Without the environment flag the test is skipped, so normal test runs stay
+fast. The report uses the format `fluidtext.sqlite_import_benchmark.v1` and
+is written to `build/reports/sqlite_import_benchmark.json`; it covers
+100/1,000/10,000/50,000 card imports through
+`SqliteLibraryRepository.importBookDraft`, the key read queries and RSS
+before/after each case.

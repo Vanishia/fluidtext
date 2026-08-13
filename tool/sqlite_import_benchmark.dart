@@ -7,20 +7,7 @@ import 'package:fluidtext/storage/sqlite/sqlite_library_repository.dart';
 
 Future<void> main(List<String> args) async {
   final options = _BenchmarkOptions.parse(args);
-
-  final output = <String, Object?>{
-    'format': 'fluidtext.sqlite_import_benchmark.v1',
-    'generatedAt': DateTime.now().toUtc().toIso8601String(),
-    'platform': Platform.operatingSystem,
-    'dartVersion': Platform.version,
-    'cardCounts': options.cardCounts,
-    'cases': <Map<String, Object?>>[],
-  };
-
-  final cases = output['cases']! as List<Map<String, Object?>>;
-  for (final cardCount in options.cardCounts) {
-    cases.add(await _runCase(cardCount));
-  }
+  final output = await runSqliteImportBenchmark(cardCounts: options.cardCounts);
 
   await options.outputFile.parent.create(recursive: true);
   await options.outputFile.writeAsString(
@@ -30,6 +17,29 @@ Future<void> main(List<String> args) async {
   stdout.writeln(
     'SQLite import benchmark written to ${options.outputFile.path}',
   );
+}
+
+/// Runs the benchmark cases and returns the report payload.
+///
+/// Exposed so the benchmark can also be driven from `flutter test` (plain
+/// `dart run` cannot compile Flutter imports used by the repository layer).
+Future<Map<String, Object?>> runSqliteImportBenchmark({
+  List<int> cardCounts = const [100, 1000, 10000, 50000],
+}) async {
+  final output = <String, Object?>{
+    'format': 'fluidtext.sqlite_import_benchmark.v1',
+    'generatedAt': DateTime.now().toUtc().toIso8601String(),
+    'platform': Platform.operatingSystem,
+    'dartVersion': Platform.version,
+    'cardCounts': cardCounts,
+    'cases': <Map<String, Object?>>[],
+  };
+
+  final cases = output['cases']! as List<Map<String, Object?>>;
+  for (final cardCount in cardCounts) {
+    cases.add(await _runCase(cardCount));
+  }
+  return output;
 }
 
 Future<Map<String, Object?>> _runCase(int cardCount) async {
@@ -93,8 +103,19 @@ Future<Map<String, Object?>> _runCase(int cardCount) async {
       'metrics': metrics,
     };
   } finally {
-    if (await directory.exists()) {
+    await _deleteDirectoryWithRetry(directory);
+  }
+}
+
+Future<void> _deleteDirectoryWithRetry(Directory directory) async {
+  for (var attempt = 0; attempt < 10; attempt += 1) {
+    if (!await directory.exists()) return;
+    try {
       await directory.delete(recursive: true);
+      return;
+    } on FileSystemException {
+      if (attempt == 9) rethrow;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
     }
   }
 }
