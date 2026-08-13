@@ -766,7 +766,7 @@ SQLite 尚未成为生产数据源，删除新实现和依赖即可回到 Isar�
 - 测试源 Isar 复制前后 hash 不稳定、旧实例占用、symlink/junction/reparse point 资源和非 NTFS/网络数据目录 warning。
 - 实机确认 Documents 中旧文件未被修改，新数据库只在目标私有目录运行。
 
-> 实施记录（2026-08-14）：freshInstall 与放弃迁移会写入 `source=fresh` 的完成标记；`verifyLiveDatabase` 只校验 integrity/外键/schema version，不再比对表计数——否则迁移后用户正常写入会让计数失配，把正常启动误判成 recoveryRequired。
+> 实施记录（2026-08-14）：freshInstall 与放弃迁移会写入 `source=fresh` 的完成标记；`verifyLiveDatabase` 只校验 integrity/外键/schema version，不再比对表计数——否则迁移后用户正常写入会让计数失配，把正常启动误判成 recoveryRequired。真机验收发现早期版本（无章节字段）导入的卡片在 Isar 中读回 int64 最小值哨兵，迁移时已归一化为第 0 章并记 warning；迁移诊断会剥离 SQL 语句与绑定参数，避免泄露卡片正文。
 
 **回滚点**
 
