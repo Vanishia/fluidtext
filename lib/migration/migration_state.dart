@@ -15,6 +15,7 @@ class MigrationStateSnapshot {
     this.attemptId,
     this.phase,
     this.message,
+    this.liveDatabaseVerified = false,
   });
 
   static const idle = MigrationStateSnapshot(
@@ -28,12 +29,18 @@ class MigrationStateSnapshot {
   /// User-facing failure message (Chinese) when status is failed.
   final String? message;
 
+  /// Whether the live database passed one full verification after the last
+  /// migration/promotion. Verified databases skip the expensive integrity
+  /// check on later cold starts.
+  final bool liveDatabaseVerified;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'format': MigrationStateStore.format,
     'status': status.name,
     'attemptId': attemptId,
     'phase': phase?.name,
     'message': message,
+    'liveDatabaseVerified': liveDatabaseVerified,
     'updatedAt': DateTime.now().toUtc().toIso8601String(),
   };
 
@@ -55,6 +62,7 @@ class MigrationStateSnapshot {
       attemptId: json['attemptId'] as String?,
       phase: phase,
       message: json['message'] as String?,
+      liveDatabaseVerified: json['liveDatabaseVerified'] == true,
     );
   }
 }
@@ -129,6 +137,17 @@ class MigrationStateStore {
     if (await file.exists()) {
       await file.delete();
     }
+  }
+
+  /// Records that the live database passed one full post-migration
+  /// verification, so later cold starts can skip the integrity check.
+  Future<void> markLiveDatabaseVerified() {
+    return _write(
+      const MigrationStateSnapshot(
+        status: MigrationLifecycleStatus.idle,
+        liveDatabaseVerified: true,
+      ),
+    );
   }
 
   Future<void> _write(MigrationStateSnapshot snapshot) {

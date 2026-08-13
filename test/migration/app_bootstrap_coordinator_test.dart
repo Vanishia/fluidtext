@@ -242,4 +242,49 @@ void main() {
       expect(decision.detection, isNull);
     }
   });
+
+  test('live database is verified once and trusted on later startups',
+      () async {
+    final harness = await LegacyFixtureMigration.setUp(tempRoot);
+    await promoteFully(harness);
+
+    var verifyCalls = 0;
+    AppBootstrapCoordinator countingCoordinator() {
+      return AppBootstrapCoordinator(
+        legacyLayoutProvider: () async => harness.legacyLayout,
+        targetLayoutProvider: () async => harness.targetLayout,
+        liveDatabaseVerifier: (layout, marker) async {
+          verifyCalls++;
+          return MigrationCompletion.verifyLiveDatabase(layout, marker);
+        },
+      );
+    }
+
+    final first = await countingCoordinator().decide();
+    expect(first.action, AppBootstrapAction.normalStart);
+    expect(verifyCalls, 1);
+
+    // Later cold starts trust the recorded verification instead of
+    // re-running a full integrity check.
+    final second = await countingCoordinator().decide();
+    expect(second.action, AppBootstrapAction.normalStart);
+    expect(verifyCalls, 1);
+  });
+
+  test('failed verification requires recovery and stays unverified', () async {
+    final harness = await LegacyFixtureMigration.setUp(tempRoot);
+    await promoteFully(harness);
+
+    final decision = await AppBootstrapCoordinator(
+      legacyLayoutProvider: () async => harness.legacyLayout,
+      targetLayoutProvider: () async => harness.targetLayout,
+      liveDatabaseVerifier: (layout, marker) async => false,
+    ).decide();
+    expect(decision.action, AppBootstrapAction.recoveryRequired);
+
+    // The failed attempt must not mark the database verified: a later start
+    // with the real verifier still performs the full check.
+    final recovered = await coordinatorFor(harness).decide();
+    expect(recovered.action, AppBootstrapAction.normalStart);
+  });
 }

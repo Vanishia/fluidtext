@@ -46,6 +46,13 @@ class MigrationRootApp extends StatelessWidget {
       title: 'FluidText',
       theme: buildAppTheme(brightness: Brightness.light, seedColor: seed),
       darkTheme: buildAppTheme(brightness: Brightness.dark, seedColor: seed),
+      builder: (context, child) {
+        final theme = Theme.of(context);
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: systemUiOverlayStyleForTheme(theme),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: MigrationPage(
         decision: decision,
         onEnterApp: onEnterApp,

@@ -65,17 +65,27 @@ class AppBootstrapCoordinator {
     AppStoragePlatform Function()? platformProvider,
     AppBuildMode Function()? buildModeProvider,
     LegacySourceProbe Function(StorageLayout layout)? probeFactory,
+    Future<bool> Function(StorageLayout, MigrationCompletionMarker)?
+    liveDatabaseVerifier,
   }) : _legacyLayoutProvider = legacyLayoutProvider,
        _targetLayoutProvider = targetLayoutProvider,
        _platformProvider = platformProvider ?? _defaultPlatform,
        _buildModeProvider = buildModeProvider ?? _defaultBuildMode,
-       _probeFactory = probeFactory ?? _defaultProbeFactory;
+       _probeFactory = probeFactory ?? _defaultProbeFactory,
+       _liveDatabaseVerifier =
+           liveDatabaseVerifier ?? MigrationCompletion.verifyLiveDatabase;
 
   final StorageLayoutProvider? _legacyLayoutProvider;
   final StorageLayoutProvider? _targetLayoutProvider;
   final AppStoragePlatform Function() _platformProvider;
   final AppBuildMode Function() _buildModeProvider;
   final LegacySourceProbe Function(StorageLayout layout) _probeFactory;
+
+  /// Full verification of the live database against the completion marker.
+  /// Runs once after each migration/promotion; later cold starts trust the
+  /// recorded verification instead of re-scanning the whole database.
+  final Future<bool> Function(StorageLayout, MigrationCompletionMarker)
+  _liveDatabaseVerifier;
 
   static AppStoragePlatform _defaultPlatform() => AppStoragePlatform.current;
 
@@ -117,11 +127,14 @@ class AppBootstrapCoordinator {
           reason: '检测到不完整的新数据库（缺少迁移完成标记），需要恢复或重新迁移',
         );
       }
-      final valid = await MigrationCompletion.verifyLiveDatabase(
-        targetLayout,
-        marker,
-      );
+      // A database verified once after migration is trusted on later cold
+      // starts; a full integrity_check on every launch can take seconds.
+      if (state.liveDatabaseVerified) {
+        return decision(AppBootstrapAction.normalStart);
+      }
+      final valid = await _liveDatabaseVerifier(targetLayout, marker);
       if (valid) {
+        await stateStore.markLiveDatabaseVerified();
         return decision(AppBootstrapAction.normalStart);
       }
       return decision(

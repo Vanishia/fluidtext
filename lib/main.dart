@@ -62,20 +62,6 @@ Future<void> startNormalApplication() async {
   runApp(MyApp(initialLaunchState: launchState));
 }
 
-SystemUiOverlayStyle _systemUiStyleForTheme(ThemeData theme) {
-  final isDark = theme.brightness == Brightness.dark;
-  return (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
-      .copyWith(
-        statusBarColor: Colors.transparent,
-        systemNavigationBarColor: theme.colorScheme.surface,
-        systemNavigationBarDividerColor: Colors.transparent,
-        systemNavigationBarIconBrightness: isDark
-            ? Brightness.light
-            : Brightness.dark,
-        systemNavigationBarContrastEnforced: false,
-      );
-}
-
 class MyApp extends StatefulWidget {
   const MyApp({super.key, required this.initialLaunchState});
 
@@ -138,7 +124,7 @@ class _MyAppState extends State<MyApp> {
                       builder: (context, child) {
                         final theme = Theme.of(context);
                         return AnnotatedRegion<SystemUiOverlayStyle>(
-                          value: _systemUiStyleForTheme(theme),
+                          value: systemUiOverlayStyleForTheme(theme),
                           child: child ?? const SizedBox.shrink(),
                         );
                       },
