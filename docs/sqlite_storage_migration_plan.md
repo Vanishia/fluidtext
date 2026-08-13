@@ -713,6 +713,8 @@ SQLite 尚未成为生产数据源，删除新实现和依赖即可回到 Isar�
 - 导入 100–50,000 cards 的基准与峰值内存记录完成。
 - 当前 v2 导出内容保持兼容，已有备份集成测试继续通过。
 
+> 实施记录（2026-08-14）：批量导入回滚测试已补入 `test/repositories/sqlite_library_repository_test.dart`；导入基准由 `tool/sqlite_import_benchmark.dart` 驱动（仓储层依赖 Flutter 无法 `dart run`，改用 `FLUIDTEXT_SQLITE_BENCHMARK=1 flutter test test/sqlite_import_benchmark_test.dart`），报告写入 `build/reports/sqlite_import_benchmark.json`，首轮 Windows 结果：50,000 cards 导入约 1.7s、RSS 增量约 28MB。
+
 **回滚点**
 
 生产仍可配置为 Isar；若 SQLite 导入未达标，可只回滚 SQLite adapter，不回滚已经验证的业务解耦。
@@ -764,6 +766,8 @@ SQLite 尚未成为生产数据源，删除新实现和依赖即可回到 Isar�
 - 测试源 Isar 复制前后 hash 不稳定、旧实例占用、symlink/junction/reparse point 资源和非 NTFS/网络数据目录 warning。
 - 实机确认 Documents 中旧文件未被修改，新数据库只在目标私有目录运行。
 
+> 实施记录（2026-08-14）：freshInstall 与放弃迁移会写入 `source=fresh` 的完成标记；`verifyLiveDatabase` 只校验 integrity/外键/schema version，不再比对表计数——否则迁移后用户正常写入会让计数失配，把正常启动误判成 recoveryRequired。
+
 **回滚点**
 
 发布前可关闭 SQLite bootstrap 开关回到 Isar。发布后若需要应用级回滚，只允许通过明确的旧版兼容策略或 ZIP 恢复，不能让旧版本直接打开已迁移的 SQLite。
@@ -783,6 +787,8 @@ SQLite 尚未成为生产数据源，删除新实现和依赖即可回到 Isar�
 - 实现 ZIP 安全校验、流式限额解压、staging restore、完整校验和原子替换。
 - 在 `BookshelfSheet` 增加导入备份入口和状态反馈。
 - 非空库恢复前自动备份并二次确认。
+
+> 实施记录（2026-08-14）：阶段四后 `BookRemarkService`/`IsarDb` 已无业务调用点，但在 active=target 布局下被误调会在新目录静默打开空 Isar；本阶段开始时先给这两个类加 assert 兜底或直接移除。
 
 **预计影响模块**
 
@@ -952,6 +958,8 @@ ZIP 恢复入口可单独关闭，不影响已完成的 SQLite 迁移和正常�
 
 **风险：** Windows DLL、Android ABI、后台 isolate 或 Release tree shaking 可能出现只在正式构建暴露的问题。  
 **处理：** 阶段二先完成最小双端 Release spike，验证打开、写入、重开和事务，再继续大规模实现。
+
+> 实施记录（2026-08-14）：阶段四构建验收时发现 `sqlite3_flutter_libs 0.6.0+eol` 是不含原生库的空壳版本（包自述要求改用 sqlite3 3.x），已固定到 `0.5.42`；Windows Release 已验证随包 `sqlite3.dll`、Android APK 已验证含三个 ABI 的 `libsqlite3.so`。后续如需更新，可评估 sqlite3 3.x 的 native assets 方案。
 
 ### 11.2 SQLite 导入速度不及 Isar
 
