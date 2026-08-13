@@ -394,8 +394,8 @@ void main() {
     );
     expect(
       jsonDecode(
-            await targetLayout.appBehaviorSettingsFile.readAsString(),
-          )['themeMode'],
+        await targetLayout.appBehaviorSettingsFile.readAsString(),
+      )['themeMode'],
       'dark',
     );
   });
@@ -413,7 +413,9 @@ void main() {
     final existingDatabase = LibraryDatabase.file(
       targetLayout.sqliteDatabaseFile,
     );
-    await existingDatabase.into(existingDatabase.sqliteBooks).insert(
+    await existingDatabase
+        .into(existingDatabase.sqliteBooks)
+        .insert(
           SqliteBooksCompanion.insert(
             id: const Value(500),
             title: '旧书',
@@ -462,96 +464,102 @@ void main() {
     expect(marker.sourceFingerprint, 'fp');
   });
 
-  test('a failing closeLiveDatabase leaves the original library intact',
-      () async {
-    final sourceLayout = layoutFor('source5');
-    await sourceLayout.rootDirectory.create(recursive: true);
-    await seedDatabase(sourceLayout.sqliteDatabaseFile);
-    final snapshot = await snapshotOf(sourceLayout.sqliteDatabaseFile);
-    final backupFile = await writeJson('backup5.json', v2Payload(snapshot));
+  test(
+    'a failing closeLiveDatabase leaves the original library intact',
+    () async {
+      final sourceLayout = layoutFor('source5');
+      await sourceLayout.rootDirectory.create(recursive: true);
+      await seedDatabase(sourceLayout.sqliteDatabaseFile);
+      final snapshot = await snapshotOf(sourceLayout.sqliteDatabaseFile);
+      final backupFile = await writeJson('backup5.json', v2Payload(snapshot));
 
-    final targetLayout = layoutFor('target5');
-    await targetLayout.rootDirectory.create(recursive: true);
-    final existingDatabase = LibraryDatabase.file(
-      targetLayout.sqliteDatabaseFile,
-    );
-    await existingDatabase.into(existingDatabase.sqliteBooks).insert(
-          SqliteBooksCompanion.insert(
-            id: const Value(500),
-            title: '旧书',
-            createdAtMs: DateTime.utc(2025).millisecondsSinceEpoch,
-          ),
-        );
-    await existingDatabase.close();
-
-    await expectLater(
-      const BackupRestoreService().restore(
-        backupFile: backupFile,
-        targetLayout: targetLayout,
-        closeLiveDatabase: () => throw StateError('模拟关闭失败'),
-      ),
-      throwsStateError,
-    );
-
-    final restored = await snapshotOf(targetLayout.sqliteDatabaseFile);
-    expect(restored.books.map((book) => book.id), [500]);
-  });
-
-  test('a tampered v3 checksum is rejected before touching the library',
-      () async {
-    final sourceLayout = layoutFor('source6');
-    await sourceLayout.rootDirectory.create(recursive: true);
-    await seedDatabase(sourceLayout.sqliteDatabaseFile);
-    final sourceDatabase = LibraryDatabase.file(
-      sourceLayout.sqliteDatabaseFile,
-    );
-    final BackupFile backup;
-    try {
-      backup = await const BackupExportService().exportV3(
-        repository: SqliteLibraryRepository(sourceDatabase),
-        layout: sourceLayout,
+      final targetLayout = layoutFor('target5');
+      await targetLayout.rootDirectory.create(recursive: true);
+      final existingDatabase = LibraryDatabase.file(
+        targetLayout.sqliteDatabaseFile,
       );
-    } finally {
-      await sourceDatabase.close();
-    }
+      await existingDatabase
+          .into(existingDatabase.sqliteBooks)
+          .insert(
+            SqliteBooksCompanion.insert(
+              id: const Value(500),
+              title: '旧书',
+              createdAtMs: DateTime.utc(2025).millisecondsSinceEpoch,
+            ),
+          );
+      await existingDatabase.close();
 
-    // Re-encode the archive with a modified library.json.
-    final decoded = ZipDecoder().decodeBytes(backup.bytes);
-    final repacked = Archive();
-    for (final file in decoded.files) {
-      var content = file.content as List<int>;
-      if (file.name == 'data/library.json') {
-        content = utf8.encode(
-          utf8.decode(content).replaceAll('第一本书', '被篡改的书'),
-        );
-      }
-      repacked.addFile(ArchiveFile(file.name, content.length, content));
-    }
-    final tamperedFile = File('${tempDir.path}/tampered.zip');
-    await tamperedFile.writeAsBytes(
-      ZipEncoder().encode(repacked),
-      flush: true,
-    );
-
-    final targetLayout = layoutFor('target6');
-    await targetLayout.rootDirectory.create(recursive: true);
-    await expectLater(
-      const BackupRestoreService().restore(
-        backupFile: tamperedFile,
-        targetLayout: targetLayout,
-        closeLiveDatabase: defaultClose,
-      ),
-      throwsA(
-        isA<FormatException>().having(
-          (error) => error.message,
-          'message',
-          contains('校验和不匹配'),
+      await expectLater(
+        const BackupRestoreService().restore(
+          backupFile: backupFile,
+          targetLayout: targetLayout,
+          closeLiveDatabase: () => throw StateError('模拟关闭失败'),
         ),
-      ),
-    );
-    expect(closeCalls, 0);
-    expect(await targetLayout.sqliteDatabaseFile.exists(), isFalse);
-  });
+        throwsStateError,
+      );
+
+      final restored = await snapshotOf(targetLayout.sqliteDatabaseFile);
+      expect(restored.books.map((book) => book.id), [500]);
+    },
+  );
+
+  test(
+    'a tampered v3 checksum is rejected before touching the library',
+    () async {
+      final sourceLayout = layoutFor('source6');
+      await sourceLayout.rootDirectory.create(recursive: true);
+      await seedDatabase(sourceLayout.sqliteDatabaseFile);
+      final sourceDatabase = LibraryDatabase.file(
+        sourceLayout.sqliteDatabaseFile,
+      );
+      final BackupFile backup;
+      try {
+        backup = await const BackupExportService().exportV3(
+          repository: SqliteLibraryRepository(sourceDatabase),
+          layout: sourceLayout,
+        );
+      } finally {
+        await sourceDatabase.close();
+      }
+
+      // Re-encode the archive with a modified library.json.
+      final decoded = ZipDecoder().decodeBytes(backup.bytes);
+      final repacked = Archive();
+      for (final file in decoded.files) {
+        var content = file.content as List<int>;
+        if (file.name == 'data/library.json') {
+          content = utf8.encode(
+            utf8.decode(content).replaceAll('第一本书', '被篡改的书'),
+          );
+        }
+        repacked.addFile(ArchiveFile(file.name, content.length, content));
+      }
+      final tamperedFile = File('${tempDir.path}/tampered.zip');
+      await tamperedFile.writeAsBytes(
+        ZipEncoder().encode(repacked),
+        flush: true,
+      );
+
+      final targetLayout = layoutFor('target6');
+      await targetLayout.rootDirectory.create(recursive: true);
+      await expectLater(
+        const BackupRestoreService().restore(
+          backupFile: tamperedFile,
+          targetLayout: targetLayout,
+          closeLiveDatabase: defaultClose,
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('校验和不匹配'),
+          ),
+        ),
+      );
+      expect(closeCalls, 0);
+      expect(await targetLayout.sqliteDatabaseFile.exists(), isFalse);
+    },
+  );
 
   test('reader session references to missing books are cleared', () async {
     final sourceLayout = layoutFor('source7');
@@ -640,8 +648,10 @@ void main() {
     await seedDatabase(sourceLayout.sqliteDatabaseFile);
     final snapshot = await snapshotOf(sourceLayout.sqliteDatabaseFile);
     final payload = v2Payload(snapshot);
-    (payload['bookCards'] as List).cast<Map<String, dynamic>>().first[
-        'bookId'] = 777;
+    (payload['bookCards'] as List)
+            .cast<Map<String, dynamic>>()
+            .first['bookId'] =
+        777;
     final backupFile = await writeJson('backup9.json', payload);
 
     final targetLayout = layoutFor('target9');
@@ -662,4 +672,76 @@ void main() {
     );
     expect(await targetLayout.sqliteDatabaseFile.exists(), isFalse);
   });
+
+  test('legacy sentinel chapter fields are normalized to chapter 0', () async {
+    final sourceLayout = layoutFor('source10');
+    await sourceLayout.rootDirectory.create(recursive: true);
+    await seedDatabase(sourceLayout.sqliteDatabaseFile);
+    final snapshot = await snapshotOf(sourceLayout.sqliteDatabaseFile);
+    final payload = v2Payload(snapshot);
+    // Cards exported by app versions before chapter metadata existed carry
+    // Isar's int64-min "unset" sentinel (observed on a real v2 backup).
+    for (final card
+        in (payload['bookCards'] as List).cast<Map<String, dynamic>>()) {
+      card['chapterIndex'] = -9223372036854775808;
+      card['chapterCardIndex'] = -9223372036854775808;
+    }
+    final backupFile = await writeJson('backup10.json', payload);
+
+    final targetLayout = layoutFor('target10');
+    await targetLayout.rootDirectory.create(recursive: true);
+    final result = await const BackupRestoreService().restore(
+      backupFile: backupFile,
+      targetLayout: targetLayout,
+      closeLiveDatabase: defaultClose,
+    );
+
+    expect(result.cardCount, 2);
+    expect(result.warnings, contains(contains('第 0 章')));
+
+    final restored = await snapshotOf(targetLayout.sqliteDatabaseFile);
+    expect(restored.bookCards.map((card) => card.chapterIndex), [0, 0]);
+    expect(restored.bookCards.map((card) => card.chapterCardIndex), [0, 0]);
+  });
+
+  test(
+    'database write failures are sanitized and leak no card content',
+    () async {
+      final sourceLayout = layoutFor('source11');
+      await sourceLayout.rootDirectory.create(recursive: true);
+      await seedDatabase(sourceLayout.sqliteDatabaseFile);
+      final snapshot = await snapshotOf(sourceLayout.sqliteDatabaseFile);
+      final payload = v2Payload(snapshot);
+      // Passes app-level validation but violates CHECK(card_count >= 0).
+      (payload['books'] as List)
+              .cast<Map<String, dynamic>>()
+              .first['cardCount'] =
+          -5;
+      final backupFile = await writeJson('backup11.json', payload);
+
+      final targetLayout = layoutFor('target11');
+      await targetLayout.rootDirectory.create(recursive: true);
+      Object? failure;
+      try {
+        await const BackupRestoreService().restore(
+          backupFile: backupFile,
+          targetLayout: targetLayout,
+          closeLiveDatabase: defaultClose,
+        );
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(failure, isNotNull);
+      final message = failure.toString();
+      expect(message, contains('恢复数据写入数据库失败'));
+      // The raw SqliteException tails (SQL statement + bound parameters,
+      // including card content) must not reach user-facing messages.
+      expect(message, isNot(contains('Causing statement')));
+      expect(message, isNot(contains('第一章内容')));
+      // Failed before closing/swapping the live database.
+      expect(closeCalls, 0);
+      expect(await targetLayout.sqliteDatabaseFile.exists(), isFalse);
+    },
+  );
 }

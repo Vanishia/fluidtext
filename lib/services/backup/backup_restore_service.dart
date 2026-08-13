@@ -73,7 +73,8 @@ class BackupRestoreService {
     final warnings = <String>[];
 
     // 1. Detect the payload kind by extension and magic bytes.
-    final attemptId = 'restore-${DateTime.now().toUtc().microsecondsSinceEpoch}';
+    final attemptId =
+        'restore-${DateTime.now().toUtc().microsecondsSinceEpoch}';
     final attemptDirectory = Directory(
       StorageLayout.joinPath([
         targetLayout.recoveryDirectory.path,
@@ -139,8 +140,10 @@ class BackupRestoreService {
         formatVersion = 3;
         final manifest = BackupManifest.fromJson(
           _decodeJsonObject(
-            await _extractedFile(extractedDirectory, 'manifest.json')
-                .readAsBytes(),
+            await _extractedFile(
+              extractedDirectory,
+              'manifest.json',
+            ).readAsBytes(),
           ),
         );
         if (!paths.contains('data/library.json')) {
@@ -255,6 +258,7 @@ class BackupRestoreService {
     final cards = <Map<String, dynamic>>[];
     final cardIds = <int>{};
     final cardKeys = <String>{};
+    var sentinelChapterCount = 0;
     for (final card in data.bookCards) {
       final id = card['id'] as int;
       final bookId = card['bookId'] as int;
@@ -268,7 +272,29 @@ class BackupRestoreService {
         throw FormatException('备份包含重复的卡片 ID：$id');
       }
       if (!cardKeys.add('$bookId/${card['cardIndex']}')) {
-        throw FormatException('备份包含重复的卡片位置（书籍 ID $bookId，序号 ${card['cardIndex']}）');
+        throw FormatException(
+          '备份包含重复的卡片位置（书籍 ID $bookId，序号 ${card['cardIndex']}）',
+        );
+      }
+      // Cards exported from app versions before chapter metadata existed
+      // carry Isar's "unset" sentinel (int64 min); normalize them to
+      // chapter 0, mirroring the migrator.
+      var chapterIndex = card['chapterIndex'] as int;
+      var chapterCardIndex = card['chapterCardIndex'] as int;
+      if (chapterIndex == _unsetIntSentinel ||
+          chapterCardIndex == _unsetIntSentinel) {
+        chapterIndex = chapterIndex == _unsetIntSentinel ? 0 : chapterIndex;
+        chapterCardIndex = chapterCardIndex == _unsetIntSentinel
+            ? 0
+            : chapterCardIndex;
+        card['chapterIndex'] = chapterIndex;
+        card['chapterCardIndex'] = chapterCardIndex;
+        sentinelChapterCount++;
+      }
+      if ((card['cardIndex'] as int) < 0 ||
+          chapterIndex < 0 ||
+          chapterCardIndex < 0) {
+        throw FormatException('卡片（ID $id）包含非法的序号');
       }
       // The SQLite CHECK constraints require readAt/favoritedAt to be null
       // when the flag is unset; normalize instead of failing the restore.
@@ -281,6 +307,9 @@ class BackupRestoreService {
         warnings.add('卡片（ID $id）未收藏但带有收藏时间，已忽略该时间');
       }
       cards.add(card);
+    }
+    if (sentinelChapterCount > 0) {
+      warnings.add('$sentinelChapterCount 张卡片来自无章节信息的旧版本，已归入第 0 章');
     }
 
     final assets = <Map<String, dynamic>>[];
@@ -341,78 +370,102 @@ class BackupRestoreService {
   ) async {
     final database = LibraryDatabase.file(databaseFile);
     try {
-      await database.transaction(() async {
-        await database.batch((batch) {
-          batch.insertAll(database.sqliteBooks, [
-            for (final book in library.books)
-              SqliteBooksCompanion.insert(
-                id: Value(book['id'] as int),
-                title: book['title'] as String,
-                createdAtMs: _timestampMs(book['createdAt']) ??
-                    _timestampMs(book['importedAt']) ??
-                    0,
-                fileHash: Value(book['fileHash'] as String?),
-                contentFingerprint: Value(
-                  book['contentFingerprint'] as String?,
+      try {
+        await database.transaction(() async {
+          await database.batch((batch) {
+            batch.insertAll(database.sqliteBooks, [
+              for (final book in library.books)
+                SqliteBooksCompanion.insert(
+                  id: Value(book['id'] as int),
+                  title: book['title'] as String,
+                  createdAtMs:
+                      _timestampMs(book['createdAt']) ??
+                      _timestampMs(book['importedAt']) ??
+                      0,
+                  fileHash: Value(book['fileHash'] as String?),
+                  contentFingerprint: Value(
+                    book['contentFingerprint'] as String?,
+                  ),
+                  sourceFileName: Value(book['sourceFileName'] as String?),
+                  importedAtMs: Value(_timestampMs(book['importedAt'])),
+                  cardCount: Value(book['cardCount'] as int?),
+                  textCharCount: Value(book['textCharCount'] as int?),
+                  assetRootKey: Value(book['assetRootKey'] as String?),
                 ),
-                sourceFileName: Value(book['sourceFileName'] as String?),
-                importedAtMs: Value(_timestampMs(book['importedAt'])),
-                cardCount: Value(book['cardCount'] as int?),
-                textCharCount: Value(book['textCharCount'] as int?),
-                assetRootKey: Value(book['assetRootKey'] as String?),
-              ),
-          ]);
-          batch.insertAll(database.sqliteBookCards, [
-            for (final card in library.cards)
-              SqliteBookCardsCompanion.insert(
-                id: Value(card['id'] as int),
-                bookId: card['bookId'] as int,
-                bookTitle: card['bookTitle'] as String,
-                cardIndex: card['cardIndex'] as int,
-                chapterIndex: card['chapterIndex'] as int,
-                chapterCardIndex: card['chapterCardIndex'] as int,
-                chapterTitle: Value(card['chapterTitle'] as String?),
-                content: card['content'] as String,
-                blocksJson: Value(card['blocksJson'] as String?),
-                isRead: card['isRead'] as bool,
-                readAtMs: Value(_timestampMs(card['readAt'])),
-                isFavorite: card['isFavorite'] as bool,
-                favoritedAtMs: Value(_timestampMs(card['favoritedAt'])),
-              ),
-          ]);
-          batch.insertAll(database.sqliteBookAssets, [
-            for (final asset in library.assets)
-              SqliteBookAssetsCompanion.insert(
-                id: Value(asset['id'] as int),
-                bookId: asset['bookId'] as int,
-                assetKey: asset['assetKey'] as String,
-                originalHref: Value(asset['originalHref'] as String?),
-                normalizedHref: Value(asset['normalizedHref'] as String?),
-                mimeType: Value(asset['mimeType'] as String?),
-                relativePath: (asset['relativePath'] as String).replaceAll(
-                  r'\',
-                  '/',
+            ]);
+            batch.insertAll(database.sqliteBookCards, [
+              for (final card in library.cards)
+                SqliteBookCardsCompanion.insert(
+                  id: Value(card['id'] as int),
+                  bookId: card['bookId'] as int,
+                  bookTitle: card['bookTitle'] as String,
+                  cardIndex: card['cardIndex'] as int,
+                  chapterIndex: card['chapterIndex'] as int,
+                  chapterCardIndex: card['chapterCardIndex'] as int,
+                  chapterTitle: Value(card['chapterTitle'] as String?),
+                  content: card['content'] as String,
+                  blocksJson: Value(card['blocksJson'] as String?),
+                  isRead: card['isRead'] as bool,
+                  readAtMs: Value(_timestampMs(card['readAt'])),
+                  isFavorite: card['isFavorite'] as bool,
+                  favoritedAtMs: Value(_timestampMs(card['favoritedAt'])),
                 ),
-                byteLength: Value(asset['byteLength'] as int?),
-                createdAtMs: _timestampMs(asset['createdAt']) ?? 0,
-              ),
-          ]);
-          batch.insertAll(database.sqliteBookRemarks, [
-            for (final remark in library.remarks)
-              SqliteBookRemarksCompanion.insert(
-                bookId: Value(remark['id'] as int),
-                title: remark['title'] as String,
-                updatedAtMs: _timestampMs(remark['updatedAt']) ??
-                    DateTime.now().millisecondsSinceEpoch,
-              ),
-          ]);
+            ]);
+            batch.insertAll(database.sqliteBookAssets, [
+              for (final asset in library.assets)
+                SqliteBookAssetsCompanion.insert(
+                  id: Value(asset['id'] as int),
+                  bookId: asset['bookId'] as int,
+                  assetKey: asset['assetKey'] as String,
+                  originalHref: Value(asset['originalHref'] as String?),
+                  normalizedHref: Value(asset['normalizedHref'] as String?),
+                  mimeType: Value(asset['mimeType'] as String?),
+                  relativePath: (asset['relativePath'] as String).replaceAll(
+                    r'\',
+                    '/',
+                  ),
+                  byteLength: Value(asset['byteLength'] as int?),
+                  createdAtMs: _timestampMs(asset['createdAt']) ?? 0,
+                ),
+            ]);
+            batch.insertAll(database.sqliteBookRemarks, [
+              for (final remark in library.remarks)
+                SqliteBookRemarksCompanion.insert(
+                  bookId: Value(remark['id'] as int),
+                  title: remark['title'] as String,
+                  updatedAtMs:
+                      _timestampMs(remark['updatedAt']) ??
+                      DateTime.now().millisecondsSinceEpoch,
+                ),
+            ]);
+          });
         });
-      });
+      } catch (error) {
+        // SqliteException carries the failing SQL statement and its bound
+        // parameters — which include card content. Strip them before the
+        // error reaches user-facing messages.
+        throw StateError('恢复数据写入数据库失败：${_sanitizeDatabaseError(error)}');
+      }
 
       await _assertStagingDatabase(database, library);
     } finally {
       await database.close();
     }
+  }
+
+  /// Isar's "unset" sentinel for int fields, written by app versions before
+  /// chapter metadata existed (mirrors LibraryMigrator._unsetIntSentinel).
+  static const _unsetIntSentinel = -9223372036854775808;
+
+  /// Removes the SQL statement and bound parameters (which may contain card
+  /// content) from database errors.
+  static String _sanitizeDatabaseError(Object error) {
+    var text = error.toString();
+    final cut = text.indexOf('Causing statement');
+    if (cut >= 0) {
+      text = text.substring(0, cut).trim();
+    }
+    return text;
   }
 
   Future<void> _assertStagingDatabase(
@@ -812,7 +865,8 @@ class BackupRestoreService {
     final raf = await backupFile.open();
     try {
       final header = await raf.read(4);
-      final isLocalHeader = header.length >= 4 &&
+      final isLocalHeader =
+          header.length >= 4 &&
           header[0] == 0x50 &&
           header[1] == 0x4B &&
           (header[2] == 0x03 && header[3] == 0x04 ||
