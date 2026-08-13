@@ -28,8 +28,11 @@ class LibraryDatabase extends _$LibraryDatabase {
     return LibraryDatabase(NativeDatabase.memory(setup: configureSqlite));
   }
 
+  /// The current schema version, mirrored in migration completion markers.
+  static const int currentSchemaVersion = 1;
+
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => currentSchemaVersion;
 
   @override
   MigrationStrategy get migration {

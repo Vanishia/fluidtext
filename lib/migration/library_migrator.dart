@@ -46,6 +46,10 @@ class MigrationResult {
     required this.cardCount,
     required this.assetCount,
     required this.remarkCount,
+    required this.maxBookId,
+    required this.maxCardId,
+    required this.maxAssetId,
+    required this.cardCountByBook,
     required this.warnings,
     required this.sourceFingerprint,
     required this.copiedResourceHashes,
@@ -58,6 +62,17 @@ class MigrationResult {
   final int cardCount;
   final int assetCount;
   final int remarkCount;
+
+  /// Largest preserved Isar id per table, null when the table is empty.
+  /// Validation compares these against `MAX(id)` in the staging SQLite so
+  /// future auto-assigned rowids can never collide with migrated ids.
+  final int? maxBookId;
+  final int? maxCardId;
+  final int? maxAssetId;
+
+  /// Number of migrated cards per book id, used by validation to reconcile
+  /// against `GROUP BY book_id` in the staging database.
+  final Map<int, int> cardCountByBook;
 
   /// Non-fatal issues encountered during migration (Chinese, user-facing).
   final List<String> warnings;
@@ -78,6 +93,9 @@ class _LibraryWriteOutcome {
     required this.cardCount,
     required this.assetCount,
     required this.remarkCount,
+    required this.maxCardId,
+    required this.maxAssetId,
+    required this.cardCountByBook,
   });
 
   final Set<int> bookIds;
@@ -85,6 +103,9 @@ class _LibraryWriteOutcome {
   final int cardCount;
   final int assetCount;
   final int remarkCount;
+  final int? maxCardId;
+  final int? maxAssetId;
+  final Map<int, int> cardCountByBook;
 }
 
 /// Batch engine for the one-shot legacy Isar → SQLite migration.
@@ -190,6 +211,12 @@ class LibraryMigrator {
         cardCount: outcome.cardCount,
         assetCount: outcome.assetCount,
         remarkCount: outcome.remarkCount,
+        maxBookId: outcome.bookIds.isEmpty
+            ? null
+            : outcome.bookIds.reduce((a, b) => a > b ? a : b),
+        maxCardId: outcome.maxCardId,
+        maxAssetId: outcome.maxAssetId,
+        cardCountByBook: Map.unmodifiable(outcome.cardCountByBook),
         warnings: List.unmodifiable(warnings),
         sourceFingerprint: detection.sourceFingerprint,
         copiedResourceHashes: Map.unmodifiable(copiedHashes),
@@ -219,9 +246,12 @@ class LibraryMigrator {
     final assetIds = <int>{};
     final remarkIds = <int>{};
     final migratedAssetPaths = <String>[];
+    final cardCountByBook = <int, int>{};
     var cardCount = 0;
     var assetCount = 0;
     var remarkCount = 0;
+    int? maxCardId;
+    int? maxAssetId;
     var phase = MigrationPhase.readingBooks;
     try {
       await database.transaction(() async {
@@ -246,17 +276,18 @@ class LibraryMigrator {
         }
 
         phase = MigrationPhase.migratingCards;
-        cardCount = await _insertCards(
+        (cardCount, maxCardId) = await _insertCards(
           database,
           reader,
           bookIds,
           cardIds,
           totalCards,
+          cardCountByBook,
           warnings,
         );
 
         phase = MigrationPhase.migratingRemarksAndAssets;
-        assetCount = await _insertAssets(
+        (assetCount, maxAssetId) = await _insertAssets(
           database,
           reader,
           bookIds,
@@ -291,20 +322,25 @@ class LibraryMigrator {
       cardCount: cardCount,
       assetCount: assetCount,
       remarkCount: remarkCount,
+      maxCardId: maxCardId,
+      maxAssetId: maxAssetId,
+      cardCountByBook: cardCountByBook,
     );
   }
 
-  Future<int> _insertCards(
+  Future<(int, int?)> _insertCards(
     LibraryDatabase database,
     LegacyIsarReader reader,
     Set<int> bookIds,
     Set<int> cardIds,
     int totalCards,
+    Map<int, int> cardCountByBook,
     List<String> warnings,
   ) async {
     final cardKeys = <String>{};
     var normalizedTimestamps = 0;
     var completed = 0;
+    int? maxId;
     _emit(MigrationPhase.migratingCards, 0, totalCards);
     await for (final batch in reader.readBookCards()) {
       for (final card in batch) {
@@ -338,6 +374,8 @@ class LibraryMigrator {
             (!card.isFavorite && card.favoritedAt != null)) {
           normalizedTimestamps++;
         }
+        cardCountByBook[card.bookId] = (cardCountByBook[card.bookId] ?? 0) + 1;
+        if (maxId == null || card.id > maxId) maxId = card.id;
       }
       await database.batch(
         (b) => b.insertAll(database.sqliteBookCards, [
@@ -352,10 +390,10 @@ class LibraryMigrator {
         '部分卡片的阅读/收藏时间与其状态不一致，已按状态修正（$normalizedTimestamps 条）',
       );
     }
-    return completed;
+    return (completed, maxId);
   }
 
-  Future<int> _insertAssets(
+  Future<(int, int?)> _insertAssets(
     LibraryDatabase database,
     LegacyIsarReader reader,
     Set<int> bookIds,
@@ -368,6 +406,7 @@ class LibraryMigrator {
     var kept = 0;
     var skippedOrphans = 0;
     var completed = 0;
+    int? maxId;
     _emit(
       MigrationPhase.migratingRemarksAndAssets,
       0,
@@ -395,6 +434,7 @@ class LibraryMigrator {
         }
         insertable.add(asset);
         migratedAssetPaths.add(asset.relativePath);
+        if (maxId == null || asset.id > maxId) maxId = asset.id;
         kept++;
       }
       if (insertable.isNotEmpty) {
@@ -414,7 +454,7 @@ class LibraryMigrator {
     if (skippedOrphans > 0) {
       warnings.add('跳过 $skippedOrphans 条指向缺失书籍的资源记录');
     }
-    return kept;
+    return (kept, maxId);
   }
 
   Future<int> _insertRemarks(
