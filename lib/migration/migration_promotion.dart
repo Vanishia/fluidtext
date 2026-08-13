@@ -222,15 +222,10 @@ class MigrationPromotion {
     } finally {
       await database.close();
     }
-    for (final suffix in const ['-wal', '-shm']) {
-      await _removeSealedSidecar(
-        '${databaseFile.path}$suffix',
-        staging,
-        legacyLayout,
-      );
-    }
-    // Ensure no lingering connection handle keeps the database file locked
-    // (observed on Windows right after closing a background isolate).
+    // Wait for the closing background connection to fully release the
+    // database file FIRST: the native side may recreate the -wal/-shm
+    // sidecars while it is still shutting down, so removing them before the
+    // release is racy (observed as flaky leftovers on Windows).
     const maxAttempts = 40;
     for (var attempt = 0;; attempt++) {
       try {
@@ -243,6 +238,49 @@ class MigrationPromotion {
         }
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
+    }
+    for (final suffix in const ['-wal', '-shm']) {
+      await _removeSealedSidecar(
+        '${databaseFile.path}$suffix',
+        staging,
+        legacyLayout,
+      );
+    }
+    // The closing connection can briefly recreate a sidecar after we removed
+    // it; only finish once both stay absent across consecutive checks.
+    var stableRounds = 0;
+    for (var attempt = 0;; attempt++) {
+      final leftovers = <String>[
+        for (final suffix in const ['-wal', '-shm'])
+          '${databaseFile.path}$suffix',
+      ];
+      var anyPresent = false;
+      for (final path in leftovers) {
+        final sidecar = File(path);
+        if (await sidecar.exists()) {
+          anyPresent = true;
+          try {
+            if (await sidecar.length() == 0) await sidecar.delete();
+          } on FileSystemException {
+            // Still held by the closing connection; handled by the retry.
+          }
+        }
+      }
+      if (!anyPresent) {
+        stableRounds++;
+        if (stableRounds >= 2) break;
+      } else {
+        stableRounds = 0;
+      }
+      if (attempt >= maxAttempts) {
+        throw _failure(
+          '迁移数据库密封失败',
+          'wal/shm sidecars reappeared after sealing',
+          staging,
+          legacyLayout,
+        );
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     }
   }
 
