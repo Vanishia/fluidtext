@@ -1,6 +1,6 @@
 # FluidText SQLite 与应用数据目录迁移计划
 
-> 文档状态：实施前计划  
+> 文档状态：阶段一至四已实施（分支 codex/sqlite-migration），阶段五/六待实施  
 > 编写日期：2026-08-12  
 > 适用平台：Windows、Android  
 > 当前正式版本基线：`1.0.0`  

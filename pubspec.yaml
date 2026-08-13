@@ -44,7 +44,7 @@ dependencies:
   crypto: ^3.0.7
   archive: ^4.0.9
   drift: ^2.15.0
-  sqlite3_flutter_libs: ^0.6.0+eol
+  sqlite3_flutter_libs: ^0.5.42
   sqlite3: ^2.9.4
 
 dev_dependencies:
