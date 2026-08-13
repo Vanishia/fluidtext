@@ -339,12 +339,17 @@ class LibraryMigrator {
   ) async {
     final cardKeys = <String>{};
     var normalizedTimestamps = 0;
+    var missingChapterInfo = 0;
     var completed = 0;
     int? maxId;
     _emit(MigrationPhase.migratingCards, 0, totalCards);
     await for (final batch in reader.readBookCards()) {
       for (final card in batch) {
         _requireValidId(card.id, MigrationPhase.migratingCards, '卡片');
+        if (card.chapterIndex == _unsetIntSentinel ||
+            card.chapterCardIndex == _unsetIntSentinel) {
+          missingChapterInfo++;
+        }
         if (!cardIds.add(card.id)) {
           throw MigrationException(
             phase: MigrationPhase.migratingCards,
@@ -388,6 +393,11 @@ class LibraryMigrator {
     if (normalizedTimestamps > 0) {
       warnings.add(
         '部分卡片的阅读/收藏时间与其状态不一致，已按状态修正（$normalizedTimestamps 条）',
+      );
+    }
+    if (missingChapterInfo > 0) {
+      warnings.add(
+        '部分早期导入的卡片缺少章节信息，已按第 0 章处理（$missingChapterInfo 张）',
       );
     }
     return (completed, maxId);
@@ -918,6 +928,15 @@ class LibraryMigrator {
     MigrationStaging staging,
   ) {
     var text = error.toString();
+    // SqliteException.toString() appends the causing SQL statement and its
+    // bound parameters, which can contain card content or book titles. The
+    // plan forbids book content in diagnostics, so strip that section.
+    for (final marker in const ['Causing statement', 'parameters:']) {
+      final cutoff = text.indexOf(marker);
+      if (cutoff != -1) {
+        text = text.substring(0, cutoff).trimRight();
+      }
+    }
     final replacements = <String, String>{
       staging.attemptDirectory.path: '<staging>',
       legacyLayout.rootDirectory.path: '<legacy>',
@@ -952,14 +971,22 @@ class LibraryMigrator {
     );
   }
 
+  static const _unsetIntSentinel = -9223372036854775808;
+
   static SqliteBookCardsCompanion _cardCompanion(BookCard card) {
     return SqliteBookCardsCompanion.insert(
       id: Value(card.id),
       bookId: card.bookId,
       bookTitle: card.bookTitle,
       cardIndex: card.cardIndex,
-      chapterIndex: card.chapterIndex,
-      chapterCardIndex: card.chapterCardIndex,
+      // Cards imported before chapter metadata existed read back as Isar's
+      // "unset" sentinel (int64 min); normalize them to chapter 0.
+      chapterIndex: card.chapterIndex == _unsetIntSentinel
+          ? 0
+          : card.chapterIndex,
+      chapterCardIndex: card.chapterCardIndex == _unsetIntSentinel
+          ? 0
+          : card.chapterCardIndex,
       chapterTitle: Value(card.chapterTitle),
       content: card.content,
       blocksJson: Value(card.blocksJson),

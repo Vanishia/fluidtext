@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:drift/drift.dart' show Variable;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluidtext/migration/legacy_source.dart';
 import 'package:fluidtext/migration/library_migrator.dart';
@@ -533,6 +534,91 @@ void main() {
         '${Platform.pathSeparator}linked.txt',
       ).exists(),
       isFalse,
+    );
+  });
+
+  test('cards without chapter metadata migrate as chapter zero', () async {
+    // Records written before chapterIndex/chapterCardIndex existed read back
+    // as Isar's unset sentinel (int64 min); they must not trip the CHECK.
+    const unsetSentinel = -9223372036854775808;
+    final mainIsar = await Isar.open(
+      [BookSchema, BookAssetSchema, BookCardSchema],
+      directory: legacyLayout.libraryDatabaseDirectory.path,
+      inspector: false,
+    );
+    int? targetCardId;
+    await mainIsar.writeTxn(() async {
+      final card = (await mainIsar.bookCards.where().findAll()).first
+        ..chapterIndex = unsetSentinel
+        ..chapterCardIndex = unsetSentinel;
+      targetCardId = card.id;
+      await mainIsar.bookCards.put(card);
+    });
+    await mainIsar.close();
+
+    final (result, _) = await runMigration();
+
+    expect(result.cardCount, 3);
+    expect(
+      result.warnings.any((warning) => warning.contains('章节信息')),
+      isTrue,
+    );
+
+    final database = LibraryDatabase.file(result.staging.payloadDatabaseFile);
+    addTearDown(database.close);
+    final row = await database
+        .customSelect(
+          'SELECT chapter_index, chapter_card_index FROM book_cards '
+          'WHERE id = ?',
+          variables: [Variable<int>(targetCardId!)],
+          readsFrom: {database.sqliteBookCards},
+        )
+        .getSingle();
+    expect(row.read<int>('chapter_index'), 0);
+    expect(row.read<int>('chapter_card_index'), 0);
+    expect(await database.integrityCheck(), ['ok']);
+  });
+
+  test('failure diagnostics strip SQL parameters with card content', () async {
+    const secretContent = '私密正文不应出现在诊断信息里';
+    final mainIsar = await Isar.open(
+      [BookSchema, BookAssetSchema, BookCardSchema],
+      directory: legacyLayout.libraryDatabaseDirectory.path,
+      inspector: false,
+    );
+    await mainIsar.writeTxn(() async {
+      final card = (await mainIsar.bookCards.where().findAll()).first
+        ..cardIndex = -1 // violates CHECK(card_index >= 0)
+        ..content = secretContent;
+      await mainIsar.bookCards.put(card);
+    });
+    await mainIsar.close();
+
+    final staging = await MigrationStaging.create(targetLayout: targetLayout);
+    await expectLater(
+      LibraryMigrator().migrate(
+        detection: detection,
+        legacyLayout: legacyLayout,
+        staging: staging,
+      ),
+      throwsA(
+        isA<MigrationException>()
+            .having(
+              (error) => error.phase,
+              'phase',
+              MigrationPhase.migratingCards,
+            )
+            .having(
+              (error) => error.diagnostic,
+              'diagnostic without content',
+              allOf(isNotNull, isNot(contains(secretContent))),
+            )
+            .having(
+              (error) => error.diagnostic,
+              'diagnostic without parameters',
+              isNot(contains('parameters:')),
+            ),
+      ),
     );
   });
 }
