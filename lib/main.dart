@@ -14,6 +14,10 @@ import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Draw page content behind the system bars; combined with the transparent
+  // systemUiOverlayStyleForTheme this keeps the three-button navigation bar
+  // seamless in both light and dark mode.
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   // Rollback switch: keep the pre-migration startup path entirely.
   if (LibraryDataAccess.forceIsarLibrary) {

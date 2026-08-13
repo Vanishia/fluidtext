@@ -340,7 +340,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
                       controller: _scrollController,
                       padding: EdgeInsets.only(
                         top: MediaQuery.paddingOf(context).top + 2,
-                        bottom: 20,
+                        bottom: MediaQuery.paddingOf(context).bottom + 20,
                       ),
                       itemCount:
                           controller.cards.length +
