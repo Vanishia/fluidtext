@@ -182,4 +182,31 @@ void main() {
     expect(cards, hasLength(result.insertedCards));
     expect(assets, hasLength(1));
   });
+
+  test('reports staged progress while importing', () async {
+    final progresses = <BookImportProgress>[];
+    final result = await importService.importEpubBytes(
+      repository: repository,
+      bytes: buildTestEpub(),
+      targetCharsPerCard: 20,
+      onProgress: progresses.add,
+    );
+
+    expect(result.insertedCards, greaterThan(0));
+    expect(progresses.first.stage, BookImportStage.parsing);
+    expect(progresses.last.stage, BookImportStage.writing);
+
+    final reading = progresses
+        .where((progress) => progress.stage == BookImportStage.readingChapters)
+        .toList();
+    expect(reading, isNotEmpty);
+    expect(reading.last.totalUnits, greaterThan(0));
+    expect(reading.last.fraction, 1.0);
+
+    final building = progresses
+        .where((progress) => progress.stage == BookImportStage.buildingCards)
+        .toList();
+    expect(building, isNotEmpty);
+    expect(building.last.producedCards, result.insertedCards);
+  });
 }

@@ -14,6 +14,7 @@ import '../../services/app_logger.dart';
 import '../../services/backup/backup_restore_service.dart';
 import '../../services/backup/pre_restore_backup.dart';
 import '../../services/book_import_service.dart';
+import '../../services/import_notification_service.dart';
 import '../../storage/storage_layout.dart';
 import '../../widgets/blocking_loader.dart';
 import '../../widgets/glass.dart';
@@ -122,6 +123,9 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
   String? _status;
   String? _restoreProgressStage;
   double? _restoreProgressValue;
+  String? _importProgressLabel;
+  double? _importProgressValue;
+  String? _lastImportNotificationText;
 
   @override
   void initState() {
@@ -240,13 +244,22 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
         return;
       }
 
-      setState(() => _status = '解析与切分中…');
+      final notifications = ImportNotificationService.instance;
+      final notificationTitle = '正在导入《${file?.name ?? 'EPUB 文件'}》';
+      await notifications.ensurePermission();
+      await notifications.showProgress(
+        title: notificationTitle,
+        text: '导入中请勿退出',
+      );
 
       final imported = await dataAccess.importEpubBytes(
         bytes: bytes,
         sourceFileName: file?.name,
         targetCharsPerCard: targetCharsPerCard,
+        onProgress: (progress) =>
+            _onImportProgress(progress, notificationTitle),
       );
+      await notifications.showCompleted(text: '《${imported.bookTitle}》');
       await _reloadBooks();
       if (!mounted) return;
 
@@ -263,6 +276,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
         error: error,
         stackTrace: stackTrace,
       );
+      await ImportNotificationService.instance.cancel();
       if (!mounted) return;
       setState(() => _status = '导入失败：${describeBookImportError(error)}');
       await showImportFailureDialog(
@@ -272,9 +286,44 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       );
     } finally {
       if (mounted) {
-        setState(() => _isBusy = false);
+        setState(() {
+          _isBusy = false;
+          _importProgressLabel = null;
+          _importProgressValue = null;
+        });
       }
     }
+  }
+
+  void _onImportProgress(
+    BookImportProgress progress,
+    String notificationTitle,
+  ) {
+    final fraction = progress.fraction;
+    final label = switch (progress.stage) {
+      BookImportStage.parsing => '正在解析 EPUB 结构…',
+      BookImportStage.readingChapters =>
+        '正在读取章节 ${progress.completedUnits}/${progress.totalUnits}',
+      BookImportStage.buildingCards =>
+        '正在切分卡片… 已生成 ${progress.producedCards} 张',
+      BookImportStage.writing => '正在写入书库…',
+    };
+    if (mounted) {
+      setState(() {
+        _importProgressLabel = label;
+        _importProgressValue = fraction;
+      });
+    }
+
+    final percent = fraction == null ? null : (fraction * 100).round();
+    final text = percent == null ? '导入中请勿退出' : '导入中请勿退出 · $percent%';
+    if (text == _lastImportNotificationText) return;
+    _lastImportNotificationText = text;
+    ImportNotificationService.instance.showProgress(
+      title: notificationTitle,
+      text: text,
+      percent: percent,
+    );
   }
 
   Future<int?> _chooseTargetCharsPerCard() {
@@ -925,8 +974,8 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                 ),
                 if (_isBusy)
                   BlockingLoader(
-                    label: _restoreProgressStage,
-                    progress: _restoreProgressValue,
+                    label: _restoreProgressStage ?? _importProgressLabel,
+                    progress: _restoreProgressValue ?? _importProgressValue,
                   ),
               ],
             ),

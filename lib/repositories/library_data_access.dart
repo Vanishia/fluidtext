@@ -76,12 +76,14 @@ class LibraryDataAccess {
     required Uint8List bytes,
     String? sourceFileName,
     int targetCharsPerCard = 300,
+    void Function(BookImportProgress progress)? onProgress,
   }) {
     return BookImportService().importEpubBytes(
       repository: repository,
       bytes: bytes,
       sourceFileName: sourceFileName,
       targetCharsPerCard: targetCharsPerCard,
+      onProgress: onProgress,
     );
   }
 

@@ -30,6 +30,78 @@ class BookImportResult {
   final String? matchedBy;
 }
 
+enum BookImportStage { parsing, readingChapters, buildingCards, writing }
+
+class BookImportProgress {
+  const BookImportProgress({
+    required this.stage,
+    this.completedUnits = 0,
+    this.totalUnits = 0,
+    this.producedCards = 0,
+  });
+
+  final BookImportStage stage;
+
+  /// Chapters processed in the current stage; meaningful only for
+  /// [BookImportStage.readingChapters] and [BookImportStage.buildingCards].
+  final int completedUnits;
+  final int totalUnits;
+  final int producedCards;
+
+  /// Determinate progress (0..1), or null when the total is unknown.
+  double? get fraction {
+    if (totalUnits <= 0) return null;
+    return (completedUnits / totalUnits).clamp(0.0, 1.0);
+  }
+}
+
+/// Mutable per-import progress tracker; forwards snapshots to the callback
+/// supplied to [BookImportService.importEpubBytes].
+class _ImportProgressReporter {
+  _ImportProgressReporter(this._emit);
+
+  final void Function(BookImportProgress progress)? _emit;
+
+  var _totalChapters = 0;
+  var _readChapters = 0;
+  var _packedChapters = 0;
+
+  void parsing() {
+    _emit?.call(const BookImportProgress(stage: BookImportStage.parsing));
+  }
+
+  void expectChapters(int total) {
+    _totalChapters = total;
+  }
+
+  void chapterRead() {
+    _readChapters += 1;
+    _emit?.call(
+      BookImportProgress(
+        stage: BookImportStage.readingChapters,
+        completedUnits: _readChapters,
+        totalUnits: _totalChapters,
+      ),
+    );
+  }
+
+  void chapterPacked(int producedCards) {
+    _packedChapters += 1;
+    _emit?.call(
+      BookImportProgress(
+        stage: BookImportStage.buildingCards,
+        completedUnits: _packedChapters,
+        totalUnits: _totalChapters,
+        producedCards: producedCards,
+      ),
+    );
+  }
+
+  void writing() {
+    _emit?.call(const BookImportProgress(stage: BookImportStage.writing));
+  }
+}
+
 class BookImportService {
   BookImportService({BookAssetStore? assetStore})
     : _assetStore = assetStore ?? BookAssetStore.instance;
@@ -93,7 +165,9 @@ class BookImportService {
     required Uint8List bytes,
     String? sourceFileName,
     int targetCharsPerCard = 300,
+    void Function(BookImportProgress progress)? onProgress,
   }) async {
+    final progressReporter = _ImportProgressReporter(onProgress)..parsing();
     _logImport(
       'Starting EPUB import: bytes=${bytes.length}, targetCharsPerCard=$targetCharsPerCard',
       name: 'BookImportService',
@@ -125,7 +199,11 @@ class BookImportService {
         assetRootKey: stagedAssetRootKey,
         report: report,
       );
-      final chapters = await _readAvailableChapters(epub, report: report);
+      final chapters = await _readAvailableChapters(
+        epub,
+        report: report,
+        progress: progressReporter,
+      );
       _throwIfTooManyChaptersSkipped(report);
       final contentTextFiles = epub.content?.html.length ?? 0;
       final contentImageFiles = imageIndex.assetCount;
@@ -143,6 +221,7 @@ class BookImportService {
           report: report,
         ),
         targetCharsPerCard: targetCharsPerCard,
+        progress: progressReporter,
       );
       _throwIfTooManyChaptersSkipped(report);
       late final _ImportDraft draft;
@@ -154,6 +233,7 @@ class BookImportService {
           title: title,
           chapters: _legacyChapterContents(chapters, report: report),
           targetCharsPerCard: targetCharsPerCard,
+          progress: progressReporter,
         );
       }
       if (draft.cards.isEmpty) {
@@ -177,6 +257,7 @@ class BookImportService {
         );
       }
 
+      progressReporter.writing();
       final imported = await repository.importBookDraft(
         ImportBookDraft(
           title: title,
@@ -325,6 +406,7 @@ class BookImportService {
   Future<List<EpubChapter>> _readAvailableChapters(
     EpubBookRef epub, {
     required _ImportToleranceReport report,
+    required _ImportProgressReporter progress,
   }) async {
     late final List<EpubChapterRef> chapterRefs;
     try {
@@ -341,12 +423,26 @@ class BookImportService {
       );
     }
 
-    return _readAvailableChapterRefs(chapterRefs, report: report);
+    progress.expectChapters(_countChapterRefs(chapterRefs));
+    return _readAvailableChapterRefs(
+      chapterRefs,
+      report: report,
+      progress: progress,
+    );
+  }
+
+  int _countChapterRefs(List<EpubChapterRef> refs) {
+    var count = 0;
+    for (final ref in refs) {
+      count += 1 + _countChapterRefs(ref.subChapters);
+    }
+    return count;
   }
 
   Future<List<EpubChapter>> _readAvailableChapterRefs(
     List<EpubChapterRef> refs, {
     required _ImportToleranceReport report,
+    required _ImportProgressReporter progress,
   }) async {
     final chapters = <EpubChapter>[];
 
@@ -357,6 +453,7 @@ class BookImportService {
         final subChapters = await _readAvailableChapterRefs(
           ref.subChapters,
           report: report,
+          progress: progress,
         );
         final chapter = EpubChapter(
           title: ref.title,
@@ -378,9 +475,15 @@ class BookImportService {
 
         if (ref.subChapters.isNotEmpty) {
           chapters.addAll(
-            await _readAvailableChapterRefs(ref.subChapters, report: report),
+            await _readAvailableChapterRefs(
+              ref.subChapters,
+              report: report,
+              progress: progress,
+            ),
           );
         }
+      } finally {
+        progress.chapterRead();
       }
     }
 
@@ -391,6 +494,7 @@ class BookImportService {
     required String title,
     required Iterable<_ChapterContent> chapters,
     required int targetCharsPerCard,
+    required _ImportProgressReporter progress,
   }) {
     final cards = <BookCard>[];
     final assets = <String, _ImageAssetDraft>{};
@@ -432,6 +536,7 @@ class BookImportService {
         'Packed chapter[$chapterIndex] into $chapterCards cards',
         name: 'BookImportService',
       );
+      progress.chapterPacked(cards.length);
 
       if (chapterCards > 0) {
         chapterIndex++;
@@ -450,6 +555,7 @@ class BookImportService {
     required String title,
     required Iterable<_LegacyChapterContent> chapters,
     required int targetCharsPerCard,
+    required _ImportProgressReporter progress,
   }) {
     final cards = <BookCard>[];
     var cardIndex = 0;
@@ -492,6 +598,7 @@ class BookImportService {
         'Split legacy chapter[$chapterIndex] into $pieceCount pieces, $chapterCards non-empty cards',
         name: 'BookImportService',
       );
+      progress.chapterPacked(cards.length);
 
       if (chapterCards > 0) {
         chapterIndex++;
