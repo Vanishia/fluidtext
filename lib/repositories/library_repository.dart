@@ -34,6 +34,7 @@ abstract interface class LibraryRepository
         LibraryReadRepository,
         LibraryWriteRepository,
         LibraryImportRepository,
+        LibraryMaintenanceRepository,
         RemarkRepository,
         BackupSnapshotRepository,
         DatabaseLifecycle {}
@@ -88,6 +89,13 @@ abstract interface class LibraryWriteRepository {
 
 abstract interface class LibraryImportRepository {
   Future<LibraryImportResult> importBookDraft(ImportBookDraft draft);
+}
+
+abstract interface class LibraryMaintenanceRepository {
+  /// Deletes books whose stored cards are incomplete — e.g. an import
+  /// interrupted by a process kill — together with orphaned staged asset
+  /// files, and returns the deleted books so the UI can prompt a re-import.
+  Future<List<Book>> pruneIncompleteBooks();
 }
 
 abstract interface class RemarkRepository {

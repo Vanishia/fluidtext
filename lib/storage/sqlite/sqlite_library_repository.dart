@@ -9,6 +9,7 @@ import '../../models/book_card_activity_event.dart';
 import '../../repositories/library_change_tracker.dart';
 import '../../repositories/library_repository.dart';
 import '../../repositories/library_snapshot.dart';
+import '../../services/app_logger.dart';
 import '../../services/book_asset_store.dart';
 import 'library_database.dart';
 
@@ -405,6 +406,60 @@ class SqliteLibraryRepository implements LibraryRepository {
         stackTrace: stackTrace,
       );
     }
+  }
+
+  @override
+  Future<List<Book>> pruneIncompleteBooks() async {
+    final books = await loadBooks();
+    final actualCounts = await _cardCountsByBook();
+    final incomplete = <Book>[
+      for (final book in books)
+        if (_isIncompleteImport(book, actualCounts[book.id] ?? 0)) book,
+    ];
+
+    for (final book in incomplete) {
+      AppLogger.instance.warning(
+        'SqliteLibraryRepository',
+        'Pruning incomplete imported book: bookId=${book.id}, '
+            'title="${book.title}", recordedCards=${book.cardCount}, '
+            'actualCards=${actualCounts[book.id] ?? 0}',
+      );
+      await deleteBook(book.id);
+    }
+
+    // Asset roots referenced by no book are staging leftovers from imports
+    // that were killed mid-flight.
+    final retainedRootKeys = <String>{
+      for (final book in await loadBooks())
+        if ((book.assetRootKey ?? '').trim().isNotEmpty)
+          book.assetRootKey!.trim(),
+    };
+    await _assetStore.deleteOrphanAssetRoots(activeRootKeys: retainedRootKeys);
+
+    return incomplete;
+  }
+
+  /// A book is incomplete when its cards are missing entirely, or fewer than
+  /// the count recorded at import time. A null recorded count (legacy rows)
+  /// cannot be judged and is treated as complete.
+  static bool _isIncompleteImport(Book book, int actualCardCount) {
+    if (actualCardCount <= 0) return true;
+    final recorded = book.cardCount;
+    return recorded != null && recorded != actualCardCount;
+  }
+
+  Future<Map<int, int>> _cardCountsByBook() async {
+    final rows = await database
+        .customSelect(
+          'SELECT book_id AS bookId, COUNT(*) AS cardCount '
+          'FROM book_cards GROUP BY book_id',
+          readsFrom: {database.sqliteBookCards},
+        )
+        .get();
+    return <int, int>{
+      for (final row in rows)
+        row.read<int>('bookId'): row.read<int>('cardCount'),
+    };
   }
 
   @override

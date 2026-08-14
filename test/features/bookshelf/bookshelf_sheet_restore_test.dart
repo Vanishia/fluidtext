@@ -266,6 +266,9 @@ class _FakeLibraryRepository implements LibraryRepository {
   Future<void> deleteBook(int bookId) => throw UnimplementedError();
 
   @override
+  Future<List<Book>> pruneIncompleteBooks() async => const <Book>[];
+
+  @override
   Future<LibraryImportResult> importBookDraft(ImportBookDraft draft) {
     throw UnimplementedError();
   }

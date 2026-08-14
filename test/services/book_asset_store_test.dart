@@ -86,4 +86,32 @@ void main() {
       expect(await sentinel.exists(), isTrue);
     },
   );
+
+  test('deleteOrphanAssetRoots removes roots no book references', () async {
+    await store.writeAssetFile(
+      assetRootKey: 'asset_kept',
+      assetKey: 'a',
+      extension: '.png',
+      bytes: const [1],
+    );
+    await store.writeAssetFile(
+      assetRootKey: 'asset_orphan',
+      assetKey: 'b',
+      extension: '.png',
+      bytes: const [2],
+    );
+
+    await store.deleteOrphanAssetRoots(activeRootKeys: {'asset_kept'});
+
+    final assetsRoot = Directory(
+      '${documentsDirectory.path}${Platform.pathSeparator}book_assets',
+    );
+    final remaining = await assetsRoot
+        .list(followLinks: false)
+        .where((entity) => entity is Directory)
+        .map((entity) => entity.path)
+        .toList();
+    expect(remaining, hasLength(1));
+    expect(remaining.single, contains('asset_kept'));
+  });
 }

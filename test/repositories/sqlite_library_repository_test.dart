@@ -236,6 +236,79 @@ void main() {
       expect(await reopened.integrityCheck(), ['ok']);
     },
   );
+
+  test('pruneIncompleteBooks removes half-imported books only', () async {
+    final driver = await _SqliteRepositoryDriver.create();
+    addTearDown(driver.close);
+
+    // Seeded book 1: 3 cards, no recorded count → legacy, judged complete.
+    // Seeded book 2: 0 cards → broken, must be pruned.
+    // Book 3: recorded 5 cards but only 1 stored → half-imported.
+    await driver.database.transaction(() async {
+      await driver.database
+          .into(driver.database.sqliteBooks)
+          .insert(
+            SqliteBooksCompanion.insert(
+              id: const Value(3),
+              title: 'Half imported',
+              createdAtMs: DateTime(2026, 3).millisecondsSinceEpoch,
+              cardCount: const Value(5),
+            ),
+          );
+      await driver.database
+          .into(driver.database.sqliteBookCards)
+          .insert(
+            SqliteBookCardsCompanion.insert(
+              id: const Value(30),
+              bookId: 3,
+              bookTitle: 'Half imported',
+              cardIndex: 0,
+              chapterIndex: 0,
+              chapterCardIndex: 0,
+              content: 'surviving card',
+              isRead: false,
+              isFavorite: false,
+            ),
+          );
+    });
+
+    final pruned = await driver.repository.pruneIncompleteBooks();
+
+    expect(
+      pruned.map((book) => book.id),
+      containsAll(<int>[_SqliteRepositoryDriver._secondBookId, 3]),
+    );
+    expect(
+      pruned.map((book) => book.id),
+      isNot(contains(_SqliteRepositoryDriver._firstBookId)),
+    );
+    final remaining = await driver.repository.loadBooks();
+    expect(
+      remaining.map((book) => book.id),
+      [_SqliteRepositoryDriver._firstBookId],
+    );
+    expect(await driver.database.integrityCheck(), ['ok']);
+  });
+
+  test('pruneIncompleteBooks keeps complete books with recorded counts', () async {
+    final driver = await _SqliteRepositoryDriver.create();
+    addTearDown(driver.close);
+
+    // Book 1 has 3 cards; record the matching count and clean up book 2
+    // (0 cards) so only the complete book remains.
+    await (driver.database.update(
+      driver.database.sqliteBooks,
+    )..where((table) => table.id.equals(_SqliteRepositoryDriver._firstBookId)))
+        .write(const SqliteBooksCompanion(cardCount: Value(3)));
+    await driver.database.customStatement('DELETE FROM books WHERE id = ?', [
+      _SqliteRepositoryDriver._secondBookId,
+    ]);
+
+    final pruned = await driver.repository.pruneIncompleteBooks();
+
+    expect(pruned, isEmpty);
+    expect(await driver.repository.loadBooks(), hasLength(1));
+  });
 }
 
 class _SqliteRepositoryDriver implements LibraryRepositoryContractDriver {
