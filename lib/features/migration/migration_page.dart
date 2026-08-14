@@ -622,6 +622,14 @@ class _MigrationPageState extends State<MigrationPage> {
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyLarge,
         ),
+        const SizedBox(height: 8),
+        Text(
+          '若迁移后发现图片缺失，可在书架中重新导入备份文件。',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
         const SizedBox(height: 24),
         FilledButton.icon(
           onPressed: _busy

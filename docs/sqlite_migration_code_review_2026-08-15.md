@@ -32,7 +32,7 @@
 建议（后续提交）：每次 restore 开始时清理旧的失败 attempts（保留最近 1 个），或启动时清理。计划 §7.4 只规定了成功路径的清理。
 
 **P3｜`_swapAtomically` 回滚的极端缺口**  
-回滚循环中「删除已放入 root 的条目」失败被吞掉（方向正确——previous 里的原件优先），但若此时「移回 previous 条目」也失败，root 会处于部分缺失状态。由于交换发生在 `closeLiveDatabase()` 之后且完成标记尚未刷新，下次启动 `decide()` 会走 `recoveryRequired`（数据库存在但 marker 计数失配，app_bootstrap_coordinator.dart:140-143），仍可由用户重试恢复兜底，故降为 P3。建议在报告文案中保留「重启应用后按恢复页指引操作」的提示即可，不需要代码改动。
+回滚循环中「删除已放入 root 的条目」失败被吞掉（方向正确——previous 里的原件优先），但若此时「移回 previous 条目」也失败，root 会处于部分缺失状态。由于交换发生在 `closeLiveDatabase()` 之后且完成标记尚未刷新，下次启动 `decide()` 会走 `recoveryRequired`（数据库存在但 marker 计数失配，app_bootstrap_coordinator.dart:140-143），仍可由用户重试恢复兜底，故降为 P3。恢复/重试状态由迁移页面渲染（复用同一页面，无独立「恢复页面」）；建议在报告文案中保留「重启应用后按迁移页面指引操作」的提示即可，不需要代码改动。
 
 ## 3. 内存峰值审查（图片极多场景）
 
