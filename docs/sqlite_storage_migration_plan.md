@@ -1,6 +1,6 @@
 # FluidText SQLite 与应用数据目录迁移计划
 
-> 文档状态：阶段一至五已实施（分支 codex/sqlite-migration），阶段六待实施  
+> 文档状态：阶段一至六已实施（分支 codex/sqlite-migration）  
 > 编写日期：2026-08-12  
 > 适用平台：Windows、Android  
 > 当前正式版本基线：`1.0.0`  
@@ -881,6 +881,23 @@ ZIP 恢复入口可单独关闭，不影响已完成的 SQLite 迁移和正常�
 **回滚点**
 
 发布产物生成前保留上一正式版本、迁移前 ZIP 和旧 Isar。发布后不自动执行反向 SQLite → Isar 迁移，恢复依赖 ZIP 和保留的旧数据。
+
+> 实施记录（2026-08-14，阶段六提交一「补齐 Windows 和 Android 迁移验收与发布保护」）：
+>
+> - 迁移诊断脱敏收口为共享工具 `lib/services/diagnostic_sanitizer.dart`：`sanitizeDiagnosticText` 剥离 SqliteException 的 `Causing statement`/`parameters:` 段，并按最长优先把绝对路径替换为 `<staging>`/`<legacy>` 等根标记；`LibraryMigrator`、`MigrationPromotion`、`BackupRestoreService` 三处私有实现已改为调用共享工具，新增 `test/services/diagnostic_sanitizer_test.dart`。
+> - synchronous 策略定稿为 FULL（§4.3 保守默认：双端强杀恢复基准给出明确结论前不降级 NORMAL），改动点仅 `configureSqlite` 一处。
+> - 新增 `test/storage/library_database_test.dart`：文件库 PRAGMA 断言（WAL、`foreign_keys=1`、`busy_timeout=5000`、`synchronous=FULL`）与关键查询 `EXPLAIN QUERY PLAN`（未读排序、已读/收藏活动列表、上下文区间、重复检测身份索引、统计聚合均命中预期索引，无全表扫描）。
+> - 新增 `docs/sqlite_release_checklist.md`：发布检查清单、真机/手动验收矩阵、回滚操作手册与用户说明要点；版本号 bump 列为发布时步骤。
+> - batch size 与 isolate 边界定稿维持现状：迁移写入 500、恢复写入 2000、导入按书单事务 batch，连接经 `NativeDatabase.createInBackground` 在后台 isolate；基准数字见提交二实施记录。
+>
+> 实施记录（2026-08-14，阶段六提交二「完成 SQLite 性能基准和查询调优」）：
+>
+> - 补齐 Isar 全量基线：100/1,000/10,000/50,000 cards → `build/reports/isar_baseline.json`；新增 v3 导出内存基准 `tool/backup_export_benchmark.dart`（`FLUIDTEXT_EXPORT_BENCHMARK=1 flutter test test/backup_export_benchmark_test.dart`），报告写入 `build/reports/backup_export_benchmark.json`。
+> - Windows 首轮数字（`synchronous = FULL`）：导入 50,000 cards 约 1.34s、RSS 增量约 26MB；`loadCardsByIds(100)` 4ms 优于基线 23ms；`loadBookStats` 34ms 对基线 18ms（单书 50,000 行单次 GROUP BY 对每书 3 次 count，口径不同，绝对值可接受）；`toggleRead` 14ms 对基线 6ms（FULL fsync 的单笔提交开销，P95 绝对值远低于可感知阈值，结论：接受，不降级 NORMAL）。
+> - 唯一超 20% 门槛项：`loadOrderedCardIds` 50,000 行约 115ms 对 Isar 基线 10ms。原因：后台 isolate 行传输与打开书籍时单次全量 id 读取；`EXPLAIN QUERY PLAN` 确认命中 `idx_book_cards_book_order`，无全表扫描；每本书打开一次、绝对值百毫秒级，书架与阅读体感无可感知回退，结论：接受并记录，不为该指标改写查询。
+> - 恢复基准复测（FULL）：10,000 cards 约 1.1s、峰值 RSS 增量约 17MB；50,000 cards 约 3.1s、约 50MB，与阶段五记录同量级。
+> - 导出基准：10,000 cards + 20 张 256KB 图片约 0.98s、峰值 RSS 增量约 53MB；50,000 cards 约 3.2s、约 226MB（内存归档峰值约为未压缩 payload 的 2–3 倍），无 OOM。结论：维持内存归档，大图库真机 OOM 验收列入 `docs/sqlite_release_checklist.md` §2.4，超标再改流式归档。
+> - 结论：本轮无需索引、batch 或 PRAGMA 调优改动，不追加性能修正提交。
 
 ## 10. 测试计划
 
