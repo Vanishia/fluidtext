@@ -9,11 +9,13 @@ import 'features/reader/reader_background_settings.dart';
 import 'migration/app_bootstrap_coordinator.dart';
 import 'migration/migration_runner.dart';
 import 'repositories/library_data_access.dart';
+import 'services/app_logger.dart';
 import 'storage/storage_layout.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _initializeLogging();
   // Draw page content behind the system bars; combined with the transparent
   // systemUiOverlayStyleForTheme this keeps the three-button navigation bar
   // seamless in both light and dark mode.
@@ -55,6 +57,18 @@ Future<void> main() async {
         ),
       );
   }
+}
+
+/// Starts the file-backed logger and global error hooks. Logging is best
+/// effort: a failure here must never block startup.
+Future<void> _initializeLogging() async {
+  final logger = AppLogger.instance;
+  try {
+    await logger.initialize();
+  } catch (_) {
+    // The logger still mirrors to developer.log without a file.
+  }
+  logger.installGlobalErrorHooks();
 }
 
 /// Loads settings and the previous session, then runs the normal app tree.

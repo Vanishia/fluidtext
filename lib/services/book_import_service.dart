@@ -1,4 +1,3 @@
-import 'dart:developer' as developer;
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -10,6 +9,7 @@ import 'package:html/parser.dart' as html_parser;
 import '../models/book_card.dart';
 import '../repositories/library_repository.dart';
 import '../repositories/library_snapshot.dart';
+import 'app_logger.dart';
 import 'book_asset_store.dart';
 import 'text_splitter.dart';
 
@@ -93,7 +93,7 @@ class BookImportService {
     String? sourceFileName,
     int targetCharsPerCard = 300,
   }) async {
-    developer.log(
+    _logImport(
       'Starting EPUB import: bytes=${bytes.length}, targetCharsPerCard=$targetCharsPerCard',
       name: 'BookImportService',
     );
@@ -103,7 +103,7 @@ class BookImportService {
     try {
       epub = await EpubReader.openBook(bytes);
     } catch (error, stackTrace) {
-      developer.log(
+      _logImport(
         'Failed to parse EPUB package',
         name: 'BookImportService',
         error: error,
@@ -129,7 +129,7 @@ class BookImportService {
       final contentTextFiles = epub.content?.html.length ?? 0;
       final contentImageFiles = imageIndex.assetCount;
       final contentAllFiles = epub.content?.allFiles.length ?? 0;
-      developer.log(
+      _logImport(
         'Parsed EPUB metadata: title="$title", topLevelChapters=${chapters.length}, htmlFiles=$contentTextFiles, imageFiles=$contentImageFiles, allFiles=$contentAllFiles',
         name: 'BookImportService',
       );
@@ -206,7 +206,7 @@ class BookImportService {
       );
       retainStagedAssets = assetRootKey != null && !imported.wasDuplicate;
 
-      developer.log(
+      _logImport(
         'Finished EPUB import: bookId=${imported.book.id}, insertedCards=${imported.insertedCards}, duplicate=${imported.wasDuplicate}',
         name: 'BookImportService',
       );
@@ -303,7 +303,7 @@ class BookImportService {
         rethrow;
       } catch (error, stackTrace) {
         report.rememberImageError(imageRef.fileName ?? entry.key, error);
-        developer.log(
+        _logImport(
           'Skipping EPUB image that cannot be read: href="${imageRef.fileName ?? entry.key}"',
           name: 'BookImportService',
           error: error,
@@ -329,7 +329,7 @@ class BookImportService {
     try {
       chapterRefs = epub.getChapters();
     } catch (error, stackTrace) {
-      developer.log(
+      _logImport(
         'Failed to read EPUB chapter navigation',
         name: 'BookImportService',
         error: error,
@@ -368,7 +368,7 @@ class BookImportService {
       } catch (error, stackTrace) {
         report.skippedChapters += 1;
         report.rememberChapterError(ref.title ?? '', error);
-        developer.log(
+        _logImport(
           'Skipping EPUB chapter that cannot be read: title="${(ref.title ?? '').trim().isEmpty ? '(untitled)' : ref.title}"',
           name: 'BookImportService',
           error: error,
@@ -398,7 +398,7 @@ class BookImportService {
     var textCharCount = 0;
 
     for (final chapter in chapters) {
-      developer.log(
+      _logImport(
         'Processing chapter[$chapterIndex]: textLength=${chapter.textCharCount}, images=${chapter.imageCount}',
         name: 'BookImportService',
       );
@@ -427,7 +427,7 @@ class BookImportService {
         chapterCards++;
       }
 
-      developer.log(
+      _logImport(
         'Packed chapter[$chapterIndex] into $chapterCards cards',
         name: 'BookImportService',
       );
@@ -456,7 +456,7 @@ class BookImportService {
     var textCharCount = 0;
 
     for (final chapter in chapters) {
-      developer.log(
+      _logImport(
         'Processing legacy chapter[$chapterIndex]: textLength=${chapter.text.length}',
         name: 'BookImportService',
       );
@@ -487,7 +487,7 @@ class BookImportService {
         chapterCards++;
       }
 
-      developer.log(
+      _logImport(
         'Split legacy chapter[$chapterIndex] into $pieceCount pieces, $chapterCards non-empty cards',
         name: 'BookImportService',
       );
@@ -515,7 +515,7 @@ class BookImportService {
       final html = chapter.htmlContent;
       final contentFileName = chapter.contentFileName;
       final chapterTitle = (chapter.title ?? '').trim();
-      developer.log(
+      _logImport(
         'Inspecting chapter node[$index]: title="${chapterTitle.isEmpty ? '(untitled)' : chapterTitle}", htmlLength=${html?.length ?? 0}, subChapters=${chapter.subChapters.length}',
         name: 'BookImportService',
       );
@@ -533,7 +533,7 @@ class BookImportService {
         } catch (error, stackTrace) {
           report.skippedChapters += 1;
           report.rememberChapterError(chapterTitle, error);
-          developer.log(
+          _logImport(
             'Skipping EPUB chapter after parse failure: title="${chapterTitle.isEmpty ? '(untitled)' : chapterTitle}"',
             name: 'BookImportService',
             error: error,
@@ -558,7 +558,7 @@ class BookImportService {
         };
 
         if (textCharCount > 0 || imageAssets.isNotEmpty) {
-          developer.log(
+          _logImport(
             'Yielding chapter node[$index] textLength=$textCharCount, images=${imageAssets.length}',
             name: 'BookImportService',
           );
@@ -570,13 +570,13 @@ class BookImportService {
             imageCount: imageAssets.length,
           );
         } else {
-          developer.log(
+          _logImport(
             'Chapter node[$index] produced empty content after HTML parsing',
             name: 'BookImportService',
           );
         }
       } else {
-        developer.log(
+        _logImport(
           'Chapter node[$index] has empty htmlContent',
           name: 'BookImportService',
         );
@@ -608,7 +608,7 @@ class BookImportService {
           text = document.body?.text ?? document.documentElement?.text ?? '';
         } catch (error, stackTrace) {
           report.rememberChapterError(chapterTitle, error);
-          developer.log(
+          _logImport(
             'Skipping legacy EPUB chapter after parse failure: title="${chapterTitle.isEmpty ? '(untitled)' : chapterTitle}"',
             name: 'BookImportService',
             error: error,
@@ -757,6 +757,24 @@ class BookImportException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Import diagnostics go through [AppLogger] so they land in the log file.
+/// Call sites carrying an [error] are warnings (tolerated and skipped);
+/// fatal failures surface as the thrown [BookImportException].
+void _logImport(
+  String message, {
+  String? name,
+  Object? error,
+  StackTrace? stackTrace,
+}) {
+  final logger = AppLogger.instance;
+  final tag = name ?? 'BookImportService';
+  if (error != null) {
+    logger.warning(tag, message, error: error, stackTrace: stackTrace);
+  } else {
+    logger.info(tag, message);
+  }
 }
 
 class _ImportToleranceReport {
@@ -1098,7 +1116,7 @@ class _EpubImageIndex {
         _resolveBySuffix(normalized);
     if (asset == null) {
       report.rememberMissingImage(href);
-      developer.log(
+      _logImport(
         'Skipping unresolved EPUB image: href="$href", normalized="$normalized"',
         name: 'BookImportService',
       );
@@ -1199,7 +1217,7 @@ class _EpubImageIndex {
       return Uri.decodeFull(href);
     } catch (error) {
       report.rememberImageError(href, error);
-      developer.log(
+      _logImport(
         'Using undecoded EPUB image href after decode failure: href="$href"',
         name: 'BookImportService',
         error: error,
