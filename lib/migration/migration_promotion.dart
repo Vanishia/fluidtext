@@ -35,7 +35,12 @@ class MigrationCompletionMarker {
   /// the next launch takes the normal-start path instead of recovery.
   static const sourceFreshInstall = 'fresh';
 
-  /// `migration` or `fresh`.
+  /// Marker written when a backup restore initialized the live database
+  /// (e.g. a restore run before any migration completed, from the migration
+  /// page's "导入 ZIP 恢复" entry).
+  static const sourceRestore = 'restore';
+
+  /// `migration`, `fresh` or `restore`.
   final String source;
   final String? sourceFingerprint;
   final int sqliteSchemaVersion;

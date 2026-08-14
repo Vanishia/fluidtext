@@ -445,7 +445,7 @@ Windows 的 `default.isar` 不能仅凭文件名认定为 FluidText 数据。可
 - 主按钮二：`开始迁移`，默认在备份成功后启用。
 - 为避免文件选择器或磁盘问题永久阻塞用户，可提供较弱的 `跳过备份并继续`，必须二次确认“旧数据仍会保留，但没有额外 ZIP 备份”。
 - 迁移进行中禁止关闭页面内操作，但不能假设操作系统不会杀进程；真正的安全性由 staging 和完成标记保证。
-- 迁移失败后仍留在迁移页面（失败/恢复状态均复用该页面），优先提供“重试迁移”和“导出 ZIP 备份”。直接进入空书架不作为主路径，只能作为显式放弃迁移的兜底操作，并需要二次确认。
+- 迁移失败后仍留在迁移页面（失败/恢复状态均复用该页面），优先提供“重试迁移”和“导出 ZIP 备份”。直接进入空书架不作为主路径，只能作为显式放弃迁移的兜底操作，并需要二次确认。失败/恢复/不可信源状态下另提供灰色小字的“导入备份恢复”逃生入口（详见阶段五实施记录）。
 - 失败文案至少包含：
 
 ```text
@@ -773,6 +773,8 @@ SQLite 尚未成为生产数据源，删除新实现和依赖即可回到 Isar�
 > 实施记录（2026-08-15，迁移前台通知防杀）：迁移页的「导出 ZIP 备份」与「开始迁移」期间，Android 上挂起 dataSync 前台服务通知（`MigrationForegroundService`，通道 `fluidtext/migration_service`，Dart 侧 `MigrationNotificationService`，进度文本与页面节流同步更新）。与 EPUB 导入的普通常驻通知不同，这里是真正的 foreground service——一次性迁移数据量大、被杀后只能整体重试，需要提升进程优先级防后台回收；staging + state.json 的强杀兜底不变。前台服务无法防御用户主动划掉任务（Flutter engine 随 Activity 销毁），该场景仍由下次启动的恢复流程兜底。Windows 上为 no-op。已加入检查清单 2.2 的真机验收项。
 >
 > 实施记录（2026-08-15，措辞澄清）：不存在独立的「恢复页面」——`recoveryRequired` 状态复用迁移页面渲染（`MigrationPage`，文案换为「迁移需要继续」并提供「重新检测并迁移」「放弃迁移并进入空书架」），设计文档中出现的「恢复页面」均指该复用模式。
+>
+> 实施记录（2026-08-15，迁移页导入备份逃生入口）：迁移页在失败（failed）、恢复（recoveryRequired）与不可信源（migrationUnavailable）三种卡住状态下，显示灰色小字入口「已有备份文件？导入备份恢复」；首次正常迁移流程（detected/migrationRequired）不显示，避免稀释「先备份再迁移」主路径。点击后二次确认（说明旧数据不受影响），经 FilePicker 选择 v2 `.json`/`.zip` 或 v3 `.zip`，由 `BackupRestoreService` 恢复到 target layout（此状态下无活数据库，`closeLiveDatabase` 为 no-op），恢复期间挂迁移前台服务通知；成功后走 `onEnterApp` 正常进入应用，失败留在原状态仅以 SnackBar 提示。配套修改恢复端：`_refreshCompletionMarker` 在 marker 缺失时写入 `source=restore` 的初始完成标记，并把 `migration/state.json` 归位 idle——否则迁移页恢复成功后下次启动会因「库存在但无标记/残留 failed 状态」再次落入 recoveryRequired 死循环。正常路径（已有 marker）行为不变：保留原 source 与 fingerprint，仅刷新计数。回归测试：`migration_page_test.dart`（入口显隐、确认/取消、成功进入应用、失败留在页面）与 `backup_restore_service_test.dart`（无标记写初始标记+state 归位、有标记保留 source）。
 
 **回滚点**
 

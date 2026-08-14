@@ -4,7 +4,9 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluidtext/migration/migration_progress.dart' show MigrationPhase;
 import 'package:fluidtext/migration/migration_promotion.dart';
+import 'package:fluidtext/migration/migration_state.dart';
 import 'package:fluidtext/repositories/library_snapshot.dart';
 import 'package:fluidtext/services/backup/backup_export_service.dart';
 import 'package:fluidtext/services/backup/backup_format.dart';
@@ -792,5 +794,77 @@ void main() {
         reason: 'missing stage $expected in $stages',
       );
     }
+  });
+
+  test('restore without a prior marker writes an initial completion marker '
+      'and settles the migration state', () async {
+    final sourceLayout = layoutFor('source13');
+    await sourceLayout.rootDirectory.create(recursive: true);
+    await seedDatabase(sourceLayout.sqliteDatabaseFile);
+    final snapshot = await snapshotOf(sourceLayout.sqliteDatabaseFile);
+    final backupFile = await writeJson('backup13.json', v2Payload(snapshot));
+
+    // Migration-page scenario: the target has neither a live database nor a
+    // completion marker yet, and the last migration attempt failed.
+    final targetLayout = layoutFor('target13');
+    final stateStore = MigrationStateStore(targetLayout: targetLayout);
+    await stateStore.markFailed(
+      'attempt-1',
+      MigrationPhase.migratingCards,
+      '旧书库中存在重复的卡片序号，已停止迁移',
+    );
+
+    await const BackupRestoreService().restore(
+      backupFile: backupFile,
+      targetLayout: targetLayout,
+      closeLiveDatabase: defaultClose,
+    );
+
+    // Without an initial marker the next launch would see a live database
+    // with no marker and loop back into recovery.
+    final marker = await MigrationCompletion.load(targetLayout);
+    expect(marker, isNotNull);
+    expect(marker!.source, MigrationCompletionMarker.sourceRestore);
+    expect(marker.bookCount, 1);
+    expect(marker.cardCount, 2);
+    // A lingering failed state must not keep the app in recovery either.
+    expect((await stateStore.load()).status, MigrationLifecycleStatus.idle);
+  });
+
+  test('restore with an existing marker keeps its source fingerprint',
+      () async {
+    final sourceLayout = layoutFor('source14');
+    await sourceLayout.rootDirectory.create(recursive: true);
+    await seedDatabase(sourceLayout.sqliteDatabaseFile);
+    final snapshot = await snapshotOf(sourceLayout.sqliteDatabaseFile);
+    final backupFile = await writeJson('backup14.json', v2Payload(snapshot));
+
+    final targetLayout = layoutFor('target14');
+    await targetLayout.rootDirectory.create(recursive: true);
+    await MigrationCompletion.write(
+      targetLayout,
+      MigrationCompletionMarker(
+        source: MigrationCompletionMarker.sourceMigration,
+        sourceFingerprint: 'legacy-fingerprint',
+        sqliteSchemaVersion: LibraryDatabase.currentSchemaVersion,
+        bookCount: 9,
+        cardCount: 9,
+        assetCount: 9,
+        remarkCount: 9,
+        verifiedResourceCount: 3,
+        completedAt: DateTime.utc(2026, 8, 1),
+      ),
+    );
+
+    await const BackupRestoreService().restore(
+      backupFile: backupFile,
+      targetLayout: targetLayout,
+      closeLiveDatabase: defaultClose,
+    );
+
+    final marker = await MigrationCompletion.load(targetLayout);
+    expect(marker!.source, MigrationCompletionMarker.sourceMigration);
+    expect(marker.sourceFingerprint, 'legacy-fingerprint');
+    expect(marker.bookCount, 1, reason: 'counts must track the restore');
   });
 }

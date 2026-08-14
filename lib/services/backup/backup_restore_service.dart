@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:drift/drift.dart';
 
 import '../../migration/migration_promotion.dart';
+import '../../migration/migration_state.dart';
 import '../../storage/json_file_store.dart';
 import '../../storage/sqlite/library_database.dart';
 import '../../storage/sqlite/sqlite_sealer.dart';
@@ -275,8 +276,11 @@ class BackupRestoreService {
       ),
     );
 
-    // 8. Keep the migration completion marker's counts current.
+    // 8. Keep the migration completion marker's counts current, and settle
+    // the migration state so a restore done from the migration page does not
+    // loop back into recovery on the next launch.
     await _refreshCompletionMarker(targetLayout, library);
+    await MigrationStateStore(targetLayout: targetLayout).markIdle();
 
     emit('恢复完成', 1.0);
     return BackupRestoreResult(
@@ -925,23 +929,27 @@ class BackupRestoreService {
     }
   }
 
+  /// Refreshes the migration completion marker so its counts match the
+  /// restored library. When no marker exists yet (e.g. the restore ran from
+  /// the migration page before any migration completed) an initial marker is
+  /// written — otherwise the next launch would see a live database without
+  /// a marker and loop back into recovery.
   Future<void> _refreshCompletionMarker(
     StorageLayout targetLayout,
     _ValidatedLibrary library,
   ) async {
     final existing = await MigrationCompletion.load(targetLayout);
-    if (existing == null) return;
     await MigrationCompletion.write(
       targetLayout,
       MigrationCompletionMarker(
-        source: existing.source,
-        sourceFingerprint: existing.sourceFingerprint,
+        source: existing?.source ?? MigrationCompletionMarker.sourceRestore,
+        sourceFingerprint: existing?.sourceFingerprint,
         sqliteSchemaVersion: LibraryDatabase.currentSchemaVersion,
         bookCount: library.books.length,
         cardCount: library.cards.length,
         assetCount: library.assets.length,
         remarkCount: library.remarks.length,
-        verifiedResourceCount: existing.verifiedResourceCount,
+        verifiedResourceCount: existing?.verifiedResourceCount ?? 0,
         completedAt: DateTime.now().toUtc(),
       ),
     );

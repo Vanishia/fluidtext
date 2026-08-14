@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -7,6 +10,7 @@ import '../../migration/library_migrator.dart';
 import '../../migration/migration_progress.dart';
 import '../../migration/migration_runner.dart';
 import '../../repositories/library_change_tracker.dart';
+import '../../services/backup/backup_restore_service.dart';
 import '../../services/migration_notification_service.dart';
 import '../../storage/storage_layout.dart';
 import '../../theme/app_theme.dart';
@@ -15,6 +19,13 @@ import '../reader/reader_background_settings.dart';
 /// Factory for the legacy ZIP backup exporter used by the migration page.
 typedef LegacyBackupExporterFactory =
     LegacyBackupExporter Function(AppBootstrapDecision decision);
+
+/// Runs a backup restore for the migration page's "导入备份恢复" entry.
+/// Injectable for widget tests; the production default picks a file and
+/// restores it into the target layout (no live database exists yet, so the
+/// close callback is a no-op).
+typedef MigrationRestoreRunner =
+    Future<BackupRestoreResult> Function(StorageLayout targetLayout);
 
 /// Light-weight app tree shown while migration is pending. Uses the default
 /// seed color and does not touch the settings services or repositories.
@@ -25,6 +36,7 @@ class MigrationRootApp extends StatelessWidget {
     required this.onEnterApp,
     this.runTask,
     this.exporterFactory,
+    this.restoreRunner,
     this.decideAgain,
     this.abandonHandler,
     this.retryCleanupHandler,
@@ -35,6 +47,7 @@ class MigrationRootApp extends StatelessWidget {
   final Future<void> Function() onEnterApp;
   final MigrationRunTask? runTask;
   final LegacyBackupExporterFactory? exporterFactory;
+  final MigrationRestoreRunner? restoreRunner;
   final Future<AppBootstrapDecision> Function()? decideAgain;
   final Future<void> Function(StorageLayout targetLayout)? abandonHandler;
   final Future<void> Function(StorageLayout targetLayout)? retryCleanupHandler;
@@ -59,6 +72,7 @@ class MigrationRootApp extends StatelessWidget {
         onEnterApp: onEnterApp,
         runTask: runTask,
         exporterFactory: exporterFactory,
+        restoreRunner: restoreRunner,
         decideAgain: decideAgain,
         abandonHandler: abandonHandler,
         retryCleanupHandler: retryCleanupHandler,
@@ -140,6 +154,7 @@ class _MigrationBootstrapPageState extends State<MigrationBootstrapPage> {
 enum _MigrationPageStatus {
   detected,
   exportingBackup,
+  restoringBackup,
   ready,
   migrating,
   validating,
@@ -155,6 +170,7 @@ class MigrationPage extends StatefulWidget {
     required this.onEnterApp,
     this.runTask,
     this.exporterFactory,
+    this.restoreRunner,
     this.decideAgain,
     this.abandonHandler,
     this.retryCleanupHandler,
@@ -165,6 +181,10 @@ class MigrationPage extends StatefulWidget {
   final Future<void> Function() onEnterApp;
   final MigrationRunTask? runTask;
   final LegacyBackupExporterFactory? exporterFactory;
+
+  /// Runs the ZIP/JSON backup restore for the "导入备份恢复" entry.
+  /// Defaults to [_restoreFromPickedBackup]; injectable for tests.
+  final MigrationRestoreRunner? restoreRunner;
   final Future<AppBootstrapDecision> Function()? decideAgain;
 
   /// Performs the abandon-migration work (state, staging cleanup, fresh
@@ -206,7 +226,21 @@ class _MigrationPageState extends State<MigrationPage> {
 
   bool get _isRunning =>
       _status == _MigrationPageStatus.migrating ||
-      _status == _MigrationPageStatus.validating;
+      _status == _MigrationPageStatus.validating ||
+      _status == _MigrationPageStatus.exportingBackup ||
+      _status == _MigrationPageStatus.restoringBackup;
+
+  /// The "导入备份恢复" entry is a low-key escape hatch for states where
+  /// automatic migration is stuck (failure, recovery, untrusted source); it
+  /// is deliberately hidden on the normal first-run flow so it does not
+  /// dilute the "backup first, then migrate" guidance.
+  bool get _showRestoreEntry =>
+      !_isRunning &&
+      (_status == _MigrationPageStatus.failed ||
+          _status == _MigrationPageStatus.detected &&
+              (_decision.action == AppBootstrapAction.recoveryRequired ||
+                  _decision.action ==
+                      AppBootstrapAction.migrationUnavailable));
 
   double? get _overallFraction {
     final event = _event;
@@ -412,6 +446,85 @@ class _MigrationPageState extends State<MigrationPage> {
     return result ?? false;
   }
 
+  /// Restores a picked v2/v3 backup directly into the target layout — the
+  /// escape hatch when automatic migration cannot proceed. No live database
+  /// exists in this state, so there is nothing to close before the swap.
+  Future<void> _restoreFromBackup() async {
+    if (_busy) return;
+    final confirmed = await _confirm(
+      title: '导入备份恢复？',
+      content: '将用备份文件替换目标书库；旧数据仍保留在原位置，不受影响。',
+      confirmLabel: '选择备份文件',
+    );
+    if (!confirmed || !mounted || _busy) return;
+    setState(() {
+      _busy = true;
+      _status = _MigrationPageStatus.restoringBackup;
+    });
+    // A large restore can take a while; keep the process alive via the
+    // foreground notification like the migration itself.
+    final notifications = MigrationNotificationService.instance;
+    await notifications.ensurePermission();
+    await notifications.start(title: '正在恢复备份', text: '恢复中请勿退出应用');
+    try {
+      final runner = widget.restoreRunner ?? _runBackupRestore;
+      final result = await runner(_decision.targetLayout);
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _result = null;
+        _error = null;
+      });
+      _showSnackBar(
+        '备份恢复完成（v${result.formatVersion}）：书籍 ${result.bookCount} 本 · '
+        '卡片 ${result.cardCount} 张 · 警告 ${result.warnings.length} 条',
+      );
+      await widget.onEnterApp();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        // Stay on the previous state; the error is surfaced as a snackbar
+        // so the migration options remain available.
+        if (_status == _MigrationPageStatus.restoringBackup) {
+          _status = _MigrationPageStatus.failed;
+          _error = MigrationException(
+            phase: MigrationPhase.finalizing,
+            message: '备份恢复失败',
+            diagnostic: _errorText(error),
+          );
+        }
+      });
+      _showSnackBar('备份恢复失败：${_errorText(error)}');
+    } finally {
+      await notifications.stop();
+    }
+  }
+
+  /// Production default for [MigrationPage.restoreRunner]: pick a backup
+  /// file and restore it into the target layout.
+  Future<BackupRestoreResult> _runBackupRestore(StorageLayout targetLayout) {
+    return _pickBackupFile().then((path) {
+      if (path == null || path.isEmpty) {
+        throw const FormatException('未选择备份文件');
+      }
+      return const BackupRestoreService().restore(
+        backupFile: File(path),
+        targetLayout: targetLayout,
+        closeLiveDatabase: () async {},
+      );
+    });
+  }
+
+  Future<String?> _pickBackupFile() {
+    return FilePicker.platform.pickFiles(
+      dialogTitle: '选择 FluidText 备份',
+      type: FileType.custom,
+      allowedExtensions: const ['zip', 'json'],
+      withData: false,
+    ).then((result) => result?.files.firstOrNull?.path);
+  }
+
   void _showSnackBar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(
@@ -475,6 +588,7 @@ class _MigrationPageState extends State<MigrationPage> {
           onPressed: _busy ? null : _abandonMigration,
           child: const Text('进入空书架'),
         ),
+        if (_showRestoreEntry) _buildRestoreEntry(context),
       ],
     );
   }
@@ -483,6 +597,7 @@ class _MigrationPageState extends State<MigrationPage> {
     return switch (_status) {
       _MigrationPageStatus.migrating ||
       _MigrationPageStatus.validating => _buildProgress(context),
+      _MigrationPageStatus.restoringBackup => _buildRestoring(context),
       _MigrationPageStatus.success => _buildSuccess(context),
       _MigrationPageStatus.failed => _buildFailed(context),
       _ => _buildDetected(context),
@@ -543,19 +658,63 @@ class _MigrationPageState extends State<MigrationPage> {
           onPressed: _busy || _backupCompleted ? null : _startMigration,
           child: const Text('跳过备份并继续'),
         ),
-        if (isRecovery) ...[
-          TextButton(
-            onPressed: _busy ? null : _retryRecovery,
-            child: const Text('重新检测并迁移'),
-          ),
-          TextButton(
-            onPressed: _busy ? null : _abandonMigration,
-            child: Text(
-              '放弃迁移并进入空书架',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+        if (isRecovery || _showRestoreEntry) ...[
+          if (isRecovery)
+            TextButton(
+              onPressed: _busy ? null : _retryRecovery,
+              child: const Text('重新检测并迁移'),
             ),
-          ),
+          if (isRecovery)
+            TextButton(
+              onPressed: _busy ? null : _abandonMigration,
+              child: Text(
+                '放弃迁移并进入空书架',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          if (_showRestoreEntry) _buildRestoreEntry(context),
         ],
+      ],
+    );
+  }
+
+  /// Low-key restore entry (grey small text) shown only in stuck states.
+  Widget _buildRestoreEntry(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: TextButton(
+        onPressed: _busy ? null : _restoreFromBackup,
+        style: TextButton.styleFrom(
+          foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+          textStyle: Theme.of(context).textTheme.bodySmall,
+        ),
+        child: const Text('已有备份文件？导入备份恢复'),
+      ),
+    );
+  }
+
+  Widget _buildRestoring(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '正在恢复备份',
+          textAlign: TextAlign.center,
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 18),
+        const LinearProgressIndicator(),
+        const SizedBox(height: 12),
+        Text(
+          '请不要关闭应用；旧数据不会被修改。',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
       ],
     );
   }
@@ -685,6 +844,7 @@ class _MigrationPageState extends State<MigrationPage> {
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
         ),
+        if (_showRestoreEntry) _buildRestoreEntry(context),
         if (error != null) ...[
           const SizedBox(height: 12),
           ExpansionTile(

@@ -12,6 +12,7 @@ import 'package:fluidtext/migration/migration_progress.dart';
 import 'package:fluidtext/migration/migration_promotion.dart';
 import 'package:fluidtext/migration/migration_runner.dart';
 import 'package:fluidtext/repositories/library_data_access.dart';
+import 'package:fluidtext/services/backup/backup_restore_service.dart';
 import 'package:fluidtext/storage/storage_layout.dart';
 
 void main() {
@@ -77,6 +78,18 @@ void main() {
       cardCount: 3,
       assetCount: 1,
       remarkCount: 2,
+      warnings: const [],
+    );
+  }
+
+  BackupRestoreResult fakeRestoreResult() {
+    return BackupRestoreResult(
+      formatVersion: 3,
+      bookCount: 2,
+      cardCount: 5,
+      assetCount: 1,
+      remarkCount: 1,
+      settingsIncluded: true,
       warnings: const [],
     );
   }
@@ -286,7 +299,7 @@ void main() {
 
     expect(find.text('迁移失败'), findsOneWidget);
     expect(find.textContaining('旧数据仍保留，未被删除。'), findsOneWidget);
-    expect(find.textContaining('导入备份'), findsOneWidget);
+    expect(find.textContaining('可使用"导入备份"恢复'), findsOneWidget);
     expect(find.text('重试迁移'), findsOneWidget);
     expect(find.text('导出 ZIP 备份'), findsOneWidget);
     expect(find.text('放弃迁移并进入空书架'), findsOneWidget);
@@ -359,6 +372,107 @@ void main() {
     await tester.pump();
     expect(abandoned, isTrue);
     expect(entered, isTrue);
+  });
+
+  testWidgets('restore entry is hidden on the normal first-run flow',
+      (tester) async {
+    await tester.pumpWidget(
+      MigrationRootApp(
+        decision: buildDecision(AppBootstrapAction.migrationRequired),
+        onEnterApp: () async {},
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('已有备份文件？导入备份恢复'), findsNothing);
+  });
+
+  testWidgets('restore entry is offered in stuck states', (tester) async {
+    for (final action in [
+      AppBootstrapAction.recoveryRequired,
+      AppBootstrapAction.migrationUnavailable,
+    ]) {
+      await tester.pumpWidget(
+        MigrationRootApp(
+          decision: buildDecision(action),
+          onEnterApp: () async {},
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.text('已有备份文件？导入备份恢复'),
+        findsOneWidget,
+        reason: 'missing restore entry for $action',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    }
+  });
+
+  testWidgets('restore from backup requires confirmation, then enters the '
+      'app', (tester) async {
+    var entered = false;
+    StorageLayout? restoredLayout;
+    await tester.pumpWidget(
+      MigrationRootApp(
+        decision: buildDecision(AppBootstrapAction.recoveryRequired),
+        onEnterApp: () async => entered = true,
+        restoreRunner: (targetLayout) async {
+          restoredLayout = targetLayout;
+          return fakeRestoreResult();
+        },
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('已有备份文件？导入备份恢复'));
+    await tester.pump();
+    expect(find.textContaining('将用备份文件替换目标书库'), findsOneWidget);
+
+    // Cancelling keeps the recovery state.
+    await tester.tap(find.text('取消'));
+    await tester.pump();
+    expect(find.text('已有备份文件？导入备份恢复'), findsOneWidget);
+
+    await tester.tap(find.text('已有备份文件？导入备份恢复'));
+    await tester.pump();
+    await tester.tap(find.text('选择备份文件'));
+    await tester.pump();
+
+    expect(find.text('正在恢复备份'), findsOneWidget);
+    await tester.pump();
+    await tester.pump();
+
+    expect(restoredLayout, targetLayout);
+    expect(entered, isTrue);
+  });
+
+  testWidgets('restore failure stays on the page with the migration options',
+      (tester) async {
+    var entered = false;
+    await tester.pumpWidget(
+      MigrationRootApp(
+        decision: buildDecision(AppBootstrapAction.recoveryRequired),
+        onEnterApp: () async => entered = true,
+        restoreRunner: (targetLayout) async {
+          throw const FormatException('备份文件不是有效的 JSON 对象');
+        },
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('已有备份文件？导入备份恢复'));
+    await tester.pump();
+    await tester.tap(find.text('选择备份文件'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(entered, isFalse);
+    expect(find.textContaining('备份恢复失败'), findsOneWidget);
+    // The failed-state migration options remain reachable after a failed
+    // restore, including the restore entry itself.
+    expect(find.text('迁移失败'), findsOneWidget);
+    expect(find.text('重试迁移'), findsOneWidget);
+    expect(find.text('已有备份文件？导入备份恢复'), findsOneWidget);
   });
 
   testWidgets('bootstrap page reports when there is nothing to migrate',
