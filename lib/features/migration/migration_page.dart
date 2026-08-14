@@ -7,6 +7,7 @@ import '../../migration/library_migrator.dart';
 import '../../migration/migration_progress.dart';
 import '../../migration/migration_runner.dart';
 import '../../repositories/library_change_tracker.dart';
+import '../../services/migration_notification_service.dart';
 import '../../storage/storage_layout.dart';
 import '../../theme/app_theme.dart';
 import '../reader/reader_background_settings.dart';
@@ -226,6 +227,11 @@ class _MigrationPageState extends State<MigrationPage> {
       _busy = true;
       _status = _MigrationPageStatus.exportingBackup;
     });
+    // The export can take a while on large libraries; keep the process
+    // alive via the foreground notification while the user is away.
+    final notifications = MigrationNotificationService.instance;
+    await notifications.ensurePermission();
+    await notifications.start(title: '正在导出旧数据备份', text: '导出中请勿退出应用');
     try {
       final path = await exporter.exportToPickedFile();
       if (!mounted) return;
@@ -250,6 +256,8 @@ class _MigrationPageState extends State<MigrationPage> {
             : _MigrationPageStatus.detected;
       });
       _showSnackBar('备份导出失败：${_errorText(error)}');
+    } finally {
+      await notifications.stop();
     }
   }
 
@@ -274,6 +282,12 @@ class _MigrationPageState extends State<MigrationPage> {
       _error = null;
     });
     final task = widget.runTask ?? MigrationRunner.runDecision;
+    // One-shot migration of the whole library: run as a foreground service
+    // on Android so the system does not kill the app mid-migration when the
+    // user switches away.
+    final notifications = MigrationNotificationService.instance;
+    await notifications.ensurePermission();
+    await notifications.start(title: '正在迁移数据', text: '迁移中请勿退出应用');
     try {
       final result = await task(decision: _decision, onProgress: _onProgress);
       if (!mounted) return;
@@ -300,6 +314,8 @@ class _MigrationPageState extends State<MigrationPage> {
         );
         _status = _MigrationPageStatus.failed;
       });
+    } finally {
+      await notifications.stop();
     }
   }
 
@@ -311,6 +327,24 @@ class _MigrationPageState extends State<MigrationPage> {
         _status = _MigrationPageStatus.validating;
       }
     });
+    _updateMigrationNotification(event);
+  }
+
+  /// Mirrors the in-page progress into the foreground notification. Called
+  /// on the same throttle as the UI rebuild; failures are logged and
+  /// swallowed by the service.
+  void _updateMigrationNotification(MigrationProgressEvent event) {
+    final label = _phaseLabels[event.phase] ?? event.phase.name;
+    final total = event.total;
+    final text = total == null
+        ? label
+        : '$label（${event.completed} / $total）';
+    final fraction = _overallFraction;
+    MigrationNotificationService.instance.updateProgress(
+      title: '正在迁移数据',
+      text: text,
+      percent: fraction == null ? null : (fraction * 100).round(),
+    );
   }
 
   Future<void> _retryRecovery() async {

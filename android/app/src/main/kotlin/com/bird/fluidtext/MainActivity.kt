@@ -17,10 +17,15 @@ import io.flutter.plugin.common.MethodChannel
  * stays visible (and the process slightly harder to kill) while the user
  * switches apps. Deliberately not a foreground service: imports are fast and
  * the app cleans up half-imported books on next launch.
+ *
+ * The separate migration channel drives [MigrationForegroundService], which
+ * is a real foreground service because a killed migration forces a full
+ * retry of the one-shot data migration.
  */
 class MainActivity : FlutterActivity() {
     companion object {
         private const val CHANNEL_NAME = "fluidtext/import_notifications"
+        private const val MIGRATION_CHANNEL_NAME = "fluidtext/migration_service"
         private const val NOTIFICATION_CHANNEL_ID = "book_import"
         private const val IMPORT_NOTIFICATION_ID = 4201
         private const val PERMISSION_REQUEST_CODE = 7101
@@ -48,6 +53,30 @@ class MainActivity : FlutterActivity() {
                     }
                     "cancel" -> {
                         notificationManager().cancel(IMPORT_NOTIFICATION_ID)
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, MIGRATION_CHANNEL_NAME)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "ensurePermission" -> ensureNotificationPermission(result)
+                    "start" -> {
+                        val title = call.argument<String>("title") ?: "正在迁移数据"
+                        val text = call.argument<String>("text") ?: ""
+                        MigrationForegroundService.start(this, title, text)
+                        result.success(null)
+                    }
+                    "update" -> {
+                        val title = call.argument<String>("title") ?: "正在迁移数据"
+                        val text = call.argument<String>("text") ?: ""
+                        val percent = call.argument<Int>("percent") ?: -1
+                        MigrationForegroundService.update(this, title, text, percent)
+                        result.success(null)
+                    }
+                    "stop" -> {
+                        MigrationForegroundService.stop(this)
                         result.success(null)
                     }
                     else -> result.notImplemented()

@@ -1,10 +1,10 @@
 # FluidText SQLite 与应用数据目录迁移计划
 
 > 文档状态：阶段一至六已实施（分支 codex/sqlite-migration）  
-> 编写日期：2026-08-12  
+> 编写日期：2026-08-12（实施记录持续追加）  
 > 适用平台：Windows、Android  
 > 当前正式版本基线：`1.0.0`  
-> 本文只规划改动，不包含 SQLite、迁移页面或备份恢复的实际实现。
+> 正文为设计规划；各阶段的「实施记录」引用块与附录 A 记录实际落地情况，如有出入以实施记录为准。原《SQLite Migration Phase 1 Baseline Notes》已于 2026-08-15 并入附录 A，单独文件不再维护。
 
 ## 1. 背景与目标
 
@@ -770,6 +770,8 @@ SQLite 尚未成为生产数据源，删除新实现和依赖即可回到 Isar�
 
 > 实施记录（2026-08-14）：freshInstall 与放弃迁移会写入 `source=fresh` 的完成标记；`verifyLiveDatabase` 只校验 integrity/外键/schema version，不再比对表计数——否则迁移后用户正常写入会让计数失配，把正常启动误判成 recoveryRequired。真机验收发现早期版本（无章节字段）导入的卡片在 Isar 中读回 int64 最小值哨兵，迁移时已归一化为第 0 章并记 warning；迁移诊断会剥离 SQL 语句与绑定参数，避免泄露卡片正文。
 
+> 实施记录（2026-08-15，迁移前台通知防杀）：迁移页的「导出 ZIP 备份」与「开始迁移」期间，Android 上挂起 dataSync 前台服务通知（`MigrationForegroundService`，通道 `fluidtext/migration_service`，Dart 侧 `MigrationNotificationService`，进度文本与页面节流同步更新）。与 EPUB 导入的普通常驻通知不同，这里是真正的 foreground service——一次性迁移数据量大、被杀后只能整体重试，需要提升进程优先级防后台回收；staging + state.json 的强杀兜底不变。前台服务无法防御用户主动划掉任务（Flutter engine 随 Activity 销毁），该场景仍由下次启动的恢复流程兜底。Windows 上为 no-op。已加入检查清单 2.2 的真机验收项。
+
 **回滚点**
 
 发布前可关闭 SQLite bootstrap 开关回到 Isar。发布后若需要应用级回滚，只允许通过明确的旧版兼容策略或 ZIP 恢复，不能让旧版本直接打开已迁移的 SQLite。
@@ -1079,3 +1081,53 @@ ZIP 恢复入口可单独关闭，不影响已完成的 SQLite 迁移和正常�
 - Repository 契约、真实 EPUB、迁移 fixture、ZIP 安全、双平台路径和 Release build 测试通过。
 - 正常书库的阅读与书架体感无明显回退，大批量导入不 OOM，性能偏差有可复现报告。
 - 旧 Isar 和 Documents 数据仍保留，删除策略留给后续独立版本决定。
+
+## 附录 A：基线与基准工具
+
+> 本附录并入原 `docs/sqlite_migration_phase1_baseline.md`（阶段一基线笔记，2026-08-15 合并），描述与实际实施保持一致；发布前的操作性检查清单见 `docs/sqlite_release_checklist.md` 第 4 节。
+
+### A.1 `1.0.0` 遗留 fixture
+
+fixture 必须从真实 tag `1.0.0` 生成，不能用当前工作树的 schema 冒充旧版本：
+
+```powershell
+.\tool\generate_1_0_0_legacy_fixture.ps1
+```
+
+脚本在 tag `1.0.0` 上创建 detached worktree，把 `tool/create_legacy_isar_fixture.dart` 复制进去执行，产物写入 `test/fixtures/legacy_isar_1_0_0/`。fixture manifest 格式：
+
+```json
+{
+  "format": "fluidtext.legacy_fixture",
+  "sourceVersion": "1.0.0",
+  "expected": {
+    "books": 2,
+    "bookCards": 3,
+    "bookAssets": 1,
+    "bookRemarks": 2
+  }
+}
+```
+
+### A.2 Isar 基线
+
+```powershell
+dart run tool/isar_baseline.dart --output build/reports/isar_baseline.json --cards 100,1000,10000,50000
+```
+
+报告格式为 `fluidtext.isar_baseline.v1`，按 cardCounts 记录每个规模下 seedWrite/loadBooks/loadOrderedCardIds/loadCardsByIds100/loadBookStats/toggleRead/toggleFavorite 的耗时（毫秒）。Isar 与 SQLite 基准使用同一批规模与指标口径。
+
+### A.3 SQLite 导入基准
+
+仓储层依赖 Flutter，无法直接 `dart run`，统一走 Flutter 测试运行器（无环境变量时跳过，保持日常测试速度）：
+
+```powershell
+$env:FLUIDTEXT_SQLITE_BENCHMARK = '1'
+flutter test test/sqlite_import_benchmark_test.dart
+```
+
+报告格式 `fluidtext.sqlite_import_benchmark.v1`，写入 `build/reports/sqlite_import_benchmark.json`，覆盖 100/1,000/10,000/50,000 cards 经 `SqliteLibraryRepository.importBookDraft` 的导入、关键读查询与各用例前后的 RSS。恢复/导出内存基准同理（`FLUIDTEXT_RESTORE_BENCHMARK` / `FLUIDTEXT_EXPORT_BENCHMARK`），见检查清单第 4 节。
+
+### A.4 报告入库策略
+
+基线报告只有在代表有明确意图的参考环境时才入库；临时本地运行的结果留在 `build/reports/`（不入库）。发布前刷新基准并把结论追加到阶段六实施记录。
