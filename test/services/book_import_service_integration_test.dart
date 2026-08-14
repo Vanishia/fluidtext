@@ -209,4 +209,40 @@ void main() {
     expect(building, isNotEmpty);
     expect(building.last.producedCards, result.insertedCards);
   });
+
+  test('imports a chapter encoded as GBK', () async {
+    const paragraph = '夜半钟声到客船，姑苏城外寒山寺。';
+    final result = await importService.importEpubBytes(
+      repository: repository,
+      bytes: buildTestEpub(paragraph: paragraph, chapterAsGbk: true),
+      targetCharsPerCard: 20,
+    );
+
+    expect(result.insertedCards, greaterThan(0));
+    final cards = await isar!.bookCards
+        .filter()
+        .bookIdEqualTo(result.bookId)
+        .findAll();
+    expect(
+      cards.any((card) => card.content.contains('夜半钟声到客船')),
+      isTrue,
+    );
+  });
+
+  test('hard-cuts a long paragraph without any sentence boundary', () async {
+    final result = await importService.importEpubBytes(
+      repository: repository,
+      bytes: buildTestEpub(paragraph: '字' * 5000, includeImage: false),
+      targetCharsPerCard: 20,
+    );
+
+    expect(result.insertedCards, greaterThan(1));
+    final cards = await isar!.bookCards
+        .filter()
+        .bookIdEqualTo(result.bookId)
+        .findAll();
+    for (final card in cards) {
+      expect(card.content.length, lessThanOrEqualTo(60));
+    }
+  });
 }

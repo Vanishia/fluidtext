@@ -12,6 +12,7 @@ import '../repositories/library_repository.dart';
 import '../repositories/library_snapshot.dart';
 import 'app_logger.dart';
 import 'book_asset_store.dart';
+import 'epub_html_decoder.dart';
 import 'text_splitter.dart';
 
 class BookImportResult {
@@ -449,7 +450,7 @@ class BookImportService {
     for (final ref in refs) {
       report.seenChapters += 1;
       try {
-        final htmlContent = await ref.readHtmlContent();
+        final htmlContent = await _readChapterHtml(ref);
         final subChapters = await _readAvailableChapterRefs(
           ref.subChapters,
           report: report,
@@ -488,6 +489,23 @@ class BookImportService {
     }
 
     return chapters;
+  }
+
+  /// Reads a chapter as strict UTF-8 (epub_plus behaviour); files that fail
+  /// UTF-8 decoding are retried with legacy-charset fallbacks so GBK EPUBs
+  /// do not lose whole chapters.
+  Future<String> _readChapterHtml(EpubChapterRef ref) async {
+    try {
+      return await ref.readHtmlContent();
+    } on FormatException {
+      final bytes = await ref.epubTextContentFileRef?.readContentAsBytes();
+      if (bytes == null) rethrow;
+      _logImport(
+        'Recovering non-UTF8 EPUB chapter via encoding fallback: title="${(ref.title ?? '').trim().isEmpty ? '(untitled)' : ref.title}"',
+        name: 'BookImportService',
+      );
+      return decodeHtmlBytesLossy(bytes);
+    }
   }
 
   _ImportDraft _buildImportDraft({
@@ -1012,10 +1030,12 @@ class _CardDraft {
 
 class _CardBlockPacker {
   _CardBlockPacker({required this.targetChars})
-    : minTextBeforeImageBreak = (targetChars * 2 / 3).round();
+    : minTextBeforeImageBreak = (targetChars * 2 / 3).round(),
+      _lengthPolicy = CardLengthPolicy(targetChars: targetChars);
 
   final int targetChars;
   final int minTextBeforeImageBreak;
+  final CardLengthPolicy _lengthPolicy;
   static const maxImagesPerCard = 2;
 
   final List<_CardBlockDraft> _blocks = <_CardBlockDraft>[];
@@ -1047,7 +1067,7 @@ class _CardBlockPacker {
       _textBuffer.write(character);
       _textChars += 1;
 
-      if (_textChars >= targetChars && _isBoundary(character)) {
+      if (_lengthPolicy.shouldBreak(_textChars, character)) {
         _flushCard(cards);
       }
     }
@@ -1114,10 +1134,6 @@ class _CardBlockPacker {
   bool get _hasCurrentContent =>
       _blocks.isNotEmpty || _textBuffer.toString().trim().isNotEmpty;
 
-  bool _isBoundary(String character) {
-    return TextSplitterBoundary.characters.contains(character);
-  }
-
   String _tidyCardText(String text) {
     return text
         .replaceAll(RegExp(r'[ \t]+\n'), '\n')
@@ -1175,12 +1191,6 @@ class _CardBlockDraft {
       _ => {'type': type},
     };
   }
-}
-
-class TextSplitterBoundary {
-  const TextSplitterBoundary._();
-
-  static const characters = {'。', '！', '？', '.', '!', '?', '\n'};
 }
 
 class _ImageAssetDraft {

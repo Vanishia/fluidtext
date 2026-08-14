@@ -46,6 +46,7 @@ dependencies:
   drift: ^2.15.0
   sqlite3_flutter_libs: ^0.5.42
   sqlite3: ^2.9.4
+  charset: ^2.0.1
 
 dev_dependencies:
   flutter_test:
