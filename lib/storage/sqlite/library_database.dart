@@ -110,7 +110,10 @@ void configureSqlite(Database database) {
   database.execute('PRAGMA journal_mode = WAL');
   database.execute('PRAGMA foreign_keys = ON');
   database.execute('PRAGMA busy_timeout = 5000');
-  database.execute('PRAGMA synchronous = NORMAL');
+  // Migration plan §4.3: without conclusive kill-recovery benchmarks on both
+  // platforms the conservative default is FULL; only downgrade to NORMAL when
+  // real-user performance is unacceptable AND recovery tests still pass.
+  database.execute('PRAGMA synchronous = FULL');
 }
 
 Future<LibraryDatabase> openLibraryDatabaseForLayout(

@@ -8,6 +8,7 @@ import '../models/book.dart';
 import '../models/book_asset.dart';
 import '../models/book_card.dart';
 import '../models/book_remark.dart';
+import '../services/diagnostic_sanitizer.dart';
 import '../storage/json_file_store.dart';
 import '../storage/sqlite/library_database.dart';
 import '../storage/storage_layout.dart';
@@ -927,27 +928,14 @@ class LibraryMigrator {
     StorageLayout legacyLayout,
     MigrationStaging staging,
   ) {
-    var text = error.toString();
-    // SqliteException.toString() appends the causing SQL statement and its
-    // bound parameters, which can contain card content or book titles. The
-    // plan forbids book content in diagnostics, so strip that section.
-    for (final marker in const ['Causing statement', 'parameters:']) {
-      final cutoff = text.indexOf(marker);
-      if (cutoff != -1) {
-        text = text.substring(0, cutoff).trimRight();
-      }
-    }
-    final replacements = <String, String>{
-      staging.attemptDirectory.path: '<staging>',
-      legacyLayout.rootDirectory.path: '<legacy>',
-      legacyLayout.appFontSettingsFile.parent.path: '<legacySupport>',
-    };
-    final keys = replacements.keys.toList()
-      ..sort((a, b) => b.length.compareTo(a.length));
-    for (final key in keys) {
-      if (key.isNotEmpty) text = text.replaceAll(key, replacements[key]!);
-    }
-    return text;
+    return sanitizeDiagnosticText(
+      error,
+      pathReplacements: {
+        staging.attemptDirectory.path: '<staging>',
+        legacyLayout.rootDirectory.path: '<legacy>',
+        legacyLayout.appFontSettingsFile.parent.path: '<legacySupport>',
+      },
+    );
   }
 
   void _emit(MigrationPhase phase, int completed, [int? total]) {

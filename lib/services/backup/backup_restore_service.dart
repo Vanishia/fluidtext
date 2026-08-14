@@ -8,6 +8,7 @@ import '../../storage/json_file_store.dart';
 import '../../storage/sqlite/library_database.dart';
 import '../../storage/sqlite/sqlite_sealer.dart';
 import '../../storage/storage_layout.dart';
+import '../diagnostic_sanitizer.dart';
 import 'backup_format.dart';
 import 'zip_security.dart';
 
@@ -561,12 +562,7 @@ class BackupRestoreService {
   /// Removes the SQL statement and bound parameters (which may contain card
   /// content) from database errors.
   static String _sanitizeDatabaseError(Object error) {
-    var text = error.toString();
-    final cut = text.indexOf('Causing statement');
-    if (cut >= 0) {
-      text = text.substring(0, cut).trim();
-    }
-    return text;
+    return sanitizeDiagnosticText(error);
   }
 
   Future<void> _assertStagingDatabase(

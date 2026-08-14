@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../services/diagnostic_sanitizer.dart';
 import '../storage/json_file_store.dart';
 import '../storage/sqlite/library_database.dart';
 import '../storage/storage_layout.dart';
@@ -416,18 +417,14 @@ class MigrationPromotion {
     MigrationStaging staging,
     StorageLayout legacyLayout,
   ) {
-    var text = value.toString();
-    final replacements = <String, String>{
-      staging.attemptDirectory.path: '<staging>',
-      legacyLayout.rootDirectory.path: '<legacy>',
-      legacyLayout.appFontSettingsFile.parent.path: '<legacySupport>',
-    };
-    final keys = replacements.keys.toList()
-      ..sort((a, b) => b.length.compareTo(a.length));
-    for (final key in keys) {
-      if (key.isNotEmpty) text = text.replaceAll(key, replacements[key]!);
-    }
-    return text;
+    return sanitizeDiagnosticText(
+      value,
+      pathReplacements: {
+        staging.attemptDirectory.path: '<staging>',
+        legacyLayout.rootDirectory.path: '<legacy>',
+        legacyLayout.appFontSettingsFile.parent.path: '<legacySupport>',
+      },
+    );
   }
 
   void _emit(int completed, int total) {
