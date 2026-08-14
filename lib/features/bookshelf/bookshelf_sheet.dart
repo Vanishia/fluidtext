@@ -69,6 +69,8 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
   bool _isBusy = false;
   bool _showMigrationEntry = false;
   String? _status;
+  String? _restoreProgressStage;
+  double? _restoreProgressValue;
 
   @override
   void initState() {
@@ -128,9 +130,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     await MigrationStateStore(targetLayout: targetLayout).markIdle();
     if (!mounted) return;
     await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const MigrationBootstrapPage(),
-      ),
+      MaterialPageRoute<void>(builder: (_) => const MigrationBootstrapPage()),
     );
     if (!mounted) return;
     setState(() => _showMigrationEntry = false);
@@ -373,15 +373,18 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
         setState(() => _isBusy = true);
       }
 
-      setState(() => _status = '正在恢复备份…');
+      setState(() {
+        _status = '正在恢复备份…';
+        _restoreProgressStage = '正在恢复备份…';
+        _restoreProgressValue = 0;
+      });
       final runner = widget.backupRestoreRunner ?? _runBackupRestore;
       final result = await runner(File(path));
 
       // The restore closed and swapped the live database; drop the stale
       // repository before reloading so every read hits the restored data.
       final freshAccess =
-          await (widget.dataAccessLoader ??
-              () => LibraryDataAccess.instance)();
+          await (widget.dataAccessLoader ?? () => LibraryDataAccess.instance)();
       if (!mounted) return;
       setState(() {
         _dataAccess = freshAccess;
@@ -423,7 +426,11 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       setState(() => _status = '恢复失败：$error，当前书库未受影响');
     } finally {
       if (mounted) {
-        setState(() => _isBusy = false);
+        setState(() {
+          _isBusy = false;
+          _restoreProgressStage = null;
+          _restoreProgressValue = null;
+        });
       }
     }
   }
@@ -458,6 +465,13 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       targetLayout: layout,
       closeLiveDatabase: () async {
         await (await LibraryDataAccess.instance).close();
+      },
+      onProgress: (progress) {
+        if (!mounted) return;
+        setState(() {
+          _restoreProgressStage = progress.stage;
+          _restoreProgressValue = progress.fraction;
+        });
       },
     );
   }
@@ -853,7 +867,11 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                     ),
                   ),
                 ),
-                if (_isBusy) const BlockingLoader(),
+                if (_isBusy)
+                  BlockingLoader(
+                    label: _restoreProgressStage,
+                    progress: _restoreProgressValue,
+                  ),
               ],
             ),
           ),

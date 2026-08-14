@@ -21,7 +21,9 @@ class BackupLibraryData {
   }) {
     return BackupLibraryData(
       books: snapshot.books.map(_bookToJson).toList(growable: false),
-      bookCards: snapshot.bookCards.map(_bookCardToJson).toList(growable: false),
+      bookCards: snapshot.bookCards
+          .map(_bookCardToJson)
+          .toList(growable: false),
       bookAssets: snapshot.bookAssets
           .map(_bookAssetToJson)
           .toList(growable: false),
@@ -68,9 +70,7 @@ BackupLibraryData parseV2Payload(Map<String, dynamic> json) {
     throw const FormatException('备份文件缺少版本号');
   }
   if (version > BackupLibraryData.maxSupportedVersion) {
-    throw FormatException(
-      '备份文件版本过新（v${version.toInt()}），请升级 FluidText 后再恢复',
-    );
+    throw FormatException('备份文件版本过新（v${version.toInt()}），请升级 FluidText 后再恢复');
   }
   if (version != 2) {
     throw FormatException('不支持的备份版本（v${version.toInt()}），期望 v2');
@@ -94,11 +94,7 @@ BackupLibraryData _parseLibraryRecords(
   }
   return BackupLibraryData(
     books: _recordList(json, 'books', source).map(_parseBook).toList(),
-    bookCards: _recordList(
-      json,
-      'bookCards',
-      source,
-    ).map(_parseCard).toList(),
+    bookCards: _recordList(json, 'bookCards', source).map(_parseCard).toList(),
     bookAssets: _recordList(
       json,
       'bookAssets',
@@ -157,11 +153,7 @@ String _requiredString(Map<String, dynamic> record, String key, String label) {
   return value;
 }
 
-String? _optionalString(
-  Map<String, dynamic> record,
-  String key,
-  String label,
-) {
+String? _optionalString(Map<String, dynamic> record, String key, String label) {
   final value = record[key];
   if (value == null) return null;
   if (value is! String) {
@@ -199,11 +191,7 @@ Map<String, dynamic> _parseBook(Map<String, dynamic> record) {
     'title': _requiredString(record, 'title', label),
     'createdAt': _optionalTimestamp(record, 'createdAt', label),
     'fileHash': _optionalString(record, 'fileHash', label),
-    'contentFingerprint': _optionalString(
-      record,
-      'contentFingerprint',
-      label,
-    ),
+    'contentFingerprint': _optionalString(record, 'contentFingerprint', label),
     'sourceFileName': _optionalString(record, 'sourceFileName', label),
     'importedAt': _optionalTimestamp(record, 'importedAt', label),
     'cardCount': _optionalInt(record, 'cardCount', label),
@@ -287,11 +275,7 @@ class BackupManifestFile {
     if (sha256 is! String || sha256.length != 64) {
       throw FormatException('备份清单条目 $path 的 SHA-256 非法');
     }
-    return BackupManifestFile(
-      path: path,
-      bytes: bytes.toInt(),
-      sha256: sha256,
-    );
+    return BackupManifestFile(path: path, bytes: bytes.toInt(), sha256: sha256);
   }
 }
 
@@ -373,9 +357,7 @@ class BackupManifest {
       throw const FormatException('备份清单缺少版本号');
     }
     if (version > BackupLibraryData.maxSupportedVersion) {
-      throw FormatException(
-        '备份文件版本过新（v${version.toInt()}），请升级 FluidText 后再恢复',
-      );
+      throw FormatException('备份文件版本过新（v${version.toInt()}），请升级 FluidText 后再恢复');
     }
     if (version != BackupManifest.version) {
       throw FormatException('不支持的备份清单版本（v${version.toInt()}），期望 v3');

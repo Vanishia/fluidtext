@@ -833,6 +833,8 @@ ZIP 恢复入口可单独关闭，不影响已完成的 SQLite 迁移和正常�
 > 实施记录（2026-08-13，提交二「在书架增加 ZIP 备份恢复入口」）：书架顶部操作区新增「导入备份」（`Icons.settings_backup_restore_rounded`），接通 7.3/7.4 交互——FilePicker 选择 `.zip`/`.json`、非空库二次确认（「恢复备份将替换当前书库（X 本书），是否继续？」）、恢复前经 `PreRestoreBackup` 自动导出 v3 保险备份到 `recovery/pre-restore-<时间戳>.zip`（失败时弹窗由用户选择继续或取消、空库跳过）、BlockingLoader 期间禁用全部操作、成功后重建 `LibraryDataAccess` 单例并刷新书籍/备注/统计，失败文案含「当前书库未受影响」。恢复编排通过构造参数注入（picker/保险备份/restore runner/dataAccessLoader），widget 测试以 fake repository 覆盖确认对话框、busy 禁用、成功/失败文案与保险备份失败分支。
 >
 > 实施记录（2026-08-14，真机回归修复）：1.0.0 导出的 v2 备份中，早期版本（无章节字段）卡片的 chapterIndex/chapterCardIndex 是 Isar 的 int64 最小值哨兵，恢复时触发 SQLite CHECK 失败——恢复端现按迁移引擎同样的规则归一化为第 0 章并聚合记一条 warning；同时 staging 写入失败的用户可见错误会剥离 SQL 语句与绑定参数（含卡片正文），只保留约束名等安全信息。回归测试：`backup_restore_service_test.dart` 的 sentinel 归一化与错误脱敏用例。
+>
+> 实施记录（2026-08-14，恢复进度与内存基准）：恢复流程新增真实进度（`BackupRestoreProgress`，阶段权重固定：解压按中央目录声明的解压字节、写库按记录数分 2000 条 chunk、资源按文件数，发射端按 0.01 节流），书架恢复期间经 `BlockingLoader(label, progress)` 显示进度条与百分比；staging 写入改为同一事务内分 chunk batch。恢复内存基准（`FLUIDTEXT_RESTORE_BENCHMARK=1 flutter test test/backup_restore_benchmark_test.dart`，报告写入 `build/reports/backup_restore_benchmark.json`）首轮 Windows 结果：v2 JSON 最坏场景（整库单 JSON 一次解码）10,000 cards（9.5MB 备份）峰值 RSS 增量约 12MB、1.1s；50,000 cards（47MB 备份）约 40MB、3.4s，峰值量级约为备份 JSON 大小的 1–2 倍，无 OOM 风险；更大书库的流式 JSON 解析留作阶段六候选优化。
 
 ### 阶段六：双端验收、性能调优和发布保护
 

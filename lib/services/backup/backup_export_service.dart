@@ -122,10 +122,7 @@ class BackupExportService {
           continue;
         }
         final fileName = entity.path.replaceAll(r'\', '/').split('/').last;
-        addBytesEntry(
-          '$directoryName/$fileName',
-          await entity.readAsBytes(),
-        );
+        addBytesEntry('$directoryName/$fileName', await entity.readAsBytes());
       }
     }
 

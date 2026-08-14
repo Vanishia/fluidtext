@@ -744,4 +744,53 @@ void main() {
       expect(await targetLayout.sqliteDatabaseFile.exists(), isFalse);
     },
   );
+
+  test('reports monotonic progress through the restore stages', () async {
+    final sourceLayout = layoutFor('source12');
+    await sourceLayout.rootDirectory.create(recursive: true);
+    await seedDatabase(sourceLayout.sqliteDatabaseFile);
+    final snapshot = await snapshotOf(sourceLayout.sqliteDatabaseFile);
+    final backupFile = await writeZip('backup12.zip', <String, List<int>>{
+      'backup.json': utf8.encode(jsonEncode(v2Payload(snapshot))),
+      assetRelativePath: assetBytes,
+    });
+
+    final targetLayout = layoutFor('target12');
+    await targetLayout.rootDirectory.create(recursive: true);
+    final events = <BackupRestoreProgress>[];
+    await const BackupRestoreService().restore(
+      backupFile: backupFile,
+      targetLayout: targetLayout,
+      closeLiveDatabase: defaultClose,
+      onProgress: events.add,
+    );
+
+    expect(events, isNotEmpty);
+    expect(events.last.fraction, 1.0);
+    for (var index = 1; index < events.length; index++) {
+      expect(
+        events[index].fraction,
+        greaterThanOrEqualTo(events[index - 1].fraction),
+        reason: 'progress must be monotonic: $events',
+      );
+    }
+    final stages = events.map((event) => event.stage).toList();
+    for (final expected in const [
+      '正在校验压缩包',
+      '正在解压备份',
+      '正在解析备份数据',
+      '正在校验备份数据',
+      '正在写入书库',
+      '正在恢复资源与设置',
+      '正在密封数据库',
+      '正在切换书库',
+      '恢复完成',
+    ]) {
+      expect(
+        stages.any((stage) => stage.startsWith(expected)),
+        isTrue,
+        reason: 'missing stage $expected in $stages',
+      );
+    }
+  });
 }

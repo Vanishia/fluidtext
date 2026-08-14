@@ -102,12 +102,19 @@ class ZipSecurity {
   ///
   /// Throws [FormatException] (Chinese message) on any structural,
   /// security or limit violation.
+  ///
+  /// [onBytes] reports extracted versus declared total uncompressed bytes
+  /// after each entry, for progress display.
   static Future<List<ExtractedEntry>> extractToDisk(
     File zipFile,
     Directory targetDir, {
     ZipSecurityLimits limits = ZipSecurityLimits.standard,
+    void Function(int extractedBytes, int totalBytes)? onBytes,
   }) async {
     final entries = await _validateStructure(zipFile, limits);
+    final declaredTotalBytes = entries
+        .where((entry) => !entry.isDirectory)
+        .fold<int>(0, (sum, entry) => sum + entry.uncompressedSize);
 
     final input = InputFileStream(zipFile.path);
     final Archive archive;
@@ -176,6 +183,7 @@ class ZipSecurity {
             sha256: sha256.convert(content).toString(),
           ),
         );
+        onBytes?.call(totalBytes, declaredTotalBytes);
       }
     } finally {
       await input.close();
@@ -268,8 +276,7 @@ class ZipSecurity {
           tail[offset + 1] == 0x4B &&
           tail[offset + 2] == 0x05 &&
           tail[offset + 3] == 0x06) {
-        final commentLength =
-            tail[offset + 20] | (tail[offset + 21] << 8);
+        final commentLength = tail[offset + 20] | (tail[offset + 21] << 8);
         if (length - window + offset + _eocdMinLength + commentLength ==
             length) {
           return length - window + offset;
@@ -316,9 +323,7 @@ class ZipSecurity {
     if (nameBytes.length != nameLength) {
       throw const FormatException('ZIP 中央目录被截断');
     }
-    await raf.setPosition(
-      await raf.position() + extraLength + commentLength,
-    );
+    await raf.setPosition(await raf.position() + extraLength + commentLength);
 
     if (flags & 0x1 != 0) {
       final name = utf8.decode(nameBytes, allowMalformed: true);
@@ -357,8 +362,7 @@ class ZipSecurity {
     await raf.setPosition(entry.localHeaderOffset + 26);
     final nameLength = await _readUint16(raf);
     final extraLength = await _readUint16(raf);
-    if (entry.localHeaderOffset + 30 + nameLength + extraLength >
-        fileLength) {
+    if (entry.localHeaderOffset + 30 + nameLength + extraLength > fileLength) {
       throw const FormatException('ZIP 本地文件头超出文件范围，文件可能已被截断');
     }
     final nameBytes = await raf.read(nameLength);
@@ -450,9 +454,6 @@ class ZipSecurity {
     if (bytes.length != 4) {
       throw const FormatException('ZIP 文件损坏或已被截断');
     }
-    return bytes[0] |
-        (bytes[1] << 8) |
-        (bytes[2] << 16) |
-        (bytes[3] << 24);
+    return bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24);
   }
 }

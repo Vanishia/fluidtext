@@ -47,6 +47,20 @@ class _ValidatedLibrary {
   Set<int> get bookIds => books.map((book) => book['id'] as int).toSet();
 }
 
+/// Overall restore progress for progress-bar display.
+class BackupRestoreProgress {
+  const BackupRestoreProgress({required this.stage, required this.fraction});
+
+  /// Chinese label of the current stage (may include counters).
+  final String stage;
+
+  /// Overall progress, 0..1.
+  final double fraction;
+}
+
+typedef BackupRestoreProgressCallback =
+    void Function(BackupRestoreProgress progress);
+
 /// Restores v2 (`.json` or `.zip`) and v3 (`.zip`) backups with atomic
 /// whole-library replacement semantics (plan 7.4): stage everything under
 /// `recovery/attempts/<id>/`, seal the staging database, then swap the live
@@ -66,6 +80,7 @@ class BackupRestoreService {
     required File backupFile,
     required StorageLayout targetLayout,
     required Future<void> Function() closeLiveDatabase,
+    BackupRestoreProgressCallback? onProgress,
   }) async {
     if (!await backupFile.exists()) {
       throw const FormatException('备份文件不存在');
@@ -92,6 +107,7 @@ class BackupRestoreService {
         attemptDirectory,
         closeLiveDatabase,
         warnings,
+        onProgress,
       );
       succeeded = true;
       return result;
@@ -113,7 +129,20 @@ class BackupRestoreService {
     Directory attemptDirectory,
     Future<void> Function() closeLiveDatabase,
     List<String> warnings,
+    BackupRestoreProgressCallback? onProgress,
   ) async {
+    // Stage fractions are throttled so per-entry/per-chunk callbacks cannot
+    // flood the UI with rebuilds.
+    var lastStage = '';
+    var lastFraction = -1.0;
+    void emit(String stage, double fraction) {
+      final clamped = fraction.clamp(0.0, 1.0);
+      if (stage == lastStage && clamped - lastFraction < 0.01) return;
+      lastStage = stage;
+      lastFraction = clamped;
+      onProgress?.call(BackupRestoreProgress(stage: stage, fraction: clamped));
+    }
+
     final extension = _extensionOf(backupFile.path);
     final extractedDirectory = Directory(
       StorageLayout.joinPath([
@@ -127,15 +156,22 @@ class BackupRestoreService {
     List<ExtractedEntry>? extractedEntries;
 
     if (extension == 'json') {
+      emit('正在读取备份', 0.02);
       data = parseV2Payload(_decodeJsonObject(await backupFile.readAsBytes()));
       formatVersion = 2;
     } else if (extension == 'zip') {
+      emit('正在校验压缩包', 0.02);
       await _assertZipMagic(backupFile);
       extractedEntries = await ZipSecurity.extractToDisk(
         backupFile,
         extractedDirectory,
+        onBytes: (done, total) {
+          final fraction = total <= 0 ? 1.0 : done / total;
+          emit('正在解压备份', 0.05 + 0.30 * fraction);
+        },
       );
       final paths = extractedEntries.map((entry) => entry.relativePath).toSet();
+      emit('正在解析备份数据', 0.37);
       if (paths.contains('manifest.json')) {
         formatVersion = 3;
         final manifest = BackupManifest.fromJson(
@@ -176,6 +212,7 @@ class BackupRestoreService {
     }
 
     // 2. Validate cross-record consistency.
+    emit('正在校验备份数据', 0.4);
     final library = _validateLibrary(data, warnings);
 
     // 3. Build and verify the staging database in a single transaction.
@@ -192,7 +229,14 @@ class BackupRestoreService {
         StorageLayout.sqliteDatabaseFileName,
       ], separator: targetLayout.pathSeparator),
     );
-    await _writeStagingDatabase(stagingDatabaseFile, library);
+    await _writeStagingDatabase(
+      stagingDatabaseFile,
+      library,
+      onRows: (done, total) {
+        final fraction = total <= 0 ? 1.0 : done / total;
+        emit('正在写入书库（$done/$total 条记录）', 0.42 + 0.30 * fraction);
+      },
+    );
 
     // 4. Copy managed files and sanitized settings into the payload.
     final settingsIncluded = await _stageFiles(
@@ -204,15 +248,21 @@ class BackupRestoreService {
       validBookIds: library.bookIds,
       warnings: warnings,
       separator: targetLayout.pathSeparator,
+      onFiles: (done, total) {
+        final fraction = total <= 0 ? 1.0 : done / total;
+        emit('正在恢复资源与设置（$done/$total 个文件）', 0.74 + 0.14 * fraction);
+      },
     );
 
     // 5. Seal the staging database (checkpoint + no WAL sidecars).
+    emit('正在密封数据库', 0.9);
     await SqliteSealer.seal(stagingDatabaseFile);
 
     // 6. Close the live database before swapping files underneath it.
     await closeLiveDatabase();
 
     // 7. Atomically swap live entries with the staged payload.
+    emit('正在切换书库', 0.95);
     await _swapAtomically(
       targetLayout: targetLayout,
       payloadDirectory: payloadDirectory,
@@ -227,6 +277,7 @@ class BackupRestoreService {
     // 8. Keep the migration completion marker's counts current.
     await _refreshCompletionMarker(targetLayout, library);
 
+    emit('恢复完成', 1.0);
     return BackupRestoreResult(
       formatVersion: formatVersion,
       bookCount: library.books.length,
@@ -366,79 +417,129 @@ class BackupRestoreService {
 
   Future<void> _writeStagingDatabase(
     File databaseFile,
-    _ValidatedLibrary library,
-  ) async {
+    _ValidatedLibrary library, {
+    void Function(int doneRows, int totalRows)? onRows,
+  }) async {
+    // Cards dominate large backups; chunk the inserts (still inside the one
+    // transaction) so progress reporting and memory pressure stay bounded.
+    const chunkSize = 2000;
+    final totalRows =
+        library.books.length +
+        library.cards.length +
+        library.assets.length +
+        library.remarks.length;
+    var doneRows = 0;
+
     final database = LibraryDatabase.file(databaseFile);
     try {
       try {
         await database.transaction(() async {
+          SqliteBooksCompanion bookCompanion(Map<String, dynamic> book) {
+            return SqliteBooksCompanion.insert(
+              id: Value(book['id'] as int),
+              title: book['title'] as String,
+              createdAtMs:
+                  _timestampMs(book['createdAt']) ??
+                  _timestampMs(book['importedAt']) ??
+                  0,
+              fileHash: Value(book['fileHash'] as String?),
+              contentFingerprint: Value(book['contentFingerprint'] as String?),
+              sourceFileName: Value(book['sourceFileName'] as String?),
+              importedAtMs: Value(_timestampMs(book['importedAt'])),
+              cardCount: Value(book['cardCount'] as int?),
+              textCharCount: Value(book['textCharCount'] as int?),
+              assetRootKey: Value(book['assetRootKey'] as String?),
+            );
+          }
+
+          SqliteBookCardsCompanion cardCompanion(Map<String, dynamic> card) {
+            return SqliteBookCardsCompanion.insert(
+              id: Value(card['id'] as int),
+              bookId: card['bookId'] as int,
+              bookTitle: card['bookTitle'] as String,
+              cardIndex: card['cardIndex'] as int,
+              chapterIndex: card['chapterIndex'] as int,
+              chapterCardIndex: card['chapterCardIndex'] as int,
+              chapterTitle: Value(card['chapterTitle'] as String?),
+              content: card['content'] as String,
+              blocksJson: Value(card['blocksJson'] as String?),
+              isRead: card['isRead'] as bool,
+              readAtMs: Value(_timestampMs(card['readAt'])),
+              isFavorite: card['isFavorite'] as bool,
+              favoritedAtMs: Value(_timestampMs(card['favoritedAt'])),
+            );
+          }
+
+          SqliteBookAssetsCompanion assetCompanion(Map<String, dynamic> asset) {
+            return SqliteBookAssetsCompanion.insert(
+              id: Value(asset['id'] as int),
+              bookId: asset['bookId'] as int,
+              assetKey: asset['assetKey'] as String,
+              originalHref: Value(asset['originalHref'] as String?),
+              normalizedHref: Value(asset['normalizedHref'] as String?),
+              mimeType: Value(asset['mimeType'] as String?),
+              relativePath: (asset['relativePath'] as String).replaceAll(
+                r'\',
+                '/',
+              ),
+              byteLength: Value(asset['byteLength'] as int?),
+              createdAtMs: _timestampMs(asset['createdAt']) ?? 0,
+            );
+          }
+
+          SqliteBookRemarksCompanion remarkCompanion(
+            Map<String, dynamic> remark,
+          ) {
+            return SqliteBookRemarksCompanion.insert(
+              bookId: Value(remark['id'] as int),
+              title: remark['title'] as String,
+              updatedAtMs:
+                  _timestampMs(remark['updatedAt']) ??
+                  DateTime.now().millisecondsSinceEpoch,
+            );
+          }
+
           await database.batch((batch) {
             batch.insertAll(database.sqliteBooks, [
-              for (final book in library.books)
-                SqliteBooksCompanion.insert(
-                  id: Value(book['id'] as int),
-                  title: book['title'] as String,
-                  createdAtMs:
-                      _timestampMs(book['createdAt']) ??
-                      _timestampMs(book['importedAt']) ??
-                      0,
-                  fileHash: Value(book['fileHash'] as String?),
-                  contentFingerprint: Value(
-                    book['contentFingerprint'] as String?,
-                  ),
-                  sourceFileName: Value(book['sourceFileName'] as String?),
-                  importedAtMs: Value(_timestampMs(book['importedAt'])),
-                  cardCount: Value(book['cardCount'] as int?),
-                  textCharCount: Value(book['textCharCount'] as int?),
-                  assetRootKey: Value(book['assetRootKey'] as String?),
-                ),
-            ]);
-            batch.insertAll(database.sqliteBookCards, [
-              for (final card in library.cards)
-                SqliteBookCardsCompanion.insert(
-                  id: Value(card['id'] as int),
-                  bookId: card['bookId'] as int,
-                  bookTitle: card['bookTitle'] as String,
-                  cardIndex: card['cardIndex'] as int,
-                  chapterIndex: card['chapterIndex'] as int,
-                  chapterCardIndex: card['chapterCardIndex'] as int,
-                  chapterTitle: Value(card['chapterTitle'] as String?),
-                  content: card['content'] as String,
-                  blocksJson: Value(card['blocksJson'] as String?),
-                  isRead: card['isRead'] as bool,
-                  readAtMs: Value(_timestampMs(card['readAt'])),
-                  isFavorite: card['isFavorite'] as bool,
-                  favoritedAtMs: Value(_timestampMs(card['favoritedAt'])),
-                ),
-            ]);
-            batch.insertAll(database.sqliteBookAssets, [
-              for (final asset in library.assets)
-                SqliteBookAssetsCompanion.insert(
-                  id: Value(asset['id'] as int),
-                  bookId: asset['bookId'] as int,
-                  assetKey: asset['assetKey'] as String,
-                  originalHref: Value(asset['originalHref'] as String?),
-                  normalizedHref: Value(asset['normalizedHref'] as String?),
-                  mimeType: Value(asset['mimeType'] as String?),
-                  relativePath: (asset['relativePath'] as String).replaceAll(
-                    r'\',
-                    '/',
-                  ),
-                  byteLength: Value(asset['byteLength'] as int?),
-                  createdAtMs: _timestampMs(asset['createdAt']) ?? 0,
-                ),
+              for (final book in library.books) bookCompanion(book),
             ]);
             batch.insertAll(database.sqliteBookRemarks, [
-              for (final remark in library.remarks)
-                SqliteBookRemarksCompanion.insert(
-                  bookId: Value(remark['id'] as int),
-                  title: remark['title'] as String,
-                  updatedAtMs:
-                      _timestampMs(remark['updatedAt']) ??
-                      DateTime.now().millisecondsSinceEpoch,
-                ),
+              for (final remark in library.remarks) remarkCompanion(remark),
             ]);
           });
+          doneRows += library.books.length + library.remarks.length;
+          onRows?.call(doneRows, totalRows);
+
+          for (
+            var start = 0;
+            start < library.cards.length;
+            start += chunkSize
+          ) {
+            final end = (start + chunkSize).clamp(0, library.cards.length);
+            final chunk = library.cards.sublist(start, end);
+            await database.batch((batch) {
+              batch.insertAll(database.sqliteBookCards, [
+                for (final card in chunk) cardCompanion(card),
+              ]);
+            });
+            doneRows += chunk.length;
+            onRows?.call(doneRows, totalRows);
+          }
+          for (
+            var start = 0;
+            start < library.assets.length;
+            start += chunkSize
+          ) {
+            final end = (start + chunkSize).clamp(0, library.assets.length);
+            final chunk = library.assets.sublist(start, end);
+            await database.batch((batch) {
+              batch.insertAll(database.sqliteBookAssets, [
+                for (final asset in chunk) assetCompanion(asset),
+              ]);
+            });
+            doneRows += chunk.length;
+            onRows?.call(doneRows, totalRows);
+          }
         });
       } catch (error) {
         // SqliteException carries the failing SQL statement and its bound
@@ -503,6 +604,7 @@ class BackupRestoreService {
 
   /// Copies managed resource directories into the payload and writes
   /// sanitized settings. Returns whether any settings file was restored.
+  /// [onFiles] reports copied versus total file counts for progress display.
   Future<bool> _stageFiles({
     required BackupLibraryData data,
     required _ValidatedLibrary library,
@@ -512,8 +614,14 @@ class BackupRestoreService {
     required Set<int> validBookIds,
     required List<String> warnings,
     required String separator,
+    void Function(int doneFiles, int totalFiles)? onFiles,
   }) async {
     var settingsIncluded = false;
+    var doneFiles = 0;
+    final totalFiles = formatVersion == 3
+        ? await _countFiles(extractedDirectory, separator)
+        : library.assets.length + (data.readerSession != null ? 1 : 0);
+    void reportProgress() => onFiles?.call(doneFiles, totalFiles);
 
     if (formatVersion == 3) {
       // Resource directories are copied verbatim; every file inside already
@@ -536,7 +644,10 @@ class BackupRestoreService {
             name,
           ], separator: separator),
         );
-        await _copyDirectoryRecursively(source, destination, separator);
+        await _copyDirectoryRecursively(source, destination, separator, () {
+          doneFiles++;
+          reportProgress();
+        });
       }
 
       final settingsSource = Directory(
@@ -574,6 +685,8 @@ class BackupRestoreService {
           separator,
         );
         settingsIncluded = true;
+        doneFiles++;
+        reportProgress();
       }
     } else {
       // v2 archives store book asset files at their recorded relativePath.
@@ -605,6 +718,8 @@ class BackupRestoreService {
           );
           await destination.parent.create(recursive: true);
           await source.copy(destination.path);
+          doneFiles++;
+          reportProgress();
         }
       }
 
@@ -620,9 +735,41 @@ class BackupRestoreService {
           separator,
         );
         settingsIncluded = true;
+        doneFiles++;
+        reportProgress();
       }
     }
     return settingsIncluded;
+  }
+
+  /// Counts regular files under the managed directories of the extracted v3
+  /// payload, for progress reporting.
+  Future<int> _countFiles(
+    Directory extractedDirectory,
+    String separator,
+  ) async {
+    var count = 0;
+    for (final name in const [
+      StorageLayout.bookAssetsDirectoryName,
+      StorageLayout.readerBackgroundsDirectoryName,
+      StorageLayout.appFontsDirectoryName,
+      'settings',
+    ]) {
+      final directory = Directory(
+        StorageLayout.joinPath([
+          extractedDirectory.path,
+          name,
+        ], separator: separator),
+      );
+      if (!await directory.exists()) continue;
+      await for (final entity in directory.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is File) count++;
+      }
+    }
+    return count;
   }
 
   Future<void> _writeSanitizedSettings(
@@ -680,8 +827,9 @@ class BackupRestoreService {
   Future<void> _copyDirectoryRecursively(
     Directory source,
     Directory destination,
-    String separator,
-  ) async {
+    String separator, [
+    void Function()? onFileCopied,
+  ]) async {
     await destination.create(recursive: true);
     await for (final entity in source.list(followLinks: false)) {
       final name = entity.path.replaceAll(r'\', '/').split('/').last;
@@ -691,11 +839,13 @@ class BackupRestoreService {
       ], separator: separator);
       if (entity is File) {
         await entity.copy(targetPath);
+        onFileCopied?.call();
       } else if (entity is Directory) {
         await _copyDirectoryRecursively(
           entity,
           Directory(targetPath),
           separator,
+          onFileCopied,
         );
       }
     }
