@@ -26,10 +26,10 @@
 
 ### 2.2 发现的问题
 
-**P2｜恢复尝试目录失败后不清理，累积消耗磁盘**  
+**P2｜恢复尝试目录失败后不清理，累积消耗磁盘**（已修复，见下）
 `BackupRestoreService.restore`（backup_restore_service.dart:103-124）：失败时 `recovery/attempts/<id>/`（含解压出的全部资源）保留用于诊断，但**没有任何后续清理或数量上限**。用户反复导入损坏/超限的备份（每次解压最多 4GB）会让 attempts 目录无限增长，最终把应用私有目录写满，恰好破坏「ZIP bomb 防护写满磁盘」想保护的东西。
 
-建议（后续提交）：每次 restore 开始时清理旧的失败 attempts（保留最近 1 个），或启动时清理。计划 §7.4 只规定了成功路径的清理。
+> **已修复（2026-08-15）**：新增 `BackupRestoreService.pruneRecoveryArtifacts`，每次 `restore()` 开始时清理旧失败 attempts 与旧 `pre-restore-*.zip`（后者是审查后发现的同类无界累积，一并修复）。细节：restore 入口清掉全部旧 attempt（本次即将成为最新现场），旧 pre-restore zip 保留最新 1 个作为恢复后回退点；`previous/` 非空的 attempt 跳过不删（swap 回滚也失败时可能是原库最后副本，防波及 P3 场景）；删除 best-effort 仅记日志。修复后 `recovery/` 占用收敛为常数。测试与实施记录见计划 §7.4 实施记录（2026-08-15，recovery 目录防累积）。
 
 **P3｜`_swapAtomically` 回滚的极端缺口**  
 回滚循环中「删除已放入 root 的条目」失败被吞掉（方向正确——previous 里的原件优先），但若此时「移回 previous 条目」也失败，root 会处于部分缺失状态。由于交换发生在 `closeLiveDatabase()` 之后且完成标记尚未刷新，下次启动 `decide()` 会走 `recoveryRequired`（数据库存在但 marker 计数失配，app_bootstrap_coordinator.dart:140-143），仍可由用户重试恢复兜底，故降为 P3。恢复/重试状态由迁移页面渲染（复用同一页面，无独立「恢复页面」）；建议在报告文案中保留「重启应用后按迁移页面指引操作」的提示即可，不需要代码改动。

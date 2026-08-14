@@ -46,6 +46,9 @@ void main() {
     );
   }
 
+  String baseNameOf(FileSystemEntity entity) =>
+      entity.path.replaceAll(r'\', '/').split('/').last;
+
   final bookCreatedAt = DateTime.utc(2026, 1, 1);
   final bookImportedAt = DateTime.utc(2026, 1, 2);
   final cardReadAt = DateTime.utc(2026, 2, 1);
@@ -866,5 +869,121 @@ void main() {
     expect(marker!.source, MigrationCompletionMarker.sourceMigration);
     expect(marker.sourceFingerprint, 'legacy-fingerprint');
     expect(marker.bookCount, 1, reason: 'counts must track the restore');
+  });
+
+  test(
+    'prune keeps only the newest failed attempt and skips previous holders',
+    () async {
+      final targetLayout = layoutFor('target-prune1');
+      await targetLayout.rootDirectory.create(recursive: true);
+      final recovery = targetLayout.recoveryDirectory;
+
+      // Fabricate leftover attempts from earlier failed restores.
+      Future<void> createAttempt(String id, {bool withPrevious = false}) async {
+        final directory = Directory('${recovery.path}/attempts/$id');
+        await directory.create(recursive: true);
+        if (withPrevious) {
+          final previous = Directory('${directory.path}/previous');
+          await previous.create(recursive: true);
+          await File('${previous.path}/fluidtext_library.sqlite')
+              .writeAsString('x');
+        } else {
+          await File('${directory.path}/extracted-marker').writeAsString('x');
+        }
+      }
+
+      await createAttempt('restore-1000000000000000', withPrevious: true);
+      await createAttempt('restore-2000000000000000');
+      await createAttempt('restore-3000000000000000');
+
+      await BackupRestoreService.pruneRecoveryArtifacts(targetLayout);
+
+      final remaining = await Directory('${recovery.path}/attempts')
+          .list()
+          .map(baseNameOf)
+          .toList();
+      // The newest attempt is kept for diagnostics; an older attempt whose
+      // previous/ still holds entries is never deleted — after a failed swap
+      // rollback it may be the last copy of the original library.
+      expect(remaining, contains('restore-1000000000000000'));
+      expect(remaining, isNot(contains('restore-2000000000000000')));
+      expect(remaining, contains('restore-3000000000000000'));
+    },
+  );
+
+  test('prune keeps only the newest pre-restore backup zip', () async {
+    final targetLayout = layoutFor('target-prune2');
+    await targetLayout.rootDirectory.create(recursive: true);
+    final recovery = targetLayout.recoveryDirectory;
+    await recovery.create(recursive: true);
+    for (final name in const [
+      'pre-restore-20260731-235959.zip',
+      'pre-restore-20260801-000000.zip',
+      'unrelated.zip',
+      'pre-restore-notes.txt',
+    ]) {
+      await File('${recovery.path}/$name').writeAsString('x');
+    }
+
+    await BackupRestoreService.pruneRecoveryArtifacts(targetLayout);
+
+    final names = await recovery.list().map(baseNameOf).toList();
+    // The newest insurance backup stays as the rollback point; unrelated
+    // files (including prefix matches without .zip) are untouched.
+    expect(names, isNot(contains('pre-restore-20260731-235959.zip')));
+    expect(names, contains('pre-restore-20260801-000000.zip'));
+    expect(names, contains('unrelated.zip'));
+    expect(names, contains('pre-restore-notes.txt'));
+  });
+
+  test('a failing restore prunes stale attempts and backups before staging',
+      () async {
+    final sourceLayout = layoutFor('source-prune3');
+    await sourceLayout.rootDirectory.create(recursive: true);
+    await seedDatabase(sourceLayout.sqliteDatabaseFile);
+    final snapshot = await snapshotOf(sourceLayout.sqliteDatabaseFile);
+    final payload = v2Payload(snapshot);
+    (payload['bookCards'] as List)
+            .cast<Map<String, dynamic>>()
+            .first['bookId'] =
+        777;
+    final backupFile = await writeJson('backup-prune3.json', payload);
+
+    final targetLayout = layoutFor('target-prune3');
+    await targetLayout.rootDirectory.create(recursive: true);
+    final recovery = targetLayout.recoveryDirectory;
+    final staleAttempt = Directory('${recovery.path}/attempts/restore-1');
+    await staleAttempt.create(recursive: true);
+    await File('${staleAttempt.path}/extracted-marker').writeAsString('x');
+    await File('${recovery.path}/pre-restore-20260731-235959.zip')
+        .writeAsString('x');
+    await File('${recovery.path}/pre-restore-20260801-000000.zip')
+        .writeAsString('x');
+
+    await expectLater(
+      const BackupRestoreService().restore(
+        backupFile: backupFile,
+        targetLayout: targetLayout,
+        closeLiveDatabase: defaultClose,
+      ),
+      throwsFormatException,
+    );
+
+    final attemptNames = await Directory('${recovery.path}/attempts')
+        .list()
+        .map(baseNameOf)
+        .toList();
+    // The stale attempt is gone; the fresh failure stays for diagnostics.
+    expect(attemptNames, hasLength(1));
+    expect(attemptNames.single, isNot('restore-1'));
+    expect(attemptNames.single, startsWith('restore-'));
+    expect(
+      await File('${recovery.path}/pre-restore-20260731-235959.zip').exists(),
+      isFalse,
+    );
+    expect(
+      await File('${recovery.path}/pre-restore-20260801-000000.zip').exists(),
+      isTrue,
+    );
   });
 }

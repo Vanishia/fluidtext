@@ -9,6 +9,7 @@ import '../../storage/json_file_store.dart';
 import '../../storage/sqlite/library_database.dart';
 import '../../storage/sqlite/sqlite_sealer.dart';
 import '../../storage/storage_layout.dart';
+import '../app_logger.dart';
 import '../diagnostic_sanitizer.dart';
 import 'backup_format.dart';
 import 'zip_security.dart';
@@ -89,6 +90,12 @@ class BackupRestoreService {
     }
     final warnings = <String>[];
 
+    // Failed attempts and superseded pre-restore backups would otherwise grow
+    // the recovery directory without bound (plan 7.4 only cleans up on
+    // success); prune before staging this attempt. Existing attempts are all
+    // stale — this attempt is about to become the newest one.
+    await pruneRecoveryArtifacts(targetLayout, keepNewestAttempts: 0);
+
     // 1. Detect the payload kind by extension and magic bytes.
     final attemptId =
         'restore-${DateTime.now().toUtc().microsecondsSinceEpoch}';
@@ -122,6 +129,112 @@ class BackupRestoreService {
         }
       }
       // On failure the attempt directory is kept for diagnostics.
+    }
+  }
+
+  /// Attempt ids are `restore-<utc microseconds>`: fixed-width digits, so
+  /// lexicographic order is chronological order.
+  static const _attemptIdPrefix = 'restore-';
+
+  static const _preRestoreBackupPrefix = 'pre-restore-';
+
+  /// Deletes failed restore attempt directories and superseded pre-restore
+  /// insurance backups, keeping the most recent of each — the newest failed
+  /// attempt for diagnostics, the newest pre-restore backup as the user's
+  /// rollback point after the latest restore. The restore entry point passes
+  /// [keepNewestAttempts] as 0 because its own attempt is about to become the
+  /// newest.
+  ///
+  /// Attempts whose `previous/` directory still holds entries are skipped:
+  /// after a swap whose rollback itself failed, `previous/` may be the last
+  /// copy of the original library. Deletion is best-effort — e.g. a locked
+  /// directory on Windows must not block the new restore.
+  static Future<void> pruneRecoveryArtifacts(
+    StorageLayout layout, {
+    int keepNewestAttempts = 1,
+  }) async {
+    try {
+      final separator = layout.pathSeparator;
+      final attemptsDirectory = Directory(
+        StorageLayout.joinPath([
+          layout.recoveryDirectory.path,
+          'attempts',
+        ], separator: separator),
+      );
+      if (await attemptsDirectory.exists()) {
+        final attemptNames = <String>[];
+        await for (final entity
+            in attemptsDirectory.list(followLinks: false)) {
+          if (entity is! Directory) continue;
+          final name = _baseNameOf(entity.path);
+          if (name.startsWith(_attemptIdPrefix)) attemptNames.add(name);
+        }
+        attemptNames.sort();
+        for (final name in attemptNames.take(
+          attemptNames.length - keepNewestAttempts,
+        )) {
+          final attemptDirectory = Directory(
+            StorageLayout.joinPath([
+              attemptsDirectory.path,
+              name,
+            ], separator: separator),
+          );
+          final previous = Directory(
+            StorageLayout.joinPath([
+              attemptDirectory.path,
+              'previous',
+            ], separator: separator),
+          );
+          if (await _isDirectoryNonEmpty(previous)) continue;
+          try {
+            await attemptDirectory.delete(recursive: true);
+          } catch (error) {
+            AppLogger.instance.warning(
+              'BackupRestore',
+              '清理旧恢复尝试目录失败：$name',
+              error: error,
+            );
+          }
+        }
+      }
+
+      // Pre-restore insurance backups accumulate the same way on repeated
+      // restores. The newest one is always kept: the bookshelf flow writes it
+      // right before calling restore, and it is the user's rollback point
+      // after the latest restore.
+      if (await layout.recoveryDirectory.exists()) {
+        final backupNames = <String>[];
+        await for (final entity
+            in layout.recoveryDirectory.list(followLinks: false)) {
+          if (entity is! File) continue;
+          final name = _baseNameOf(entity.path);
+          if (name.startsWith(_preRestoreBackupPrefix) &&
+              name.endsWith('.zip')) {
+            backupNames.add(name);
+          }
+        }
+        backupNames.sort();
+        for (final name in backupNames.take(backupNames.length - 1)) {
+          try {
+            await File(
+              StorageLayout.joinPath([
+                layout.recoveryDirectory.path,
+                name,
+              ], separator: separator),
+            ).delete();
+          } catch (error) {
+            AppLogger.instance.warning(
+              'BackupRestore',
+              '清理旧恢复前备份失败：$name',
+              error: error,
+            );
+          }
+        }
+      }
+    } catch (error) {
+      // Pruning must never block a restore.
+      AppLogger.instance.warning('BackupRestore', '清理 recovery 目录失败',
+          error: error);
     }
   }
 
@@ -832,7 +945,7 @@ class BackupRestoreService {
   ]) async {
     await destination.create(recursive: true);
     await for (final entity in source.list(followLinks: false)) {
-      final name = entity.path.replaceAll(r'\', '/').split('/').last;
+      final name = _baseNameOf(entity.path);
       final targetPath = StorageLayout.joinPath([
         destination.path,
         name,
@@ -1038,6 +1151,19 @@ class BackupRestoreService {
     final dot = normalized.lastIndexOf('.');
     if (dot == -1 || dot == normalized.length - 1) return '';
     return normalized.substring(dot + 1).toLowerCase();
+  }
+
+  /// The final path segment, separator-style agnostic.
+  static String _baseNameOf(String path) {
+    return path.replaceAll(r'\', '/').split('/').last;
+  }
+
+  static Future<bool> _isDirectoryNonEmpty(Directory directory) async {
+    if (!await directory.exists()) return false;
+    await for (final _ in directory.list(followLinks: false)) {
+      return true;
+    }
+    return false;
   }
 
   int? _timestampMs(Object? value) {
