@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -757,6 +758,17 @@ class BookImportException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Maps an import failure to a user-facing message. [BookImportException]
+/// messages are already written for users; anything else gets a generic hint
+/// while the technical detail stays in the log file / copied report.
+String describeBookImportError(Object error) {
+  if (error is BookImportException) return error.message;
+  if (error is FileSystemException) {
+    return '无法读取文件或写入应用存储，请检查存储空间是否充足后重试';
+  }
+  return '文件可能已损坏，或使用了暂不支持的格式。请确认这是有效的 EPUB 文件后重试';
 }
 
 /// Import diagnostics go through [AppLogger] so they land in the log file.

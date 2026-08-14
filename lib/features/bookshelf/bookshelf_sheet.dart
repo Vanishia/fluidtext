@@ -4,13 +4,16 @@ import 'dart:io';
 import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/book.dart';
 import '../../repositories/library_data_access.dart';
 import '../../repositories/library_repository.dart';
 import '../../migration/migration_state.dart';
+import '../../services/app_logger.dart';
 import '../../services/backup/backup_restore_service.dart';
 import '../../services/backup/pre_restore_backup.dart';
+import '../../services/book_import_service.dart';
 import '../../storage/storage_layout.dart';
 import '../../widgets/blocking_loader.dart';
 import '../../widgets/glass.dart';
@@ -28,6 +31,54 @@ Future<List<Book>?> showBookshelfSheet(
     backgroundColor: Colors.transparent,
     builder: (_) =>
         BookshelfSheet(initialSelectedBookIds: initialSelectedBookIds),
+  );
+}
+
+/// Shows a user-friendly import failure dialog. The technical detail stays
+/// out of the UI: it is already in the log file, and can be copied to the
+/// clipboard for a bug report.
+Future<void> showImportFailureDialog(
+  BuildContext context, {
+  required Object error,
+  required StackTrace stackTrace,
+}) {
+  return showDialog<void>(
+    context: context,
+    builder: (context) {
+      final theme = Theme.of(context);
+      return AlertDialog(
+        title: const Text('导入失败'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(describeBookImportError(error)),
+            const SizedBox(height: 10),
+            Text(
+              '详细错误已写入应用日志，反馈问题时可点击「复制详情」获取。',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(
+                ClipboardData(text: '$error\n\n$stackTrace'),
+              );
+              if (context.mounted) Navigator.of(context).pop();
+            },
+            child: const Text('复制详情'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('好'),
+          ),
+        ],
+      );
+    },
   );
 }
 
@@ -206,14 +257,19 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
             : '已导入《${imported.bookTitle}》 · ${imported.insertedCards} 张卡片';
       });
     } catch (error, stackTrace) {
-      developer.log(
-        'EPUB import failed in bookshelf sheet',
-        name: 'BookshelfSheet',
+      AppLogger.instance.error(
+        'BookshelfSheet',
+        'EPUB import failed',
         error: error,
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      setState(() => _status = '导入失败：$error');
+      setState(() => _status = '导入失败：${describeBookImportError(error)}');
+      await showImportFailureDialog(
+        context,
+        error: error,
+        stackTrace: stackTrace,
+      );
     } finally {
       if (mounted) {
         setState(() => _isBusy = false);
