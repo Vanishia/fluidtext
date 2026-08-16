@@ -45,6 +45,7 @@ void main() {
     Future<String?> Function()? backupFilePicker,
     Future<String> Function()? preRestoreBackup,
     Future<BackupRestoreResult> Function(File)? backupRestoreRunner,
+    Future<void> Function()? settingsReloader,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -54,6 +55,7 @@ void main() {
           backupFilePicker: backupFilePicker,
           preRestoreBackup: preRestoreBackup,
           backupRestoreRunner: backupRestoreRunner,
+          settingsReloader: settingsReloader,
         ),
       ),
     );
@@ -86,9 +88,10 @@ void main() {
     expect(restoreCalled, isFalse);
   });
 
-  testWidgets('恢复期间按钮禁用，成功后显示摘要文案', (tester) async {
+  testWidgets('恢复期间按钮禁用，成功后显示摘要文案并重载设置', (tester) async {
     final gate = Completer<BackupRestoreResult>();
     var insuranceCalled = false;
+    var settingsReloaded = false;
     await pumpSheet(
       tester,
       dataAccess: accessWith([_book(1, '测试书')]),
@@ -98,6 +101,9 @@ void main() {
         return '/tmp/pre-restore.zip';
       },
       backupRestoreRunner: (_) => gate.future,
+      settingsReloader: () async {
+        settingsReloaded = true;
+      },
     );
 
     await tester.tap(restoreButton());
@@ -115,6 +121,7 @@ void main() {
     await tester.pump();
     expect(find.text('已恢复备份（v3）：书籍 2 本 · 卡片 5 张 · 警告 0 条'), findsOneWidget);
     expect(tester.widget<IconButton>(restoreButton()).onPressed, isNotNull);
+    expect(settingsReloaded, isTrue);
   });
 
   testWidgets('空书库不弹确认直接恢复，v2 备份追加外观设置提示', (tester) async {
@@ -132,6 +139,7 @@ void main() {
         restoreCalled = true;
         return restoreResult(formatVersion: 2);
       },
+      settingsReloader: () async {},
     );
 
     await tester.tap(restoreButton());
@@ -182,6 +190,7 @@ void main() {
         restoreCalled = true;
         return restoreResult();
       },
+      settingsReloader: () async {},
     );
 
     await tester.tap(restoreButton());

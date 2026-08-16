@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../app_settings.dart';
 import '../../models/book.dart';
 import '../../repositories/library_data_access.dart';
 import '../../repositories/library_repository.dart';
@@ -92,6 +93,7 @@ class BookshelfSheet extends StatefulWidget {
     this.backupFilePicker,
     this.preRestoreBackup,
     this.backupRestoreRunner,
+    this.settingsReloader,
   });
 
   final List<int> initialSelectedBookIds;
@@ -104,6 +106,7 @@ class BookshelfSheet extends StatefulWidget {
   final Future<String> Function()? preRestoreBackup;
   final Future<BackupRestoreResult> Function(File backupFile)?
   backupRestoreRunner;
+  final Future<void> Function()? settingsReloader;
 
   @override
   State<BookshelfSheet> createState() => _BookshelfSheetState();
@@ -496,6 +499,11 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
         _repository = freshAccess.repository;
       });
       await _reloadBooks();
+      // The swap also replaced the appearance settings files (background,
+      // font, behavior). Reload the settings view model so the in-memory
+      // notifiers pick up the restored values live; otherwise a stale
+      // in-memory default could be saved back over the restored files.
+      await (widget.settingsReloader ?? initializeAppSettings)();
       if (!mounted) return;
 
       final legacyNote = result.formatVersion == 2
@@ -765,7 +773,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            '备份为 ZIP 格式，包含书库、外观设置与阅读背景；可导入 v2/v3 备份恢复',
+                            '备份为 ZIP 格式，包含书库、阅读数据、阅读背景与导入字体；可导入 v2/v3 备份，v2 旧备份不含阅读背景与字体',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: cs.onSurfaceVariant),
                           ),
