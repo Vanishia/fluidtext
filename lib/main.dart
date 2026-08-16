@@ -113,8 +113,12 @@ class _MyAppState extends State<MyApp> {
         final fallbackSeed = AppThemeSeedResolver.normalize(
           backgroundSettings.palette.color,
         );
+        // No key on purpose: a keyed FutureBuilder would recreate the whole
+        // MaterialApp subtree whenever the seed color changes (background
+        // switch), discarding Navigator and page state mid-session. Without
+        // the key the builder keeps the previous seed while the new future
+        // resolves, and the subtree state survives.
         return FutureBuilder<Color>(
-          key: ValueKey(_seedColorCacheKey),
           future: _seedColorFuture,
           initialData: fallbackSeed,
           builder: (context, seedSnapshot) {
