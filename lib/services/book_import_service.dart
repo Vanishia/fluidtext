@@ -1,5 +1,5 @@
-import 'dart:developer' as developer;
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -10,7 +10,9 @@ import 'package:html/parser.dart' as html_parser;
 import '../models/book_card.dart';
 import '../repositories/library_repository.dart';
 import '../repositories/library_snapshot.dart';
+import 'app_logger.dart';
 import 'book_asset_store.dart';
+import 'epub_html_decoder.dart';
 import 'text_splitter.dart';
 
 class BookImportResult {
@@ -27,6 +29,78 @@ class BookImportResult {
   final int insertedCards;
   final bool wasDuplicate;
   final String? matchedBy;
+}
+
+enum BookImportStage { parsing, readingChapters, buildingCards, writing }
+
+class BookImportProgress {
+  const BookImportProgress({
+    required this.stage,
+    this.completedUnits = 0,
+    this.totalUnits = 0,
+    this.producedCards = 0,
+  });
+
+  final BookImportStage stage;
+
+  /// Chapters processed in the current stage; meaningful only for
+  /// [BookImportStage.readingChapters] and [BookImportStage.buildingCards].
+  final int completedUnits;
+  final int totalUnits;
+  final int producedCards;
+
+  /// Determinate progress (0..1), or null when the total is unknown.
+  double? get fraction {
+    if (totalUnits <= 0) return null;
+    return (completedUnits / totalUnits).clamp(0.0, 1.0);
+  }
+}
+
+/// Mutable per-import progress tracker; forwards snapshots to the callback
+/// supplied to [BookImportService.importEpubBytes].
+class _ImportProgressReporter {
+  _ImportProgressReporter(this._emit);
+
+  final void Function(BookImportProgress progress)? _emit;
+
+  var _totalChapters = 0;
+  var _readChapters = 0;
+  var _packedChapters = 0;
+
+  void parsing() {
+    _emit?.call(const BookImportProgress(stage: BookImportStage.parsing));
+  }
+
+  void expectChapters(int total) {
+    _totalChapters = total;
+  }
+
+  void chapterRead() {
+    _readChapters += 1;
+    _emit?.call(
+      BookImportProgress(
+        stage: BookImportStage.readingChapters,
+        completedUnits: _readChapters,
+        totalUnits: _totalChapters,
+      ),
+    );
+  }
+
+  void chapterPacked(int producedCards) {
+    _packedChapters += 1;
+    _emit?.call(
+      BookImportProgress(
+        stage: BookImportStage.buildingCards,
+        completedUnits: _packedChapters,
+        totalUnits: _totalChapters,
+        producedCards: producedCards,
+      ),
+    );
+  }
+
+  void writing() {
+    _emit?.call(const BookImportProgress(stage: BookImportStage.writing));
+  }
 }
 
 class BookImportService {
@@ -92,8 +166,10 @@ class BookImportService {
     required Uint8List bytes,
     String? sourceFileName,
     int targetCharsPerCard = 300,
+    void Function(BookImportProgress progress)? onProgress,
   }) async {
-    developer.log(
+    final progressReporter = _ImportProgressReporter(onProgress)..parsing();
+    _logImport(
       'Starting EPUB import: bytes=${bytes.length}, targetCharsPerCard=$targetCharsPerCard',
       name: 'BookImportService',
     );
@@ -103,7 +179,7 @@ class BookImportService {
     try {
       epub = await EpubReader.openBook(bytes);
     } catch (error, stackTrace) {
-      developer.log(
+      _logImport(
         'Failed to parse EPUB package',
         name: 'BookImportService',
         error: error,
@@ -124,12 +200,16 @@ class BookImportService {
         assetRootKey: stagedAssetRootKey,
         report: report,
       );
-      final chapters = await _readAvailableChapters(epub, report: report);
+      final chapters = await _readAvailableChapters(
+        epub,
+        report: report,
+        progress: progressReporter,
+      );
       _throwIfTooManyChaptersSkipped(report);
       final contentTextFiles = epub.content?.html.length ?? 0;
       final contentImageFiles = imageIndex.assetCount;
       final contentAllFiles = epub.content?.allFiles.length ?? 0;
-      developer.log(
+      _logImport(
         'Parsed EPUB metadata: title="$title", topLevelChapters=${chapters.length}, htmlFiles=$contentTextFiles, imageFiles=$contentImageFiles, allFiles=$contentAllFiles',
         name: 'BookImportService',
       );
@@ -142,6 +222,7 @@ class BookImportService {
           report: report,
         ),
         targetCharsPerCard: targetCharsPerCard,
+        progress: progressReporter,
       );
       _throwIfTooManyChaptersSkipped(report);
       late final _ImportDraft draft;
@@ -153,6 +234,7 @@ class BookImportService {
           title: title,
           chapters: _legacyChapterContents(chapters, report: report),
           targetCharsPerCard: targetCharsPerCard,
+          progress: progressReporter,
         );
       }
       if (draft.cards.isEmpty) {
@@ -176,6 +258,7 @@ class BookImportService {
         );
       }
 
+      progressReporter.writing();
       final imported = await repository.importBookDraft(
         ImportBookDraft(
           title: title,
@@ -206,7 +289,7 @@ class BookImportService {
       );
       retainStagedAssets = assetRootKey != null && !imported.wasDuplicate;
 
-      developer.log(
+      _logImport(
         'Finished EPUB import: bookId=${imported.book.id}, insertedCards=${imported.insertedCards}, duplicate=${imported.wasDuplicate}',
         name: 'BookImportService',
       );
@@ -303,7 +386,7 @@ class BookImportService {
         rethrow;
       } catch (error, stackTrace) {
         report.rememberImageError(imageRef.fileName ?? entry.key, error);
-        developer.log(
+        _logImport(
           'Skipping EPUB image that cannot be read: href="${imageRef.fileName ?? entry.key}"',
           name: 'BookImportService',
           error: error,
@@ -324,12 +407,13 @@ class BookImportService {
   Future<List<EpubChapter>> _readAvailableChapters(
     EpubBookRef epub, {
     required _ImportToleranceReport report,
+    required _ImportProgressReporter progress,
   }) async {
     late final List<EpubChapterRef> chapterRefs;
     try {
       chapterRefs = epub.getChapters();
     } catch (error, stackTrace) {
-      developer.log(
+      _logImport(
         'Failed to read EPUB chapter navigation',
         name: 'BookImportService',
         error: error,
@@ -340,22 +424,37 @@ class BookImportService {
       );
     }
 
-    return _readAvailableChapterRefs(chapterRefs, report: report);
+    progress.expectChapters(_countChapterRefs(chapterRefs));
+    return _readAvailableChapterRefs(
+      chapterRefs,
+      report: report,
+      progress: progress,
+    );
+  }
+
+  int _countChapterRefs(List<EpubChapterRef> refs) {
+    var count = 0;
+    for (final ref in refs) {
+      count += 1 + _countChapterRefs(ref.subChapters);
+    }
+    return count;
   }
 
   Future<List<EpubChapter>> _readAvailableChapterRefs(
     List<EpubChapterRef> refs, {
     required _ImportToleranceReport report,
+    required _ImportProgressReporter progress,
   }) async {
     final chapters = <EpubChapter>[];
 
     for (final ref in refs) {
       report.seenChapters += 1;
       try {
-        final htmlContent = await ref.readHtmlContent();
+        final htmlContent = await _readChapterHtml(ref);
         final subChapters = await _readAvailableChapterRefs(
           ref.subChapters,
           report: report,
+          progress: progress,
         );
         final chapter = EpubChapter(
           title: ref.title,
@@ -368,7 +467,7 @@ class BookImportService {
       } catch (error, stackTrace) {
         report.skippedChapters += 1;
         report.rememberChapterError(ref.title ?? '', error);
-        developer.log(
+        _logImport(
           'Skipping EPUB chapter that cannot be read: title="${(ref.title ?? '').trim().isEmpty ? '(untitled)' : ref.title}"',
           name: 'BookImportService',
           error: error,
@@ -377,19 +476,43 @@ class BookImportService {
 
         if (ref.subChapters.isNotEmpty) {
           chapters.addAll(
-            await _readAvailableChapterRefs(ref.subChapters, report: report),
+            await _readAvailableChapterRefs(
+              ref.subChapters,
+              report: report,
+              progress: progress,
+            ),
           );
         }
+      } finally {
+        progress.chapterRead();
       }
     }
 
     return chapters;
   }
 
+  /// Reads a chapter as strict UTF-8 (epub_plus behaviour); files that fail
+  /// UTF-8 decoding are retried with legacy-charset fallbacks so GBK EPUBs
+  /// do not lose whole chapters.
+  Future<String> _readChapterHtml(EpubChapterRef ref) async {
+    try {
+      return await ref.readHtmlContent();
+    } on FormatException {
+      final bytes = await ref.epubTextContentFileRef?.readContentAsBytes();
+      if (bytes == null) rethrow;
+      _logImport(
+        'Recovering non-UTF8 EPUB chapter via encoding fallback: title="${(ref.title ?? '').trim().isEmpty ? '(untitled)' : ref.title}"',
+        name: 'BookImportService',
+      );
+      return decodeHtmlBytesLossy(bytes);
+    }
+  }
+
   _ImportDraft _buildImportDraft({
     required String title,
     required Iterable<_ChapterContent> chapters,
     required int targetCharsPerCard,
+    required _ImportProgressReporter progress,
   }) {
     final cards = <BookCard>[];
     final assets = <String, _ImageAssetDraft>{};
@@ -398,7 +521,7 @@ class BookImportService {
     var textCharCount = 0;
 
     for (final chapter in chapters) {
-      developer.log(
+      _logImport(
         'Processing chapter[$chapterIndex]: textLength=${chapter.textCharCount}, images=${chapter.imageCount}',
         name: 'BookImportService',
       );
@@ -427,10 +550,11 @@ class BookImportService {
         chapterCards++;
       }
 
-      developer.log(
+      _logImport(
         'Packed chapter[$chapterIndex] into $chapterCards cards',
         name: 'BookImportService',
       );
+      progress.chapterPacked(cards.length);
 
       if (chapterCards > 0) {
         chapterIndex++;
@@ -449,6 +573,7 @@ class BookImportService {
     required String title,
     required Iterable<_LegacyChapterContent> chapters,
     required int targetCharsPerCard,
+    required _ImportProgressReporter progress,
   }) {
     final cards = <BookCard>[];
     var cardIndex = 0;
@@ -456,7 +581,7 @@ class BookImportService {
     var textCharCount = 0;
 
     for (final chapter in chapters) {
-      developer.log(
+      _logImport(
         'Processing legacy chapter[$chapterIndex]: textLength=${chapter.text.length}',
         name: 'BookImportService',
       );
@@ -487,10 +612,11 @@ class BookImportService {
         chapterCards++;
       }
 
-      developer.log(
+      _logImport(
         'Split legacy chapter[$chapterIndex] into $pieceCount pieces, $chapterCards non-empty cards',
         name: 'BookImportService',
       );
+      progress.chapterPacked(cards.length);
 
       if (chapterCards > 0) {
         chapterIndex++;
@@ -515,7 +641,7 @@ class BookImportService {
       final html = chapter.htmlContent;
       final contentFileName = chapter.contentFileName;
       final chapterTitle = (chapter.title ?? '').trim();
-      developer.log(
+      _logImport(
         'Inspecting chapter node[$index]: title="${chapterTitle.isEmpty ? '(untitled)' : chapterTitle}", htmlLength=${html?.length ?? 0}, subChapters=${chapter.subChapters.length}',
         name: 'BookImportService',
       );
@@ -533,7 +659,7 @@ class BookImportService {
         } catch (error, stackTrace) {
           report.skippedChapters += 1;
           report.rememberChapterError(chapterTitle, error);
-          developer.log(
+          _logImport(
             'Skipping EPUB chapter after parse failure: title="${chapterTitle.isEmpty ? '(untitled)' : chapterTitle}"',
             name: 'BookImportService',
             error: error,
@@ -558,7 +684,7 @@ class BookImportService {
         };
 
         if (textCharCount > 0 || imageAssets.isNotEmpty) {
-          developer.log(
+          _logImport(
             'Yielding chapter node[$index] textLength=$textCharCount, images=${imageAssets.length}',
             name: 'BookImportService',
           );
@@ -570,13 +696,13 @@ class BookImportService {
             imageCount: imageAssets.length,
           );
         } else {
-          developer.log(
+          _logImport(
             'Chapter node[$index] produced empty content after HTML parsing',
             name: 'BookImportService',
           );
         }
       } else {
-        developer.log(
+        _logImport(
           'Chapter node[$index] has empty htmlContent',
           name: 'BookImportService',
         );
@@ -608,7 +734,7 @@ class BookImportService {
           text = document.body?.text ?? document.documentElement?.text ?? '';
         } catch (error, stackTrace) {
           report.rememberChapterError(chapterTitle, error);
-          developer.log(
+          _logImport(
             'Skipping legacy EPUB chapter after parse failure: title="${chapterTitle.isEmpty ? '(untitled)' : chapterTitle}"',
             name: 'BookImportService',
             error: error,
@@ -759,6 +885,35 @@ class BookImportException implements Exception {
   String toString() => message;
 }
 
+/// Maps an import failure to a user-facing message. [BookImportException]
+/// messages are already written for users; anything else gets a generic hint
+/// while the technical detail stays in the log file / copied report.
+String describeBookImportError(Object error) {
+  if (error is BookImportException) return error.message;
+  if (error is FileSystemException) {
+    return '无法读取文件或写入应用存储，请检查存储空间是否充足后重试';
+  }
+  return '文件可能已损坏，或使用了暂不支持的格式。请确认这是有效的 EPUB 文件后重试';
+}
+
+/// Import diagnostics go through [AppLogger] so they land in the log file.
+/// Call sites carrying an [error] are warnings (tolerated and skipped);
+/// fatal failures surface as the thrown [BookImportException].
+void _logImport(
+  String message, {
+  String? name,
+  Object? error,
+  StackTrace? stackTrace,
+}) {
+  final logger = AppLogger.instance;
+  final tag = name ?? 'BookImportService';
+  if (error != null) {
+    logger.warning(tag, message, error: error, stackTrace: stackTrace);
+  } else {
+    logger.info(tag, message);
+  }
+}
+
 class _ImportToleranceReport {
   int seenChapters = 0;
   int skippedChapters = 0;
@@ -875,10 +1030,12 @@ class _CardDraft {
 
 class _CardBlockPacker {
   _CardBlockPacker({required this.targetChars})
-    : minTextBeforeImageBreak = (targetChars * 2 / 3).round();
+    : minTextBeforeImageBreak = (targetChars * 2 / 3).round(),
+      _lengthPolicy = CardLengthPolicy(targetChars: targetChars);
 
   final int targetChars;
   final int minTextBeforeImageBreak;
+  final CardLengthPolicy _lengthPolicy;
   static const maxImagesPerCard = 2;
 
   final List<_CardBlockDraft> _blocks = <_CardBlockDraft>[];
@@ -910,7 +1067,7 @@ class _CardBlockPacker {
       _textBuffer.write(character);
       _textChars += 1;
 
-      if (_textChars >= targetChars && _isBoundary(character)) {
+      if (_lengthPolicy.shouldBreak(_textChars, character)) {
         _flushCard(cards);
       }
     }
@@ -977,10 +1134,6 @@ class _CardBlockPacker {
   bool get _hasCurrentContent =>
       _blocks.isNotEmpty || _textBuffer.toString().trim().isNotEmpty;
 
-  bool _isBoundary(String character) {
-    return TextSplitterBoundary.characters.contains(character);
-  }
-
   String _tidyCardText(String text) {
     return text
         .replaceAll(RegExp(r'[ \t]+\n'), '\n')
@@ -1040,12 +1193,6 @@ class _CardBlockDraft {
   }
 }
 
-class TextSplitterBoundary {
-  const TextSplitterBoundary._();
-
-  static const characters = {'。', '！', '？', '.', '!', '?', '\n'};
-}
-
 class _ImageAssetDraft {
   const _ImageAssetDraft({
     required this.assetKey,
@@ -1098,7 +1245,7 @@ class _EpubImageIndex {
         _resolveBySuffix(normalized);
     if (asset == null) {
       report.rememberMissingImage(href);
-      developer.log(
+      _logImport(
         'Skipping unresolved EPUB image: href="$href", normalized="$normalized"',
         name: 'BookImportService',
       );
@@ -1199,7 +1346,7 @@ class _EpubImageIndex {
       return Uri.decodeFull(href);
     } catch (error) {
       report.rememberImageError(href, error);
-      developer.log(
+      _logImport(
         'Using undecoded EPUB image href after decode failure: href="$href"',
         name: 'BookImportService',
         error: error,

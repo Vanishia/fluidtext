@@ -294,6 +294,29 @@ class AppStorageResolver {
     return const AppStorageResolver().targetLayout();
   }
 
+  static StorageLayoutProvider _activeRuntimeLayoutProvider =
+      legacyRuntimeLayout;
+
+  /// The storage layout services and databases use at runtime.
+  ///
+  /// Defaults to the legacy layout so existing tests and the pre-migration
+  /// startup path keep working; the bootstrap coordinator switches it to
+  /// [targetRuntimeLayout] before the normal app starts.
+  static Future<StorageLayout> activeRuntimeLayout() {
+    return _activeRuntimeLayoutProvider();
+  }
+
+  static void useActiveRuntimeLayout(StorageLayoutProvider provider) {
+    _activeRuntimeLayoutProvider = provider;
+  }
+
+  /// Restores the legacy default. Only for tests and the forced-Isar
+  /// rollback path.
+  @visibleForTesting
+  static void resetActiveRuntimeLayout() {
+    _activeRuntimeLayoutProvider = legacyRuntimeLayout;
+  }
+
   Future<StorageLayout> legacyLayout() async {
     return StorageLayout.legacy(
       documentsDirectory: await documentsDirectoryProvider(),
@@ -346,6 +369,14 @@ class SafeRelativePath {
 
 class StoragePathSafety {
   const StoragePathSafety._();
+
+  /// Whether [path] is an absolute path on either Windows or POSIX style
+  /// (drive letter, UNC or leading separator).
+  static bool isAbsolutePath(String path) {
+    final normalized = path.replaceAll(r'\', '/');
+    return normalized.startsWith('/') ||
+        RegExp(r'^[A-Za-z]:/').hasMatch(normalized);
+  }
 
   static SafeRelativePath parseRelativePath(
     String relativePath, {

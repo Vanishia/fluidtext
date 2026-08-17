@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart' hide isNull;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluidtext/repositories/library_snapshot.dart';
 import 'package:fluidtext/storage/sqlite/library_database.dart';
 import 'package:fluidtext/storage/sqlite/sqlite_library_repository.dart';
 import 'package:fluidtext/storage/storage_layout.dart';
@@ -117,9 +118,92 @@ void main() {
   });
 
   test(
-    'SQLite file database opens through StorageLayout and reopens cleanly',
+    'SQLite import leaves no partial book when the batch write fails',
     () async {
-      final directory = await Directory.systemTemp.createTemp(
+      final driver = await _SqliteRepositoryDriver.create();
+      addTearDown(driver.close);
+      final repository = driver.repository;
+
+      // Duplicate (book_id, card_index) inside one draft violates the UNIQUE
+      // constraint halfway through the batch insert; the whole import
+      // transaction must roll back so no half-imported book survives.
+      const cards = [
+        BookCardDraft(
+          bookTitle: 'Broken import',
+          cardIndex: 0,
+          chapterIndex: 0,
+          chapterCardIndex: 0,
+          chapterTitle: null,
+          content: 'First card',
+          blocksJson: null,
+        ),
+        BookCardDraft(
+          bookTitle: 'Broken import',
+          cardIndex: 0,
+          chapterIndex: 0,
+          chapterCardIndex: 1,
+          chapterTitle: null,
+          content: 'Conflicting card',
+          blocksJson: null,
+        ),
+      ];
+      final draft = ImportBookDraft(
+        title: 'Broken import',
+        createdAt: DateTime(2026, 8, 13),
+        fileHash: 'broken-import-file-hash',
+        contentFingerprint: 'broken-import-fingerprint',
+        sourceFileName: 'broken.epub',
+        importedAt: DateTime(2026, 8, 13),
+        cardCount: cards.length,
+        textCharCount: 24,
+        assetRootKey: 'asset_broken_import',
+        cards: cards,
+        assets: const [
+          BookAssetDraft(
+            assetKey: 'broken-asset',
+            originalHref: null,
+            normalizedHref: null,
+            mimeType: 'image/png',
+            relativePath:
+                'book_assets/asset_broken_import/images/broken.png',
+            byteLength: 12,
+          ),
+        ],
+      );
+
+      await expectLater(
+        repository.importBookDraft(draft),
+        throwsA(isA<SqliteException>()),
+      );
+
+      final books = await repository.loadBooks();
+      expect(
+        books.where((book) => book.title == 'Broken import'),
+        isEmpty,
+      );
+      expect(
+        await driver.database.customSelect(
+          'SELECT COUNT(*) AS count FROM book_cards WHERE book_title = ?',
+          variables: [Variable<String>('Broken import')],
+          readsFrom: {driver.database.sqliteBookCards},
+        ).getSingle().then((row) => row.read<int>('count')),
+        0,
+      );
+      expect(
+        await driver.database.customSelect(
+          'SELECT COUNT(*) AS count FROM book_assets WHERE asset_key = ?',
+          variables: [Variable<String>('broken-asset')],
+          readsFrom: {driver.database.sqliteBookAssets},
+        ).getSingle().then((row) => row.read<int>('count')),
+        0,
+      );
+      expect(await driver.database.integrityCheck(), ['ok']);
+    },
+  );
+
+  test(
+    'SQLite file database opens through StorageLayout and reopens cleanly',
+    () async {      final directory = await Directory.systemTemp.createTemp(
         'fluidtext-sqlite-layout-',
       );
       LibraryDatabase? reopened;
@@ -152,6 +236,79 @@ void main() {
       expect(await reopened.integrityCheck(), ['ok']);
     },
   );
+
+  test('pruneIncompleteBooks removes half-imported books only', () async {
+    final driver = await _SqliteRepositoryDriver.create();
+    addTearDown(driver.close);
+
+    // Seeded book 1: 3 cards, no recorded count → legacy, judged complete.
+    // Seeded book 2: 0 cards → broken, must be pruned.
+    // Book 3: recorded 5 cards but only 1 stored → half-imported.
+    await driver.database.transaction(() async {
+      await driver.database
+          .into(driver.database.sqliteBooks)
+          .insert(
+            SqliteBooksCompanion.insert(
+              id: const Value(3),
+              title: 'Half imported',
+              createdAtMs: DateTime(2026, 3).millisecondsSinceEpoch,
+              cardCount: const Value(5),
+            ),
+          );
+      await driver.database
+          .into(driver.database.sqliteBookCards)
+          .insert(
+            SqliteBookCardsCompanion.insert(
+              id: const Value(30),
+              bookId: 3,
+              bookTitle: 'Half imported',
+              cardIndex: 0,
+              chapterIndex: 0,
+              chapterCardIndex: 0,
+              content: 'surviving card',
+              isRead: false,
+              isFavorite: false,
+            ),
+          );
+    });
+
+    final pruned = await driver.repository.pruneIncompleteBooks();
+
+    expect(
+      pruned.map((book) => book.id),
+      containsAll(<int>[_SqliteRepositoryDriver._secondBookId, 3]),
+    );
+    expect(
+      pruned.map((book) => book.id),
+      isNot(contains(_SqliteRepositoryDriver._firstBookId)),
+    );
+    final remaining = await driver.repository.loadBooks();
+    expect(
+      remaining.map((book) => book.id),
+      [_SqliteRepositoryDriver._firstBookId],
+    );
+    expect(await driver.database.integrityCheck(), ['ok']);
+  });
+
+  test('pruneIncompleteBooks keeps complete books with recorded counts', () async {
+    final driver = await _SqliteRepositoryDriver.create();
+    addTearDown(driver.close);
+
+    // Book 1 has 3 cards; record the matching count and clean up book 2
+    // (0 cards) so only the complete book remains.
+    await (driver.database.update(
+      driver.database.sqliteBooks,
+    )..where((table) => table.id.equals(_SqliteRepositoryDriver._firstBookId)))
+        .write(const SqliteBooksCompanion(cardCount: Value(3)));
+    await driver.database.customStatement('DELETE FROM books WHERE id = ?', [
+      _SqliteRepositoryDriver._secondBookId,
+    ]);
+
+    final pruned = await driver.repository.pruneIncompleteBooks();
+
+    expect(pruned, isEmpty);
+    expect(await driver.repository.loadBooks(), hasLength(1));
+  });
 }
 
 class _SqliteRepositoryDriver implements LibraryRepositoryContractDriver {

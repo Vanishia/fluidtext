@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../app_settings.dart';
 import '../../models/book.dart';
 import '../../repositories/library_data_access.dart';
+import '../../repositories/library_repository.dart';
+import '../../services/app_logger.dart';
 import '../../services/reader_session_service.dart';
 import '../reader/reader_page.dart';
 import '../reader/reader_background_settings.dart';
@@ -12,26 +14,61 @@ import '../settings/reader_background_sheet.dart';
 import 'bookshelf_sheet.dart';
 
 class LaunchState {
-  const LaunchState({this.restoredBooks, this.statusMessage});
+  const LaunchState({
+    this.restoredBooks,
+    this.statusMessage,
+    this.prunedBookTitles = const <String>[],
+  });
 
   final List<Book>? restoredBooks;
   final String? statusMessage;
+
+  /// Titles of half-imported books that were cleaned up at launch; when
+  /// non-empty the page prompts the user to re-import them.
+  final List<String> prunedBookTitles;
 }
 
 Future<LaunchState> loadLaunchState() async {
+  final repository = (await LibraryDataAccess.instance).repository;
+  final prunedBookTitles = await _pruneIncompleteImports(repository);
+
   final savedBookIds = await ReaderSessionService.instance
       .loadLastOpenedBookIds();
   if (savedBookIds.isEmpty) {
-    return const LaunchState();
+    return LaunchState(prunedBookTitles: prunedBookTitles);
   }
 
-  final repository = (await LibraryDataAccess.instance).repository;
   final savedBooks = await repository.loadBooksByIds(savedBookIds);
   if (savedBooks.isEmpty) {
-    return const LaunchState(statusMessage: '未找到上次阅读的书籍，请重新选择。');
+    return LaunchState(
+      statusMessage: '未找到上次阅读的书籍，请重新选择。',
+      prunedBookTitles: prunedBookTitles,
+    );
   }
 
-  return LaunchState(restoredBooks: List<Book>.unmodifiable(savedBooks));
+  return LaunchState(
+    restoredBooks: List<Book>.unmodifiable(savedBooks),
+    prunedBookTitles: prunedBookTitles,
+  );
+}
+
+/// Removes books left half-imported by a killed process; best effort — a
+/// failure here must not block startup.
+Future<List<String>> _pruneIncompleteImports(
+  LibraryRepository repository,
+) async {
+  try {
+    final pruned = await repository.pruneIncompleteBooks();
+    return [for (final book in pruned) book.title];
+  } catch (error, stackTrace) {
+    AppLogger.instance.warning(
+      'LaunchPage',
+      'Failed to prune incomplete imported books',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    return const <String>[];
+  }
 }
 
 class LaunchPage extends StatefulWidget {
@@ -58,6 +95,13 @@ class _LaunchPageState extends State<LaunchPage> {
     super.initState();
     _restoredBooks = widget.initialState.restoredBooks;
     _statusMessage = widget.initialState.statusMessage;
+    if (widget.initialState.prunedBookTitles.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showPrunedBooksDialog(widget.initialState.prunedBookTitles);
+        }
+      });
+    }
     if (widget.resumeLastSession && _restoredBooks == null) {
       _isLoading = true;
       _restoreSession();
@@ -73,6 +117,28 @@ class _LaunchPageState extends State<LaunchPage> {
       _restoredBooks = state.restoredBooks;
       _statusMessage = state.statusMessage;
     });
+    if (state.prunedBookTitles.isNotEmpty) {
+      _showPrunedBooksDialog(state.prunedBookTitles);
+    }
+  }
+
+  void _showPrunedBooksDialog(List<String> titles) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('已清理未完成导入的书籍'),
+        content: Text(
+          '上次导入中途被中断，以下书籍不完整，已自动清理，请重新导入：\n'
+          '${titles.map((title) => '《$title》').join('、')}',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('好'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _openBookshelf() async {

@@ -10,7 +10,7 @@ import '../storage/storage_layout.dart';
 
 class IsarDb {
   IsarDb({StorageLayoutProvider? storageLayout, BookAssetStore? assetStore})
-    : _storageLayout = storageLayout ?? AppStorageResolver.legacyRuntimeLayout,
+    : _storageLayout = storageLayout ?? AppStorageResolver.activeRuntimeLayout,
       _assetStore = assetStore;
 
   static final IsarDb instance = IsarDb();
@@ -24,6 +24,16 @@ class IsarDb {
     if (existing != null && existing.isOpen) return existing;
 
     final layout = await _storageLayout();
+    if (!layout.usesLegacyRuntimeLocations) {
+      // The forced-Isar rollback path resets the active layout to legacy
+      // before reaching this getter. Opening Isar inside the new (target)
+      // data directory would silently create an empty `default.isar` there,
+      // so refuse loudly instead.
+      throw StateError(
+        '禁止在新数据目录打开 Isar：active 布局不是 legacy 运行时位置 '
+        '(${layout.libraryDatabaseDirectory.path})',
+      );
+    }
     final opened = await Isar.open(
       [BookSchema, BookAssetSchema, BookCardSchema],
       directory: layout.libraryDatabaseDirectory.path,

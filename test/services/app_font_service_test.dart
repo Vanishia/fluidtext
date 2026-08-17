@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -106,5 +107,49 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('persists managed fonts as relative paths and reloads them', () async {
+    final imported = await createService(
+      picked: PlatformFile(
+        name: 'relative.ttf',
+        path: pickedFont.path,
+        size: await pickedFont.length(),
+      ),
+    ).importFont(const AppFontSettings.system());
+
+    final stored =
+        jsonDecode(
+              await File(
+                '${supportDirectory.path}${Platform.pathSeparator}'
+                'app_font_settings.json',
+              ).readAsString(),
+            )
+            as Map<String, dynamic>;
+    expect(stored['fontPath'], startsWith('app_fonts/'));
+
+    registeredFamilies.clear();
+    final restored = await createService().load();
+
+    expect(restored.usesCustomFont, isTrue);
+    expect(restored.fontFamily, imported!.fontFamily);
+    // Consumers use fontPath directly, so load resolves it back.
+    expect(restored.fontPath, imported.fontPath);
+    expect(registeredFamilies, <String>[imported.fontFamily!]);
+  });
+
+  test('falls back to system when the relative font file is gone', () async {
+    final imported = await createService(
+      picked: PlatformFile(
+        name: 'gone.ttf',
+        path: pickedFont.path,
+        size: await pickedFont.length(),
+      ),
+    ).importFont(const AppFontSettings.system());
+    await File(imported!.fontPath!).delete();
+
+    final restored = await createService().load();
+
+    expect(restored.usesCustomFont, isFalse);
   });
 }

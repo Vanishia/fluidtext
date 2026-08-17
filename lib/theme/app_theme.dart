@@ -1,8 +1,8 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../features/reader/reader_background_settings.dart';
 
@@ -82,6 +82,22 @@ class AppThemeSeedResolver {
         )
         .color;
   }
+}
+
+/// System bar style shared by the normal and migration app trees: transparent
+/// status and navigation bars so the page background shows through.
+SystemUiOverlayStyle systemUiOverlayStyleForTheme(ThemeData theme) {
+  final isDark = theme.brightness == Brightness.dark;
+  return (isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+      .copyWith(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarDividerColor: Colors.transparent,
+        systemNavigationBarIconBrightness: isDark
+            ? Brightness.light
+            : Brightness.dark,
+        systemNavigationBarContrastEnforced: false,
+      );
 }
 
 ThemeData buildAppTheme({

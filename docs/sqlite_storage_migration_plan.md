@@ -1,10 +1,10 @@
 # FluidText SQLite 与应用数据目录迁移计划
 
-> 文档状态：实施前计划  
-> 编写日期：2026-08-12  
+> 文档状态：阶段一至六已实施（分支 codex/sqlite-migration）  
+> 编写日期：2026-08-12（实施记录持续追加）  
 > 适用平台：Windows、Android  
 > 当前正式版本基线：`1.0.0`  
-> 本文只规划改动，不包含 SQLite、迁移页面或备份恢复的实际实现。
+> 正文为设计规划；各阶段的「实施记录」引用块与附录 A 记录实际落地情况，如有出入以实施记录为准。原《SQLite Migration Phase 1 Baseline Notes》已于 2026-08-15 并入附录 A，单独文件不再维护。
 
 ## 1. 背景与目标
 
@@ -113,7 +113,7 @@ loadLaunchState()
 
 `loadLaunchState()` 会读取阅读会话，并可能通过 `LibraryDataAccess.instance` 打开主 Isar。如果保持该顺序，迁移页面显示前就可能打开或修改旧库，也可能让资源清理提前运行。
 
-迁移版必须增加统一的 `AppBootstrapCoordinator`：先确定存储环境和迁移状态，再决定显示迁移页面、恢复页面或正常应用；迁移未完成前禁止创建正常的 `LibraryDataAccess`。
+迁移版必须增加统一的 `AppBootstrapCoordinator`：先确定存储环境和迁移状态，再决定显示迁移页面（恢复/重试状态复用同一页面，见阶段四实施记录）或正常应用；迁移未完成前禁止创建正常的 `LibraryDataAccess`。
 
 ### 3.4 当前 EPUB 导入性能特点
 
@@ -358,7 +358,7 @@ Drift 的 `schemaVersion` 是唯一 schema migration 来源；`storage_metadata`
 | 有可信旧数据、无完整 SQLite | 显示迁移页面 |
 | 有 staging 或上次失败状态 | 显示恢复/重试状态，不打开 staging 作为正式库 |
 | 新旧数据共存且迁移标记有效 | 使用 SQLite，保留旧数据作为回滚备份 |
-| SQLite 存在但校验或标记不完整 | 禁止正常启动，进入恢复页面 |
+| SQLite 存在但校验或标记不完整 | 禁止正常启动，进入迁移页面的恢复模式 |
 
 在迁移状态判定完成前，不得初始化会写回默认值的设置服务、阅读会话服务、字体/背景服务或普通 Repository。设置加载如果需要参与迁移页主题，只能以只读 legacy snapshot 方式读取；任何“读取失败后写默认值”的自愈逻辑必须等正常 SQLite 启动后再启用。
 
@@ -445,7 +445,7 @@ Windows 的 `default.isar` 不能仅凭文件名认定为 FluidText 数据。可
 - 主按钮二：`开始迁移`，默认在备份成功后启用。
 - 为避免文件选择器或磁盘问题永久阻塞用户，可提供较弱的 `跳过备份并继续`，必须二次确认“旧数据仍会保留，但没有额外 ZIP 备份”。
 - 迁移进行中禁止关闭页面内操作，但不能假设操作系统不会杀进程；真正的安全性由 staging 和完成标记保证。
-- 迁移失败后仍留在迁移/恢复页面，优先提供“重试迁移”和“导出 ZIP 备份”。直接进入空书架不作为主路径，只能作为显式放弃迁移的兜底操作，并需要二次确认。
+- 迁移失败后仍留在迁移页面（失败/恢复状态均复用该页面），优先提供“重试迁移”和“导出 ZIP 备份”。直接进入空书架不作为主路径，只能作为显式放弃迁移的兜底操作，并需要二次确认。失败/恢复/不可信源状态下另提供灰色小字的“导入备份恢复”逃生入口（详见阶段五实施记录）。
 - 失败文案至少包含：
 
 ```text
@@ -463,6 +463,8 @@ Windows 的 `default.isar` 不能仅凭文件名认定为 FluidText 数据。可
 ### 7.1 兼容策略
 
 - 必须支持导入当前 backup format v2，保证用户现在导出的 ZIP 可用于 SQLite 恢复。
+
+> 实施记录（2026-08-14）：v2 导出的实际形态取决于是否有图片——书库无图片时导出为单个 `.json`（非 ZIP）；阶段五导入端必须同时接受 `.json` 与 `.zip`，不能只认压缩包。
 - 新增 backend-neutral backup format v3，SQLite 和 legacy Isar 都先转换成相同 DTO，再交给归档层。
 - v2 缺失行为设置、背景和字体，导入时应明确提示“核心书库已恢复，外观设置未包含在旧版备份中”。
 - v3 才定义为完整应用备份。
@@ -560,7 +562,7 @@ ZIP 解析库必须固定到已修复公开安全漏洞的版本。实现恢复�
 - 关键查询 P95 原则上不超过 Isar 基线约 20%；超过时必须给出查询计划、原因和是否可接受的记录。
 - EPUB 导入总耗时原则上不超过基线约 20%，且主 isolate 不出现持续可见卡顿。
 - 50,000 cards 批量导入和大图片备份不 OOM，不产生半本书。
-- 任意迁移阶段强杀后，下一次启动只能看到旧数据、完整新数据或明确恢复页面，不能看到部分数据。
+- 任意迁移阶段强杀后，下一次启动只能看到旧数据、完整新数据或迁移页面的恢复模式，不能看到部分数据。
 - `PRAGMA integrity_check`、外键检查和应用级计数校验通过。
 
 若 SQLite 数据库写入很快但 EPUB 解析占主要耗时，不应为了追求数据库基准数字重写解析器。只处理能改善真实用户总耗时或内存峰值的问题。
@@ -713,6 +715,8 @@ SQLite 尚未成为生产数据源，删除新实现和依赖即可回到 Isar�
 - 导入 100–50,000 cards 的基准与峰值内存记录完成。
 - 当前 v2 导出内容保持兼容，已有备份集成测试继续通过。
 
+> 实施记录（2026-08-14）：批量导入回滚测试已补入 `test/repositories/sqlite_library_repository_test.dart`；导入基准由 `tool/sqlite_import_benchmark.dart` 驱动（仓储层依赖 Flutter 无法 `dart run`，改用 `FLUIDTEXT_SQLITE_BENCHMARK=1 flutter test test/sqlite_import_benchmark_test.dart`），报告写入 `build/reports/sqlite_import_benchmark.json`，首轮 Windows 结果：50,000 cards 导入约 1.7s、RSS 增量约 28MB。
+
 **回滚点**
 
 生产仍可配置为 Isar；若 SQLite 导入未达标，可只回滚 SQLite adapter，不回滚已经验证的业务解耦。
@@ -764,6 +768,14 @@ SQLite 尚未成为生产数据源，删除新实现和依赖即可回到 Isar�
 - 测试源 Isar 复制前后 hash 不稳定、旧实例占用、symlink/junction/reparse point 资源和非 NTFS/网络数据目录 warning。
 - 实机确认 Documents 中旧文件未被修改，新数据库只在目标私有目录运行。
 
+> 实施记录（2026-08-14）：freshInstall 与放弃迁移会写入 `source=fresh` 的完成标记；`verifyLiveDatabase` 只校验 integrity/外键/schema version，不再比对表计数——否则迁移后用户正常写入会让计数失配，把正常启动误判成 recoveryRequired。真机验收发现早期版本（无章节字段）导入的卡片在 Isar 中读回 int64 最小值哨兵，迁移时已归一化为第 0 章并记 warning；迁移诊断会剥离 SQL 语句与绑定参数，避免泄露卡片正文。
+
+> 实施记录（2026-08-15，迁移前台通知防杀）：迁移页的「导出 ZIP 备份」与「开始迁移」期间，Android 上挂起 dataSync 前台服务通知（`MigrationForegroundService`，通道 `fluidtext/migration_service`，Dart 侧 `MigrationNotificationService`，进度文本与页面节流同步更新）。与 EPUB 导入的普通常驻通知不同，这里是真正的 foreground service——一次性迁移数据量大、被杀后只能整体重试，需要提升进程优先级防后台回收；staging + state.json 的强杀兜底不变。前台服务无法防御用户主动划掉任务（Flutter engine 随 Activity 销毁），该场景仍由下次启动的恢复流程兜底。Windows 上为 no-op。已加入检查清单 2.2 的真机验收项。
+>
+> 实施记录（2026-08-15，措辞澄清）：不存在独立的「恢复页面」——`recoveryRequired` 状态复用迁移页面渲染（`MigrationPage`，文案换为「迁移需要继续」并提供「重新检测并迁移」「放弃迁移并进入空书架」），设计文档中出现的「恢复页面」均指该复用模式。
+>
+> 实施记录（2026-08-15，迁移页导入备份逃生入口）：迁移页在失败（failed）、恢复（recoveryRequired）与不可信源（migrationUnavailable）三种卡住状态下，显示灰色小字入口「已有备份文件？导入备份恢复」；首次正常迁移流程（detected/migrationRequired）不显示，避免稀释「先备份再迁移」主路径。点击后二次确认（说明旧数据不受影响），经 FilePicker 选择 v2 `.json`/`.zip` 或 v3 `.zip`，由 `BackupRestoreService` 恢复到 target layout（此状态下无活数据库，`closeLiveDatabase` 为 no-op），恢复期间挂迁移前台服务通知；成功后走 `onEnterApp` 正常进入应用，失败留在原状态仅以 SnackBar 提示。配套修改恢复端：`_refreshCompletionMarker` 在 marker 缺失时写入 `source=restore` 的初始完成标记，并把 `migration/state.json` 归位 idle——否则迁移页恢复成功后下次启动会因「库存在但无标记/残留 failed 状态」再次落入 recoveryRequired 死循环。正常路径（已有 marker）行为不变：保留原 source 与 fingerprint，仅刷新计数。回归测试：`migration_page_test.dart`（入口显隐、确认/取消、成功进入应用、失败留在页面）与 `backup_restore_service_test.dart`（无标记写初始标记+state 归位、有标记保留 source）。
+
 **回滚点**
 
 发布前可关闭 SQLite bootstrap 开关回到 Isar。发布后若需要应用级回滚，只允许通过明确的旧版兼容策略或 ZIP 恢复，不能让旧版本直接打开已迁移的 SQLite。
@@ -783,6 +795,8 @@ SQLite 尚未成为生产数据源，删除新实现和依赖即可回到 Isar�
 - 实现 ZIP 安全校验、流式限额解压、staging restore、完整校验和原子替换。
 - 在 `BookshelfSheet` 增加导入备份入口和状态反馈。
 - 非空库恢复前自动备份并二次确认。
+
+> 实施记录（2026-08-14）：阶段四后 `BookRemarkService`/`IsarDb` 已无业务调用点，但在 active=target 布局下被误调会在新目录静默打开空 Isar；本阶段开始时先给这两个类加 assert 兜底或直接移除。
 
 **预计影响模块**
 
@@ -813,6 +827,24 @@ SQLite 尚未成为生产数据源，删除新实现和依赖即可回到 Isar�
 **回滚点**
 
 ZIP 恢复入口可单独关闭，不影响已完成的 SQLite 迁移和正常读写。
+
+> 实施记录（2026-08-13，提交一「升级备份格式并兼容版本2恢复」）：
+>
+> - v3 归档结构按 7.2 落地：`manifest.json`（format/version=3/sqliteSchemaVersion/appVersion/platform/exportedAt/counts/files，files 收录除 manifest.json 外每条目的 path/bytes/sha256）、`data/library.json`（backend-neutral DTO，键名与 v2 完全一致，仅去掉 format/version/exportedAt 头）、`settings/` 下四个设置 JSON（存在才收录、原样读入）、`book_assets/`（snapshot 引用且实际存在、路径安全的文件）、`reader_backgrounds/` 与 `app_fonts/` 下全部 regular file（跳过 symlink 并记 warning）。书架「导出备份」已切换为 v3 ZIP；v2 导出（`DataBackupService`）保持原样，legacy 迁移页继续使用。
+> - 恢复入口同时接受 v2 `.json`（无图书库的直出 JSON）与 `.zip`（按扩展名+魔数判定；ZIP 内有 `manifest.json` 走 v3，否则找 `backup.json` 走 v2）。恢复语义为原子替换：staging SQLite 单事务写入并校验 integrity/外键/counts，密封（checkpoint(TRUNCATE)→close→删 -wal/-shm，逻辑与 `MigrationPromotion.seal` 同语义，抽为 `SqliteSealer`）后关闭正式库，再把正式条目 rename 进 `recovery/attempts/<id>/previous/`、payload rename 进 root，失败从 previous 回滚。
+> - ZIP 安全层（`ZipSecurity`）不依赖 archive 包内部行为：用 `RandomAccessFile` 自解析 EOCD 与 Central Directory，并逐一比对 CDE 与 Local File Header 文件名（防 filename spoofing）；拒绝加密条目、symlink 条目（externalAttributes 高 16 位 0xA000）、绝对路径/盘符/UNC、`..`/`.`/空 segment、控制字符、重复路径与大小写折叠重复；拒绝多卷与 ZIP64。限额：压缩包 ≤2GB、解压总大小 ≤4GB、单文件 ≤512MB、条目数 ≤100000、单条压缩比 ≤100（仅解压大小 >1MB 时检查，避免小 JSON 误伤；deflate 对重复内容极限约 1032:1，真实图片几乎不可再压缩，100 足够拦截 ZIP bomb）。解压经 `decodeStream` 逐条目进行，同一时刻内存只持有一个文件的 bytes，写盘前再经 `StoragePathSafety` 与目录包含校验防 ZIP Slip。
+> - 阶段五预备：删除已无调用点的 `BookRemarkService`；`IsarDb.isar` 增加运行时兜底——active 布局非 legacy 时直接抛 `StateError`，避免在新数据目录静默创建空 `default.isar`（forceIsar 回滚路径会先重置为 legacy 布局，不受影响）。
+> - 书架「导入备份」入口、非空库二次确认与恢复前自动备份在提交二实施。
+>
+> 实施记录（2026-08-13，提交二「在书架增加 ZIP 备份恢复入口」）：书架顶部操作区新增「导入备份」（`Icons.settings_backup_restore_rounded`），接通 7.3/7.4 交互——FilePicker 选择 `.zip`/`.json`、非空库二次确认（「恢复备份将替换当前书库（X 本书），是否继续？」）、恢复前经 `PreRestoreBackup` 自动导出 v3 保险备份到 `recovery/pre-restore-<时间戳>.zip`（失败时弹窗由用户选择继续或取消、空库跳过）、BlockingLoader 期间禁用全部操作、成功后重建 `LibraryDataAccess` 单例并刷新书籍/备注/统计，失败文案含「当前书库未受影响」。恢复编排通过构造参数注入（picker/保险备份/restore runner/dataAccessLoader），widget 测试以 fake repository 覆盖确认对话框、busy 禁用、成功/失败文案与保险备份失败分支。
+>
+> 实施记录（2026-08-14，真机回归修复）：1.0.0 导出的 v2 备份中，早期版本（无章节字段）卡片的 chapterIndex/chapterCardIndex 是 Isar 的 int64 最小值哨兵，恢复时触发 SQLite CHECK 失败——恢复端现按迁移引擎同样的规则归一化为第 0 章并聚合记一条 warning；同时 staging 写入失败的用户可见错误会剥离 SQL 语句与绑定参数（含卡片正文），只保留约束名等安全信息。回归测试：`backup_restore_service_test.dart` 的 sentinel 归一化与错误脱敏用例。
+>
+> 实施记录（2026-08-14，恢复进度与内存基准）：恢复流程新增真实进度（`BackupRestoreProgress`，阶段权重固定：解压按中央目录声明的解压字节、写库按记录数分 2000 条 chunk、资源按文件数，发射端按 0.01 节流），书架恢复期间经 `BlockingLoader(label, progress)` 显示进度条与百分比；staging 写入改为同一事务内分 chunk batch。恢复内存基准（`FLUIDTEXT_RESTORE_BENCHMARK=1 flutter test test/backup_restore_benchmark_test.dart`，报告写入 `build/reports/backup_restore_benchmark.json`）首轮 Windows 结果：v2 JSON 最坏场景（整库单 JSON 一次解码）10,000 cards（9.5MB 备份）峰值 RSS 增量约 12MB、1.1s；50,000 cards（47MB 备份）约 40MB、3.4s，峰值量级约为备份 JSON 大小的 1–2 倍，无 OOM 风险；更大书库的流式 JSON 解析留作阶段六候选优化。
+>
+> 实施记录（2026-08-15，recovery 目录防累积）：修复审查报告 P2——失败 restore 的 `recovery/attempts/<id>/` 只增不清（v3 单次失败最坏解压+payload 两份资源），反复导入损坏/超限备份会写满私有目录，恰好破坏 ZIP bomb 防护想保护的东西；`recovery/pre-restore-*.zip` 存在完全相同的无界累积。新增 `BackupRestoreService.pruneRecoveryArtifacts`，在每次 `restore()` 开始（staging 本次 attempt 之前）执行：清掉全部旧 attempt（本次 attempt 即将成为最新现场，`keepNewestAttempts: 0`；独立调用默认保留最近 1 个供诊断）与旧 pre-restore zip（固定保留最新 1 个——书架流程先写新 zip 再进 restore，它是恢复后用户反悔的回退点）。安全边界：`previous/` 非空的 attempt 一律跳过不删——swap 回滚也失败时它可能是原库最后一份副本（即报告 P3 场景），常见失败（校验/校验和/写库错误）都发生在 swap 之前、无 previous、不受影响；删除 best-effort（单项失败仅记 `AppLogger`，如 Windows 文件被锁），绝不阻断恢复本身。attempt id 为固定 16 位 UTC 微秒时间戳，字典序即时间序，天然免疫时钟回拨排序歧义。修复后 `recovery/` 占用收敛为常数：≤1 个失败 attempt + 1 个最新 pre-restore zip + 进行中 attempt。测试：`backup_restore_service_test.dart` 新增 prune 单元（保留最新 attempt、跳过 previous 持有者、zip 保留最新且不动无关文件）与 restore 集成（进入 restore 前清旧 attempt 与旧 zip、失败后新 attempt 留存）三个用例，全量 232 通过。
+>
+> 实施记录（2026-08-17，恢复后外观设置热重载）：书架「导入备份」成功后原先只重建 `LibraryDataAccess` 并刷新书籍列表，背景/字体/行为等外观设置仍停留在启动时读入内存的值——恢复的外观要重启应用才生效，且运行中的旧值可能被回写覆盖刚恢复的设置文件（真机复现：恢复约两分钟后 `reader_background.json` 被内存默认值覆盖回纯色）。现恢复成功后追加调用 `initializeAppSettings()` 重新加载设置：app 树的主题色/背景/字体全走 `ValueNotifier`，自定义字体经 `FontLoader` 运行时注册，恢复的外观立即生效、无需重启，旧值回写也无从发生。`BookshelfSheet` 相应新增 `settingsReloader` 注入参数（与既有 IO 注入同模式），widget 测试补「恢复成功后必须重载设置」断言。书架底部说明文案同步修正：明确 v3 备份包含阅读背景与导入字体、v2 旧备份不含（原文案「包含外观设置与阅读背景」未区分版本，导入 v2 时对用户有误导）。
 
 ### 阶段六：双端验收、性能调优和发布保护
 
@@ -859,6 +891,23 @@ ZIP 恢复入口可单独关闭，不影响已完成的 SQLite 迁移和正常�
 **回滚点**
 
 发布产物生成前保留上一正式版本、迁移前 ZIP 和旧 Isar。发布后不自动执行反向 SQLite → Isar 迁移，恢复依赖 ZIP 和保留的旧数据。
+
+> 实施记录（2026-08-14，阶段六提交一「补齐 Windows 和 Android 迁移验收与发布保护」）：
+>
+> - 迁移诊断脱敏收口为共享工具 `lib/services/diagnostic_sanitizer.dart`：`sanitizeDiagnosticText` 剥离 SqliteException 的 `Causing statement`/`parameters:` 段，并按最长优先把绝对路径替换为 `<staging>`/`<legacy>` 等根标记；`LibraryMigrator`、`MigrationPromotion`、`BackupRestoreService` 三处私有实现已改为调用共享工具，新增 `test/services/diagnostic_sanitizer_test.dart`。
+> - synchronous 策略定稿为 FULL（§4.3 保守默认：双端强杀恢复基准给出明确结论前不降级 NORMAL），改动点仅 `configureSqlite` 一处。
+> - 新增 `test/storage/library_database_test.dart`：文件库 PRAGMA 断言（WAL、`foreign_keys=1`、`busy_timeout=5000`、`synchronous=FULL`）与关键查询 `EXPLAIN QUERY PLAN`（未读排序、已读/收藏活动列表、上下文区间、重复检测身份索引、统计聚合均命中预期索引，无全表扫描）。
+> - 新增 `docs/sqlite_release_checklist.md`：发布检查清单、真机/手动验收矩阵、回滚操作手册与用户说明要点；版本号 bump 列为发布时步骤。
+> - batch size 与 isolate 边界定稿维持现状：迁移写入 500、恢复写入 2000、导入按书单事务 batch，连接经 `NativeDatabase.createInBackground` 在后台 isolate；基准数字见提交二实施记录。
+>
+> 实施记录（2026-08-14，阶段六提交二「完成 SQLite 性能基准和查询调优」）：
+>
+> - 补齐 Isar 全量基线：100/1,000/10,000/50,000 cards → `build/reports/isar_baseline.json`；新增 v3 导出内存基准 `tool/backup_export_benchmark.dart`（`FLUIDTEXT_EXPORT_BENCHMARK=1 flutter test test/backup_export_benchmark_test.dart`），报告写入 `build/reports/backup_export_benchmark.json`。
+> - Windows 首轮数字（`synchronous = FULL`）：导入 50,000 cards 约 1.34s、RSS 增量约 26MB；`loadCardsByIds(100)` 4ms 优于基线 23ms；`loadBookStats` 34ms 对基线 18ms（单书 50,000 行单次 GROUP BY 对每书 3 次 count，口径不同，绝对值可接受）；`toggleRead` 14ms 对基线 6ms（FULL fsync 的单笔提交开销，P95 绝对值远低于可感知阈值，结论：接受，不降级 NORMAL）。
+> - 唯一超 20% 门槛项：`loadOrderedCardIds` 50,000 行约 115ms 对 Isar 基线 10ms。原因：后台 isolate 行传输与打开书籍时单次全量 id 读取；`EXPLAIN QUERY PLAN` 确认命中 `idx_book_cards_book_order`，无全表扫描；每本书打开一次、绝对值百毫秒级，书架与阅读体感无可感知回退，结论：接受并记录，不为该指标改写查询。
+> - 恢复基准复测（FULL）：10,000 cards 约 1.1s、峰值 RSS 增量约 17MB；50,000 cards 约 3.1s、约 50MB，与阶段五记录同量级。
+> - 导出基准：10,000 cards + 20 张 256KB 图片约 0.98s、峰值 RSS 增量约 53MB；50,000 cards 约 3.2s、约 226MB（内存归档峰值约为未压缩 payload 的 2–3 倍），无 OOM。结论：维持内存归档，大图库真机 OOM 验收列入 `docs/sqlite_release_checklist.md` §2.4，超标再改流式归档。
+> - 结论：本轮无需索引、batch 或 PRAGMA 调优改动，不追加性能修正提交。
 
 ## 10. 测试计划
 
@@ -953,6 +1002,8 @@ ZIP 恢复入口可单独关闭，不影响已完成的 SQLite 迁移和正常�
 **风险：** Windows DLL、Android ABI、后台 isolate 或 Release tree shaking 可能出现只在正式构建暴露的问题。  
 **处理：** 阶段二先完成最小双端 Release spike，验证打开、写入、重开和事务，再继续大规模实现。
 
+> 实施记录（2026-08-14）：阶段四构建验收时发现 `sqlite3_flutter_libs 0.6.0+eol` 是不含原生库的空壳版本（包自述要求改用 sqlite3 3.x），已固定到 `0.5.42`；Windows Release 已验证随包 `sqlite3.dll`、Android APK 已验证含三个 ABI 的 `libsqlite3.so`。后续如需更新，可评估 sqlite3 3.x 的 native assets 方案。
+
 ### 11.2 SQLite 导入速度不及 Isar
 
 **风险：** 每行独立执行、频繁事务、同步统计或 FTS 会放大差距。  
@@ -1038,3 +1089,53 @@ ZIP 恢复入口可单独关闭，不影响已完成的 SQLite 迁移和正常�
 - Repository 契约、真实 EPUB、迁移 fixture、ZIP 安全、双平台路径和 Release build 测试通过。
 - 正常书库的阅读与书架体感无明显回退，大批量导入不 OOM，性能偏差有可复现报告。
 - 旧 Isar 和 Documents 数据仍保留，删除策略留给后续独立版本决定。
+
+## 附录 A：基线与基准工具
+
+> 本附录并入原 `docs/sqlite_migration_phase1_baseline.md`（阶段一基线笔记，2026-08-15 合并），描述与实际实施保持一致；发布前的操作性检查清单见 `docs/sqlite_release_checklist.md` 第 4 节。
+
+### A.1 `1.0.0` 遗留 fixture
+
+fixture 必须从真实 tag `1.0.0` 生成，不能用当前工作树的 schema 冒充旧版本：
+
+```powershell
+.\tool\generate_1_0_0_legacy_fixture.ps1
+```
+
+脚本在 tag `1.0.0` 上创建 detached worktree，把 `tool/create_legacy_isar_fixture.dart` 复制进去执行，产物写入 `test/fixtures/legacy_isar_1_0_0/`。fixture manifest 格式：
+
+```json
+{
+  "format": "fluidtext.legacy_fixture",
+  "sourceVersion": "1.0.0",
+  "expected": {
+    "books": 2,
+    "bookCards": 3,
+    "bookAssets": 1,
+    "bookRemarks": 2
+  }
+}
+```
+
+### A.2 Isar 基线
+
+```powershell
+dart run tool/isar_baseline.dart --output build/reports/isar_baseline.json --cards 100,1000,10000,50000
+```
+
+报告格式为 `fluidtext.isar_baseline.v1`，按 cardCounts 记录每个规模下 seedWrite/loadBooks/loadOrderedCardIds/loadCardsByIds100/loadBookStats/toggleRead/toggleFavorite 的耗时（毫秒）。Isar 与 SQLite 基准使用同一批规模与指标口径。
+
+### A.3 SQLite 导入基准
+
+仓储层依赖 Flutter，无法直接 `dart run`，统一走 Flutter 测试运行器（无环境变量时跳过，保持日常测试速度）：
+
+```powershell
+$env:FLUIDTEXT_SQLITE_BENCHMARK = '1'
+flutter test test/sqlite_import_benchmark_test.dart
+```
+
+报告格式 `fluidtext.sqlite_import_benchmark.v1`，写入 `build/reports/sqlite_import_benchmark.json`，覆盖 100/1,000/10,000/50,000 cards 经 `SqliteLibraryRepository.importBookDraft` 的导入、关键读查询与各用例前后的 RSS。恢复/导出内存基准同理（`FLUIDTEXT_RESTORE_BENCHMARK` / `FLUIDTEXT_EXPORT_BENCHMARK`），见检查清单第 4 节。
+
+### A.4 报告入库策略
+
+基线报告只有在代表有明确意图的参考环境时才入库；临时本地运行的结果留在 `build/reports/`（不入库）。发布前刷新基准并把结论追加到阶段六实施记录。

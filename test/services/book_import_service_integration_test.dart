@@ -182,4 +182,67 @@ void main() {
     expect(cards, hasLength(result.insertedCards));
     expect(assets, hasLength(1));
   });
+
+  test('reports staged progress while importing', () async {
+    final progresses = <BookImportProgress>[];
+    final result = await importService.importEpubBytes(
+      repository: repository,
+      bytes: buildTestEpub(),
+      targetCharsPerCard: 20,
+      onProgress: progresses.add,
+    );
+
+    expect(result.insertedCards, greaterThan(0));
+    expect(progresses.first.stage, BookImportStage.parsing);
+    expect(progresses.last.stage, BookImportStage.writing);
+
+    final reading = progresses
+        .where((progress) => progress.stage == BookImportStage.readingChapters)
+        .toList();
+    expect(reading, isNotEmpty);
+    expect(reading.last.totalUnits, greaterThan(0));
+    expect(reading.last.fraction, 1.0);
+
+    final building = progresses
+        .where((progress) => progress.stage == BookImportStage.buildingCards)
+        .toList();
+    expect(building, isNotEmpty);
+    expect(building.last.producedCards, result.insertedCards);
+  });
+
+  test('imports a chapter encoded as GBK', () async {
+    const paragraph = '夜半钟声到客船，姑苏城外寒山寺。';
+    final result = await importService.importEpubBytes(
+      repository: repository,
+      bytes: buildTestEpub(paragraph: paragraph, chapterAsGbk: true),
+      targetCharsPerCard: 20,
+    );
+
+    expect(result.insertedCards, greaterThan(0));
+    final cards = await isar!.bookCards
+        .filter()
+        .bookIdEqualTo(result.bookId)
+        .findAll();
+    expect(
+      cards.any((card) => card.content.contains('夜半钟声到客船')),
+      isTrue,
+    );
+  });
+
+  test('hard-cuts a long paragraph without any sentence boundary', () async {
+    final result = await importService.importEpubBytes(
+      repository: repository,
+      bytes: buildTestEpub(paragraph: '字' * 5000, includeImage: false),
+      targetCharsPerCard: 20,
+    );
+
+    expect(result.insertedCards, greaterThan(1));
+    final cards = await isar!.bookCards
+        .filter()
+        .bookIdEqualTo(result.bookId)
+        .findAll();
+    for (final card in cards) {
+      expect(card.content.length, lessThanOrEqualTo(60));
+    }
+  });
 }

@@ -1,14 +1,25 @@
 import 'dart:developer' as developer;
+import 'dart:io';
 
 import 'package:collection/collection.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../../app_settings.dart';
 import '../../models/book.dart';
 import '../../repositories/library_data_access.dart';
 import '../../repositories/library_repository.dart';
+import '../../migration/migration_state.dart';
+import '../../services/app_logger.dart';
+import '../../services/backup/backup_restore_service.dart';
+import '../../services/backup/pre_restore_backup.dart';
+import '../../services/book_import_service.dart';
+import '../../services/import_notification_service.dart';
+import '../../storage/storage_layout.dart';
 import '../../widgets/blocking_loader.dart';
 import '../../widgets/glass.dart';
+import '../migration/migration_page.dart';
 
 Future<List<Book>?> showBookshelfSheet(
   BuildContext context, {
@@ -25,13 +36,77 @@ Future<List<Book>?> showBookshelfSheet(
   );
 }
 
+/// Shows a user-friendly import failure dialog. The technical detail stays
+/// out of the UI: it is already in the log file, and can be copied to the
+/// clipboard for a bug report.
+Future<void> showImportFailureDialog(
+  BuildContext context, {
+  required Object error,
+  required StackTrace stackTrace,
+}) {
+  return showDialog<void>(
+    context: context,
+    builder: (context) {
+      final theme = Theme.of(context);
+      return AlertDialog(
+        title: const Text('导入失败'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(describeBookImportError(error)),
+            const SizedBox(height: 10),
+            Text(
+              '详细错误已写入应用日志，反馈问题时可点击「复制详情」获取。',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(
+                ClipboardData(text: '$error\n\n$stackTrace'),
+              );
+              if (context.mounted) Navigator.of(context).pop();
+            },
+            child: const Text('复制详情'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('好'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
 class BookshelfSheet extends StatefulWidget {
   const BookshelfSheet({
     super.key,
     this.initialSelectedBookIds = const <int>[],
+    this.dataAccessLoader,
+    this.migrationEntryChecker,
+    this.backupFilePicker,
+    this.preRestoreBackup,
+    this.backupRestoreRunner,
+    this.settingsReloader,
   });
 
   final List<int> initialSelectedBookIds;
+
+  /// Injectable seams for widget tests (the production defaults hit real IO
+  /// which never completes inside the fake-async test zone).
+  final Future<LibraryDataAccess> Function()? dataAccessLoader;
+  final Future<bool> Function()? migrationEntryChecker;
+  final Future<String?> Function()? backupFilePicker;
+  final Future<String> Function()? preRestoreBackup;
+  final Future<BackupRestoreResult> Function(File backupFile)?
+  backupRestoreRunner;
+  final Future<void> Function()? settingsReloader;
 
   @override
   State<BookshelfSheet> createState() => _BookshelfSheetState();
@@ -47,7 +122,13 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
   LibraryDataAccess? _dataAccess;
   bool _isLoading = true;
   bool _isBusy = false;
+  bool _showMigrationEntry = false;
   String? _status;
+  String? _restoreProgressStage;
+  double? _restoreProgressValue;
+  String? _importProgressLabel;
+  double? _importProgressValue;
+  String? _lastImportNotificationText;
 
   @override
   void initState() {
@@ -56,7 +137,8 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
   }
 
   Future<void> _init() async {
-    final dataAccess = await LibraryDataAccess.instance;
+    final dataAccess =
+        await (widget.dataAccessLoader ?? () => LibraryDataAccess.instance)();
     final repository = dataAccess.repository;
     final books = await repository.loadBooks();
     final remarks = await dataAccess.loadRemarks();
@@ -64,6 +146,8 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       books.map((book) => book.id).toList(),
     );
     await repository.logDatabaseSnapshot('bookshelf init');
+
+    final showMigrationEntry = await _checkMigrationEntry();
 
     if (!mounted) return;
     setState(() {
@@ -79,8 +163,36 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
         ..clear()
         ..addAll(stats);
       _selectedIds.removeWhere((id) => !_books.any((book) => book.id == id));
+      _showMigrationEntry = showMigrationEntry;
       _isLoading = false;
     });
+  }
+
+  /// Offers re-detection when the user previously abandoned a migration.
+  Future<bool> _checkMigrationEntry() async {
+    final checker = widget.migrationEntryChecker;
+    if (checker != null) return checker();
+    try {
+      final targetLayout = await AppStorageResolver.targetRuntimeLayout();
+      final state = await MigrationStateStore(
+        targetLayout: targetLayout,
+      ).load();
+      return state.status == MigrationLifecycleStatus.abandoned;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _redetectMigration() async {
+    final targetLayout = await AppStorageResolver.targetRuntimeLayout();
+    await MigrationStateStore(targetLayout: targetLayout).markIdle();
+    if (!mounted) return;
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute<void>(builder: (_) => const MigrationBootstrapPage()),
+    );
+    if (!mounted) return;
+    setState(() => _showMigrationEntry = false);
+    await _reloadBooks();
   }
 
   Future<void> _reloadBooks() async {
@@ -88,6 +200,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     if (repository == null) return;
 
     final books = await repository.loadBooks();
+    final remarks = await repository.loadRemarks();
     final stats = await repository.loadBookStats(
       books.map((book) => book.id).toList(),
     );
@@ -96,6 +209,9 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       _books
         ..clear()
         ..addAll(books);
+      _remarks
+        ..clear()
+        ..addAll(remarks);
       _stats
         ..clear()
         ..addAll(stats);
@@ -131,13 +247,22 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
         return;
       }
 
-      setState(() => _status = '解析与切分中…');
+      final notifications = ImportNotificationService.instance;
+      final notificationTitle = '正在导入《${file?.name ?? 'EPUB 文件'}》';
+      await notifications.ensurePermission();
+      await notifications.showProgress(
+        title: notificationTitle,
+        text: '导入中请勿退出',
+      );
 
       final imported = await dataAccess.importEpubBytes(
         bytes: bytes,
         sourceFileName: file?.name,
         targetCharsPerCard: targetCharsPerCard,
+        onProgress: (progress) =>
+            _onImportProgress(progress, notificationTitle),
       );
+      await notifications.showCompleted(text: '《${imported.bookTitle}》');
       await _reloadBooks();
       if (!mounted) return;
 
@@ -148,19 +273,60 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
             : '已导入《${imported.bookTitle}》 · ${imported.insertedCards} 张卡片';
       });
     } catch (error, stackTrace) {
-      developer.log(
-        'EPUB import failed in bookshelf sheet',
-        name: 'BookshelfSheet',
+      AppLogger.instance.error(
+        'BookshelfSheet',
+        'EPUB import failed',
         error: error,
         stackTrace: stackTrace,
       );
+      await ImportNotificationService.instance.cancel();
       if (!mounted) return;
-      setState(() => _status = '导入失败：$error');
+      setState(() => _status = '导入失败：${describeBookImportError(error)}');
+      await showImportFailureDialog(
+        context,
+        error: error,
+        stackTrace: stackTrace,
+      );
     } finally {
       if (mounted) {
-        setState(() => _isBusy = false);
+        setState(() {
+          _isBusy = false;
+          _importProgressLabel = null;
+          _importProgressValue = null;
+        });
       }
     }
+  }
+
+  void _onImportProgress(
+    BookImportProgress progress,
+    String notificationTitle,
+  ) {
+    final fraction = progress.fraction;
+    final label = switch (progress.stage) {
+      BookImportStage.parsing => '正在解析 EPUB 结构…',
+      BookImportStage.readingChapters =>
+        '正在读取章节 ${progress.completedUnits}/${progress.totalUnits}',
+      BookImportStage.buildingCards =>
+        '正在切分卡片… 已生成 ${progress.producedCards} 张',
+      BookImportStage.writing => '正在写入书库…',
+    };
+    if (mounted) {
+      setState(() {
+        _importProgressLabel = label;
+        _importProgressValue = fraction;
+      });
+    }
+
+    final percent = fraction == null ? null : (fraction * 100).round();
+    final text = percent == null ? '导入中请勿退出' : '导入中请勿退出 · $percent%';
+    if (text == _lastImportNotificationText) return;
+    _lastImportNotificationText = text;
+    ImportNotificationService.instance.showProgress(
+      title: notificationTitle,
+      text: text,
+      percent: percent,
+    );
   }
 
   Future<int?> _chooseTargetCharsPerCard() {
@@ -233,6 +399,194 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
         setState(() => _isBusy = false);
       }
     }
+  }
+
+  /// Imports a v2/v3 backup with whole-library replacement (plan 7.4):
+  /// confirm on a non-empty library, write a pre-restore insurance backup,
+  /// then swap atomically and reload everything.
+  Future<void> _importBackup() async {
+    final dataAccess = _dataAccess;
+    if (dataAccess == null || _isBusy) return;
+
+    final path = await (widget.backupFilePicker ?? _pickBackupFilePath)();
+    if (!mounted) return;
+    if (path == null || path.isEmpty) {
+      setState(() => _status = '未选择文件');
+      return;
+    }
+
+    if (_books.isNotEmpty) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('导入备份'),
+          content: Text('恢复备份将替换当前书库（${_books.length} 本书），是否继续？'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('继续恢复'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || confirmed != true) return;
+    }
+
+    setState(() {
+      _isBusy = true;
+      _status = '正在备份当前书库…';
+    });
+
+    try {
+      // Pre-restore insurance backup of the current library (pointless and
+      // therefore skipped when the library is empty).
+      try {
+        if (_books.isNotEmpty) {
+          await (widget.preRestoreBackup ?? _writePreRestoreBackup)();
+        }
+      } catch (error) {
+        developer.log(
+          'Pre-restore backup failed in bookshelf sheet',
+          name: 'BookshelfSheet',
+          error: error,
+        );
+        if (!mounted) return;
+        setState(() => _isBusy = false);
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('自动备份失败'),
+            content: Text('恢复前备份当前书库失败：$error\n仍要继续恢复吗？'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('仍要继续恢复'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted) return;
+        if (proceed != true) {
+          setState(() => _status = '已取消恢复');
+          return;
+        }
+        setState(() => _isBusy = true);
+      }
+
+      setState(() {
+        _status = '正在恢复备份…';
+        _restoreProgressStage = '正在恢复备份…';
+        _restoreProgressValue = 0;
+      });
+      final runner = widget.backupRestoreRunner ?? _runBackupRestore;
+      final result = await runner(File(path));
+
+      // The restore closed and swapped the live database; drop the stale
+      // repository before reloading so every read hits the restored data.
+      final freshAccess =
+          await (widget.dataAccessLoader ?? () => LibraryDataAccess.instance)();
+      if (!mounted) return;
+      setState(() {
+        _dataAccess = freshAccess;
+        _repository = freshAccess.repository;
+      });
+      await _reloadBooks();
+      // The swap also replaced the appearance settings files (background,
+      // font, behavior). Reload the settings view model so the in-memory
+      // notifiers pick up the restored values live; otherwise a stale
+      // in-memory default could be saved back over the restored files.
+      await (widget.settingsReloader ?? initializeAppSettings)();
+      if (!mounted) return;
+
+      final legacyNote = result.formatVersion == 2
+          ? '；核心书库已恢复，外观设置未包含在旧版备份中'
+          : '';
+      setState(() {
+        _status =
+            '已恢复备份（v${result.formatVersion}）：书籍 ${result.bookCount} 本 · '
+            '卡片 ${result.cardCount} 张 · 警告 ${result.warnings.length} 条'
+            '$legacyNote';
+      });
+    } catch (error, stackTrace) {
+      developer.log(
+        'Backup restore failed in bookshelf sheet',
+        name: 'BookshelfSheet',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      // The restore may have closed the live database before failing (the
+      // swap then rolled back); reopen the singleton so the sheet does not
+      // keep a stale, closed repository.
+      try {
+        final freshAccess =
+            await (widget.dataAccessLoader ??
+                () => LibraryDataAccess.instance)();
+        if (!mounted) return;
+        _dataAccess = freshAccess;
+        _repository = freshAccess.repository;
+      } catch (_) {
+        // Reopen is best effort; the next launch rebuilds the singleton.
+      }
+      setState(() => _status = '恢复失败：$error，当前书库未受影响');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBusy = false;
+          _restoreProgressStage = null;
+          _restoreProgressValue = null;
+        });
+      }
+    }
+  }
+
+  Future<String?> _pickBackupFilePath() async {
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: '选择 FluidText 备份',
+      type: FileType.custom,
+      allowedExtensions: const ['zip', 'json'],
+      withData: false,
+    );
+    return result?.files.firstOrNull?.path;
+  }
+
+  Future<String> _writePreRestoreBackup() async {
+    final repository = _repository;
+    if (repository == null) {
+      throw StateError('书库尚未加载，无法备份');
+    }
+    final layout = await AppStorageResolver.activeRuntimeLayout();
+    final file = await PreRestoreBackup.write(
+      repository: repository,
+      layout: layout,
+    );
+    return file.path;
+  }
+
+  Future<BackupRestoreResult> _runBackupRestore(File backupFile) async {
+    final layout = await AppStorageResolver.activeRuntimeLayout();
+    return const BackupRestoreService().restore(
+      backupFile: backupFile,
+      targetLayout: layout,
+      closeLiveDatabase: () async {
+        await (await LibraryDataAccess.instance).close();
+      },
+      onProgress: (progress) {
+        if (!mounted) return;
+        setState(() {
+          _restoreProgressStage = progress.stage;
+          _restoreProgressValue = progress.fraction;
+        });
+      },
+    );
   }
 
   Future<void> _deleteBook(Book book) async {
@@ -383,6 +737,12 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                                   ?.copyWith(fontWeight: FontWeight.w700),
                             ),
                             const Spacer(),
+                            if (_showMigrationEntry)
+                              IconButton(
+                                tooltip: '重新检测旧数据并迁移',
+                                onPressed: _isBusy ? null : _redetectMigration,
+                                icon: const Icon(Icons.restore_rounded),
+                              ),
                             IconButton(
                               tooltip: '导入 EPUB',
                               onPressed: _isBusy ? null : _pickAndImportEpub,
@@ -394,11 +754,29 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                               icon: const Icon(Icons.ios_share_rounded),
                             ),
                             IconButton(
+                              tooltip: '导入备份',
+                              onPressed: _isBusy ? null : _importBackup,
+                              icon: const Icon(
+                                Icons.settings_backup_restore_rounded,
+                              ),
+                            ),
+                            IconButton(
                               tooltip: '关闭',
                               onPressed: _close,
                               icon: const Icon(Icons.close_rounded),
                             ),
                           ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 0, 18, 6),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '备份为 ZIP 格式，包含书库、阅读数据、阅读背景与导入字体；可导入 v2/v3 备份，v2 旧备份不含阅读背景与字体',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: cs.onSurfaceVariant),
+                          ),
                         ),
                       ),
                       if (_status != null)
@@ -602,7 +980,11 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                     ),
                   ),
                 ),
-                if (_isBusy) const BlockingLoader(),
+                if (_isBusy)
+                  BlockingLoader(
+                    label: _restoreProgressStage ?? _importProgressLabel,
+                    progress: _restoreProgressValue ?? _importProgressValue,
+                  ),
               ],
             ),
           ),

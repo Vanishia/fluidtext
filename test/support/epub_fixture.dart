@@ -2,12 +2,14 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:charset/charset.dart';
 
 Uint8List buildTestEpub({
   String title = 'Integration Book',
   String paragraph = '第一段测试文字。第二段测试文字。',
   bool includeImage = true,
   bool includeChapterFile = true,
+  bool chapterAsGbk = false,
 }) {
   final archive = Archive()
     ..addFile(ArchiveFile.string('mimetype', 'application/epub+zip'))
@@ -59,15 +61,16 @@ Uint8List buildTestEpub({
     );
 
   if (includeChapterFile) {
-    archive.addFile(
-      ArchiveFile.string(
-        'OEBPS/chapter.xhtml',
+    final chapterHtml =
         '''<?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml">
-  <head><title>第一章</title></head>
+  <head><title>第一章</title>${chapterAsGbk ? '<meta charset="gb2312"/>' : ''}</head>
   <body><p>$paragraph</p>${includeImage ? '<img src="images/pixel.png" alt="测试图片"/>' : ''}</body>
-</html>''',
-      ),
+</html>''';
+    archive.addFile(
+      chapterAsGbk
+          ? ArchiveFile.bytes('OEBPS/chapter.xhtml', gbk.encode(chapterHtml))
+          : ArchiveFile.string('OEBPS/chapter.xhtml', chapterHtml),
     );
   }
 

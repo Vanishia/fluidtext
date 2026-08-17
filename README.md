@@ -162,7 +162,6 @@ lib/
 │   ├── book_import_service.dart        # EPUB 导入引擎（核心）
 │   ├── text_splitter.dart              # 纯文本切分器（legacy 路径）
 │   ├── book_asset_store.dart           # 图片文件落盘与清理
-│   ├── book_remark_service.dart        # 书籍备注读写
 │   ├── reader_session_service.dart     # 阅读会话持久化
 │   ├── reader_background_service.dart  # 阅读背景持久化
 │   ├── data_backup_service.dart        # 数据备份（JSON 导出）

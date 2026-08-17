@@ -613,6 +613,31 @@ class BookCardRepository implements LibraryRepository {
   }
 
   @override
+  Future<List<Book>> pruneIncompleteBooks() async {
+    final books = await loadBooks();
+    final incomplete = <Book>[];
+    for (final book in books) {
+      final actualCardCount = await isar.bookCards
+          .filter()
+          .bookIdEqualTo(book.id)
+          .count();
+      final recorded = book.cardCount;
+      final isIncomplete =
+          actualCardCount <= 0 || (recorded != null && recorded != actualCardCount);
+      if (isIncomplete) incomplete.add(book);
+    }
+
+    for (final book in incomplete) {
+      developer.log(
+        'Pruning incomplete imported book: bookId=${book.id}, title="${book.title}"',
+        name: 'BookCardRepository',
+      );
+      await deleteBook(book.id);
+    }
+    return incomplete;
+  }
+
+  @override
   Future<LibraryImportResult> importBookDraft(ImportBookDraft draft) async {
     final existingByFileHash = await _findBestCompleteBookByFileHash(
       fileHash: draft.fileHash,

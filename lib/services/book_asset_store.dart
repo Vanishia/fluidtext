@@ -2,11 +2,11 @@ import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:isar/isar.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../models/book.dart';
 import '../models/book_asset.dart';
 import '../storage/storage_layout.dart';
+import 'app_logger.dart';
 
 class BookAssetFileDraft {
   const BookAssetFileDraft({
@@ -41,7 +41,12 @@ class BookAssetStore {
     if (storageLayout != null) {
       return () async => (await storageLayout()).rootDirectory;
     }
-    return documentsDirectory ?? getApplicationDocumentsDirectory;
+    final directoryProvider = documentsDirectory;
+    if (directoryProvider == null) {
+      return () async =>
+          (await AppStorageResolver.activeRuntimeLayout()).rootDirectory;
+    }
+    return directoryProvider;
   }
 
   String createAssetRootKey(String fileHash) {
@@ -162,31 +167,48 @@ class BookAssetStore {
 
   Future<void> cleanupOrphanAssetRoots(Isar isar) async {
     try {
-      final dir = await _storageRootDirectory();
-      final assetsRoot = Directory(_joinPath([dir.path, assetsDirectoryName]));
-      if (!await assetsRoot.exists()) return;
-
       final books = await isar.books.where().findAll();
       final assets = await isar.bookAssets.where().findAll();
-      final activeRoots = <String>{
-        for (final book in books)
-          if ((book.assetRootKey ?? '').trim().isNotEmpty)
-            book.assetRootKey!.trim(),
-        for (final asset in assets)
-          if (_assetRootKeyFromRelativePath(asset.relativePath) != null)
-            _assetRootKeyFromRelativePath(asset.relativePath)!,
-      };
-
-      await for (final entity in assetsRoot.list(followLinks: false)) {
-        if (entity is! Directory) continue;
-        final rootKey = _baseName(entity.path);
-        if (activeRoots.contains(rootKey)) continue;
-        await entity.delete(recursive: true);
-      }
+      await deleteOrphanAssetRoots(
+        activeRootKeys: <String>{
+          for (final book in books)
+            if ((book.assetRootKey ?? '').trim().isNotEmpty)
+              book.assetRootKey!.trim(),
+          for (final asset in assets)
+            if (_assetRootKeyFromRelativePath(asset.relativePath) != null)
+              _assetRootKeyFromRelativePath(asset.relativePath)!,
+        },
+      );
     } catch (error, stackTrace) {
       developer.log(
         'Failed to cleanup orphan book asset roots',
         name: 'BookAssetStore',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  /// Deletes asset root directories not referenced by [activeRootKeys] —
+  /// typically staging roots left behind by a killed import.
+  Future<void> deleteOrphanAssetRoots({
+    required Set<String> activeRootKeys,
+  }) async {
+    try {
+      final dir = await _storageRootDirectory();
+      final assetsRoot = Directory(_joinPath([dir.path, assetsDirectoryName]));
+      if (!await assetsRoot.exists()) return;
+
+      await for (final entity in assetsRoot.list(followLinks: false)) {
+        if (entity is! Directory) continue;
+        final rootKey = _baseName(entity.path);
+        if (activeRootKeys.contains(rootKey)) continue;
+        await entity.delete(recursive: true);
+      }
+    } catch (error, stackTrace) {
+      AppLogger.instance.warning(
+        'BookAssetStore',
+        'Failed to cleanup orphan book asset roots',
         error: error,
         stackTrace: stackTrace,
       );
