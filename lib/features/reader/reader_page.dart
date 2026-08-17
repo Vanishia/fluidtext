@@ -339,8 +339,12 @@ class _BookCardsPageState extends State<BookCardsPage> {
   }
 
   void _handleBack() {
-    // 推移布局下侧边栏打开时，返回键先收起侧边栏。
-    if (_sidebarVisible && !_sidebarPushMode) {
+    // 桌面端推移布局下侧边栏打开时，返回键先收起侧边栏；
+    // 移动端 Drawer 的返回处理由框架负责。
+    if (!Platform.isAndroid &&
+        !Platform.isIOS &&
+        _sidebarVisible &&
+        !_sidebarPushMode) {
       _setSidebarVisible(false);
       return;
     }
@@ -418,6 +422,134 @@ class _BookCardsPageState extends State<BookCardsPage> {
                       },
                     );
 
+              // 移动端回退到原生悬浮毛玻璃 Drawer：自带的手势不会
+              // 和列表滚动抢手势竞技场；桌面端用贴边常驻/推移侧边栏。
+              final useNativeDrawer = Platform.isAndroid || Platform.isIOS;
+
+              Widget menuPanel({required bool floating}) {
+                return AppSidePanel(
+                  onOpenBookshelf: _openBookshelf,
+                  readingOrder: controller.readingOrder,
+                  onReadingOrderChanged: (order) {
+                    saveReadingOrderSetting(order);
+                    controller.setReadingOrder(order);
+                  },
+                  themeMode: themeModeSetting.value,
+                  onThemeModeChanged: saveThemeModeSetting,
+                  showUnreadOnly: controller.showUnreadOnly,
+                  onShowUnreadOnlyChanged: (value) {
+                    saveShowUnreadOnlySetting(value);
+                    controller.setShowUnreadOnly(value);
+                  },
+                  onOpenReadingAnalysis: _openReadingAnalysis,
+                  onOpenReadList: _openReadList,
+                  onOpenFavoriteList: _openFavoriteList,
+                  onOpenReaderBackgroundSettings: _openReaderBackgroundSettings,
+                  contextBefore: _contextSettings.before,
+                  contextAfter: _contextSettings.after,
+                  onContextBeforeChanged: (value) {
+                    final next = _contextSettings.copyWith(before: value);
+                    saveContextSettingsSetting(next);
+                    setState(() {
+                      _contextSettings = next;
+                    });
+                  },
+                  onContextAfterChanged: (value) {
+                    final next = _contextSettings.copyWith(after: value);
+                    saveContextSettingsSetting(next);
+                    setState(() {
+                      _contextSettings = next;
+                    });
+                  },
+                  onRequestClose: () => _setSidebarVisible(false),
+                  floating: floating,
+                );
+              }
+
+              Widget buildReaderArea({
+                required bool sidebarVisible,
+                required bool pushMode,
+              }) {
+                return Stack(
+                  children: [
+                    ReaderBackgroundSurface(
+                      settings: backgroundSettings,
+                      child: body,
+                    ),
+                    // 菜单按钮：仅桌面端显示；移动端用 Drawer 侧滑手势，
+                    // 不占用视觉空间。
+                    if (!useNativeDrawer)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        child: SafeArea(
+                          child: IconButton(
+                            icon: Icon(
+                              sidebarVisible && pushMode
+                                  ? Icons.menu_open_rounded
+                                  : Icons.menu_rounded,
+                            ),
+                            tooltip: sidebarVisible ? '收起菜单' : '打开菜单',
+                            onPressed: () =>
+                                _setSidebarVisible(!sidebarVisible),
+                          ),
+                        ),
+                      ),
+                    // 翻页按钮：滚动时显示，停止后收起。
+                    ValueListenableBuilder<bool>(
+                      valueListenable: showPageTurnButtonsSetting,
+                      builder: (context, enabled, _) {
+                        if (!enabled) {
+                          return const SizedBox.shrink();
+                        }
+                        return Positioned(
+                          right: 12,
+                          top: 0,
+                          bottom: 0,
+                          child: Align(
+                            alignment: const Alignment(0, 0.35),
+                            child: PageTurnButtons(
+                              visible: _pageTurnButtonsVisible,
+                              onPageUp: () => _pageScroll(-1),
+                              onPageDown: () => _pageScroll(1),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                );
+              }
+
+              Widget withPageShortcuts({required Widget child}) {
+                return CallbackShortcuts(
+                  bindings: <ShortcutActivator, VoidCallback>{
+                    const SingleActivator(LogicalKeyboardKey.pageDown): () =>
+                        _pageScroll(1),
+                    const SingleActivator(LogicalKeyboardKey.pageUp): () =>
+                        _pageScroll(-1),
+                  },
+                  child: Focus(autofocus: true, child: child),
+                );
+              }
+
+              if (useNativeDrawer) {
+                return Scaffold(
+                  backgroundColor: backgroundSettings.backgroundColor(
+                    Theme.of(context).brightness,
+                  ),
+                  drawerEdgeDragWidth: 120,
+                  drawerScrimColor: Colors.black.withValues(alpha: 0.18),
+                  drawer: menuPanel(floating: true),
+                  body: withPageShortcuts(
+                    child: buildReaderArea(
+                      sidebarVisible: false,
+                      pushMode: true,
+                    ),
+                  ),
+                );
+              }
+
               return Scaffold(
                 backgroundColor: backgroundSettings.backgroundColor(
                   Theme.of(context).brightness,
@@ -435,124 +567,31 @@ class _BookCardsPageState extends State<BookCardsPage> {
                     _sidebarPushMode = pushMode;
                     _sidebarVisible = sidebarVisible;
 
-                    final panel = AppSidePanel(
-                      onOpenBookshelf: _openBookshelf,
-                      readingOrder: controller.readingOrder,
-                      onReadingOrderChanged: (order) {
-                        saveReadingOrderSetting(order);
-                        controller.setReadingOrder(order);
-                      },
-                      themeMode: themeModeSetting.value,
-                      onThemeModeChanged: saveThemeModeSetting,
-                      showUnreadOnly: controller.showUnreadOnly,
-                      onShowUnreadOnlyChanged: (value) {
-                        saveShowUnreadOnlySetting(value);
-                        controller.setShowUnreadOnly(value);
-                      },
-                      onOpenReadingAnalysis: _openReadingAnalysis,
-                      onOpenReadList: _openReadList,
-                      onOpenFavoriteList: _openFavoriteList,
-                      onOpenReaderBackgroundSettings:
-                          _openReaderBackgroundSettings,
-                      contextBefore: _contextSettings.before,
-                      contextAfter: _contextSettings.after,
-                      onContextBeforeChanged: (value) {
-                        final next = _contextSettings.copyWith(before: value);
-                        saveContextSettingsSetting(next);
-                        setState(() {
-                          _contextSettings = next;
-                        });
-                      },
-                      onContextAfterChanged: (value) {
-                        final next = _contextSettings.copyWith(after: value);
-                        saveContextSettingsSetting(next);
-                        setState(() {
-                          _contextSettings = next;
-                        });
-                      },
-                      onRequestClose: () => _setSidebarVisible(false),
-                    );
-
-                    final readerArea = Stack(
-                      children: [
-                        ReaderBackgroundSurface(
-                          settings: backgroundSettings,
-                          child: body,
-                        ),
-                        // 菜单按钮：仅桌面端显示；移动端用侧滑手势，
-                        // 不占用视觉空间。
-                        if (!Platform.isAndroid && !Platform.isIOS)
-                          Positioned(
-                            top: 0,
-                            left: 0,
-                            child: SafeArea(
-                              child: IconButton(
-                                icon: Icon(
-                                  sidebarVisible && pushMode
-                                      ? Icons.menu_open_rounded
-                                      : Icons.menu_rounded,
-                                ),
-                                tooltip: sidebarVisible ? '收起菜单' : '打开菜单',
-                                onPressed: () =>
-                                    _setSidebarVisible(!sidebarVisible),
-                              ),
+                    return withPageShortcuts(
+                      child: Row(
+                        children: [
+                          if (pushMode)
+                            PushSidePanel(
+                              visible: sidebarVisible,
+                              child: menuPanel(floating: false),
                             ),
-                          ),
-                        // 翻页按钮：滚动时显示，停止后收起。
-                        ValueListenableBuilder<bool>(
-                          valueListenable: showPageTurnButtonsSetting,
-                          builder: (context, enabled, _) {
-                            if (!enabled) {
-                              return const SizedBox.shrink();
-                            }
-                            return Positioned(
-                              right: 12,
-                              top: 0,
-                              bottom: 0,
-                              child: Align(
-                                alignment: const Alignment(0, 0.35),
-                                child: PageTurnButtons(
-                                  visible: _pageTurnButtonsVisible,
-                                  onPageUp: () => _pageScroll(-1),
-                                  onPageDown: () => _pageScroll(1),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    );
-
-                    return CallbackShortcuts(
-                      bindings: <ShortcutActivator, VoidCallback>{
-                        const SingleActivator(
-                          LogicalKeyboardKey.pageDown,
-                        ): () =>
-                            _pageScroll(1),
-                        const SingleActivator(LogicalKeyboardKey.pageUp): () =>
-                            _pageScroll(-1),
-                      },
-                      child: Focus(
-                        autofocus: true,
-                        child: Row(
-                          children: [
-                            if (pushMode)
-                              PushSidePanel(
-                                visible: sidebarVisible,
-                                child: panel,
-                              ),
-                            Expanded(
-                              child: pushMode
-                                  ? readerArea
-                                  : SlideSidePanel(
-                                      visible: sidebarVisible,
-                                      onVisibilityChanged: _setSidebarVisible,
-                                      panel: panel,
-                                      child: readerArea,
+                          Expanded(
+                            child: pushMode
+                                ? buildReaderArea(
+                                    sidebarVisible: sidebarVisible,
+                                    pushMode: pushMode,
+                                  )
+                                : SlideSidePanel(
+                                    visible: sidebarVisible,
+                                    onVisibilityChanged: _setSidebarVisible,
+                                    panel: menuPanel(floating: false),
+                                    child: buildReaderArea(
+                                      sidebarVisible: sidebarVisible,
+                                      pushMode: pushMode,
                                     ),
-                            ),
-                          ],
-                        ),
+                                  ),
+                          ),
+                        ],
                       ),
                     );
                   },

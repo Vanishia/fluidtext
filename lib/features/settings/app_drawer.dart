@@ -2,12 +2,13 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import '../../widgets/glass.dart';
 import '../../widgets/shelf_glyph.dart';
 import '../context/context_settings.dart';
 import '../reader/reading_order.dart';
 
-/// 贴边常驻侧边栏：与屏幕上/下/左边齐平，保留毛玻璃质感，
-/// 右缘用细分隔线和柔和投影与阅读区分层。
+/// 应用菜单面板：默认是贴边常驻侧边栏（桌面端）；[floating] 为 true
+/// 时是悬浮毛玻璃抽屉（移动端 Scaffold.drawer 使用，手势不抢滚动）。
 class AppSidePanel extends StatelessWidget {
   const AppSidePanel({
     super.key,
@@ -27,6 +28,7 @@ class AppSidePanel extends StatelessWidget {
     this.onContextBeforeChanged,
     this.onContextAfterChanged,
     this.onRequestClose,
+    this.floating = false,
   });
 
   final VoidCallback onOpenBookshelf;
@@ -45,8 +47,11 @@ class AppSidePanel extends StatelessWidget {
   final ValueChanged<int>? onContextBeforeChanged;
   final ValueChanged<int>? onContextAfterChanged;
 
-  /// 面板内的导航动作触发前调用，用于收起面板。
+  /// 面板内的导航动作触发前调用，用于收起面板（贴边模式）。
   final VoidCallback? onRequestClose;
+
+  /// true 时渲染为悬浮毛玻璃 [Drawer]（移动端），导航动作前自动 pop 抽屉。
+  final bool floating;
 
   @override
   Widget build(BuildContext context) {
@@ -57,6 +62,165 @@ class AppSidePanel extends StatelessWidget {
         contextAfter != null &&
         onContextBeforeChanged != null &&
         onContextAfterChanged != null;
+    final close = floating
+        ? () => Navigator.of(context).pop()
+        : (onRequestClose ?? () {});
+
+    final content = Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 12, 8),
+          child: Row(
+            children: [
+              Text(
+                'FluidText',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const Spacer(),
+              _QuietIconButton(
+                tooltip: _themeTooltip(themeMode),
+                onTap: () => onThemeModeChanged(_nextThemeMode(themeMode)),
+                child: Icon(
+                  _themeIcon(themeMode),
+                  size: 20,
+                  color: cs.onSurface,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _ShelfButton(onTap: onOpenBookshelf, onClose: close),
+                const SizedBox(height: 18),
+                SegmentedButton<ReadingOrder>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment<ReadingOrder>(
+                      value: ReadingOrder.sequential,
+                      icon: Icon(Icons.format_list_numbered_rounded),
+                      label: Text('顺序阅读'),
+                    ),
+                    ButtonSegment<ReadingOrder>(
+                      value: ReadingOrder.random,
+                      icon: Icon(Icons.shuffle_rounded),
+                      label: Text('乱序阅读'),
+                    ),
+                  ],
+                  selected: {readingOrder},
+                  onSelectionChanged: (selection) {
+                    onReadingOrderChanged(selection.first);
+                  },
+                ),
+                if (onShowUnreadOnlyChanged != null) ...[
+                  const SizedBox(height: 12),
+                  SwitchListTile.adaptive(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 2),
+                    title: const Text('过滤已读'),
+                    value: showUnreadOnly,
+                    onChanged: onShowUnreadOnlyChanged,
+                  ),
+                ],
+                if (hasContextSettings) ...[
+                  const SizedBox(height: 28),
+                  _ContextCountStepper(
+                    label: '上文数量',
+                    value: contextBefore!,
+                    onChanged: onContextBeforeChanged!,
+                  ),
+                  const SizedBox(height: 12),
+                  _ContextCountStepper(
+                    label: '下文数量',
+                    value: contextAfter!,
+                    onChanged: onContextAfterChanged!,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
+          child: Row(
+            children: [
+              _QuietIconButton(
+                tooltip: '外观设置',
+                onTap: _closeThen(onOpenReaderBackgroundSettings, close),
+                child: Icon(
+                  Icons.settings_rounded,
+                  size: 18,
+                  color: onOpenReaderBackgroundSettings == null
+                      ? cs.onSurface.withValues(alpha: 0.32)
+                      : cs.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _QuietIconButton(
+                tooltip: '阅读分析',
+                onTap: _closeThen(onOpenReadingAnalysis, close),
+                child: Icon(
+                  Icons.insights_rounded,
+                  size: 18,
+                  color: onOpenReadingAnalysis == null
+                      ? cs.onSurface.withValues(alpha: 0.32)
+                      : cs.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _QuietIconButton(
+                tooltip: '收藏',
+                onTap: _closeThen(onOpenFavoriteList, close),
+                child: Icon(
+                  Icons.favorite_border_rounded,
+                  size: 18,
+                  color: onOpenFavoriteList == null
+                      ? cs.onSurface.withValues(alpha: 0.32)
+                      : cs.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _QuietIconButton(
+                tooltip: '已读',
+                onTap: _closeThen(onOpenReadList, close),
+                child: Icon(
+                  Icons.done_all_rounded,
+                  size: 18,
+                  color: onOpenReadList == null
+                      ? cs.onSurface.withValues(alpha: 0.32)
+                      : cs.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (floating) {
+      return Drawer(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Glass(
+              color: cs.surface.withValues(alpha: isDark ? 0.48 : 0.68),
+              borderColor: cs.outlineVariant.withValues(
+                alpha: isDark ? 0.18 : 0.34,
+              ),
+              child: content,
+            ),
+          ),
+        ),
+      );
+    }
 
     return ClipRect(
       child: BackdropFilter(
@@ -79,159 +243,16 @@ class AppSidePanel extends StatelessWidget {
               ),
             ],
           ),
-          child: SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 14, 12, 8),
-                  child: Row(
-                    children: [
-                      Text(
-                        'FluidText',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                      const Spacer(),
-                      _QuietIconButton(
-                        tooltip: _themeTooltip(themeMode),
-                        onTap: () =>
-                            onThemeModeChanged(_nextThemeMode(themeMode)),
-                        child: Icon(
-                          _themeIcon(themeMode),
-                          size: 20,
-                          color: cs.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _ShelfButton(
-                          onTap: onOpenBookshelf,
-                          onClose: onRequestClose,
-                        ),
-                        const SizedBox(height: 18),
-                        SegmentedButton<ReadingOrder>(
-                          showSelectedIcon: false,
-                          segments: const [
-                            ButtonSegment<ReadingOrder>(
-                              value: ReadingOrder.sequential,
-                              icon: Icon(Icons.format_list_numbered_rounded),
-                              label: Text('顺序阅读'),
-                            ),
-                            ButtonSegment<ReadingOrder>(
-                              value: ReadingOrder.random,
-                              icon: Icon(Icons.shuffle_rounded),
-                              label: Text('乱序阅读'),
-                            ),
-                          ],
-                          selected: {readingOrder},
-                          onSelectionChanged: (selection) {
-                            onReadingOrderChanged(selection.first);
-                          },
-                        ),
-                        if (onShowUnreadOnlyChanged != null) ...[
-                          const SizedBox(height: 12),
-                          SwitchListTile.adaptive(
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 2,
-                            ),
-                            title: const Text('过滤已读'),
-                            value: showUnreadOnly,
-                            onChanged: onShowUnreadOnlyChanged,
-                          ),
-                        ],
-                        if (hasContextSettings) ...[
-                          const SizedBox(height: 28),
-                          _ContextCountStepper(
-                            label: '上文数量',
-                            value: contextBefore!,
-                            onChanged: onContextBeforeChanged!,
-                          ),
-                          const SizedBox(height: 12),
-                          _ContextCountStepper(
-                            label: '下文数量',
-                            value: contextAfter!,
-                            onChanged: onContextAfterChanged!,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
-                  child: Row(
-                    children: [
-                      _QuietIconButton(
-                        tooltip: '外观设置',
-                        onTap: _closeThen(onOpenReaderBackgroundSettings),
-                        child: Icon(
-                          Icons.settings_rounded,
-                          size: 18,
-                          color: onOpenReaderBackgroundSettings == null
-                              ? cs.onSurface.withValues(alpha: 0.32)
-                              : cs.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      _QuietIconButton(
-                        tooltip: '阅读分析',
-                        onTap: _closeThen(onOpenReadingAnalysis),
-                        child: Icon(
-                          Icons.insights_rounded,
-                          size: 18,
-                          color: onOpenReadingAnalysis == null
-                              ? cs.onSurface.withValues(alpha: 0.32)
-                              : cs.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      _QuietIconButton(
-                        tooltip: '收藏',
-                        onTap: _closeThen(onOpenFavoriteList),
-                        child: Icon(
-                          Icons.favorite_border_rounded,
-                          size: 18,
-                          color: onOpenFavoriteList == null
-                              ? cs.onSurface.withValues(alpha: 0.32)
-                              : cs.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      _QuietIconButton(
-                        tooltip: '已读',
-                        onTap: _closeThen(onOpenReadList),
-                        child: Icon(
-                          Icons.done_all_rounded,
-                          size: 18,
-                          color: onOpenReadList == null
-                              ? cs.onSurface.withValues(alpha: 0.32)
-                              : cs.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+          child: SafeArea(child: content),
         ),
       ),
     );
   }
 
-  VoidCallback? _closeThen(VoidCallback? callback) {
+  VoidCallback? _closeThen(VoidCallback? callback, VoidCallback close) {
     if (callback == null) return null;
     return () {
-      onRequestClose?.call();
+      close();
       callback();
     };
   }
