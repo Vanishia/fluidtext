@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
@@ -89,6 +93,22 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
+const _windowChromeChannel = MethodChannel('fluidtext/window_chrome');
+bool? _lastTitleBarDark;
+
+/// 让 Windows 标题栏/边框跟随应用主题日夜间（DWM 沉浸式深色标题栏）。
+void _syncWindowsTitleBar(Brightness brightness) {
+  if (kIsWeb || !Platform.isWindows) return;
+  final dark = brightness == Brightness.dark;
+  if (_lastTitleBarDark == dark) return;
+  _lastTitleBarDark = dark;
+  unawaited(
+    _windowChromeChannel
+        .invokeMethod('setTitleBarDarkMode', dark)
+        .catchError((_) {}),
+  );
+}
+
 class _MyAppState extends State<MyApp> {
   Future<Color>? _seedColorFuture;
   String? _seedColorCacheKey;
@@ -145,6 +165,7 @@ class _MyAppState extends State<MyApp> {
                       themeMode: themeMode,
                       builder: (context, child) {
                         final theme = Theme.of(context);
+                        _syncWindowsTitleBar(theme.brightness);
                         return AnnotatedRegion<SystemUiOverlayStyle>(
                           value: systemUiOverlayStyleForTheme(theme),
                           child: child ?? const SizedBox.shrink(),

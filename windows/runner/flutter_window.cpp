@@ -1,8 +1,17 @@
 #include "flutter_window.h"
 
+#include <dwmapi.h>
+#include <flutter/standard_method_codec.h>
+
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
+
+namespace {
+// DWMWA_USE_IMMERSIVE_DARK_MODE (supported on Windows 11 and late Windows 10
+// builds; the call is a harmless no-op where unsupported).
+constexpr DWORD kDwmwaUseImmersiveDarkMode = 20;
+}  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -25,6 +34,7 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  RegisterWindowChromeChannel();
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -45,6 +55,31 @@ void FlutterWindow::OnDestroy() {
   }
 
   Win32Window::OnDestroy();
+}
+
+void FlutterWindow::RegisterWindowChromeChannel() {
+  window_chrome_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "fluidtext/window_chrome",
+          &flutter::StandardMethodCodec::GetInstance());
+  window_chrome_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() == "setTitleBarDarkMode") {
+          const auto* dark = std::get_if<bool>(call.arguments());
+          if (dark != nullptr) {
+            BOOL immersive_dark = *dark ? TRUE : FALSE;
+            // Best effort: unsupported Windows versions just return an error.
+            ::DwmSetWindowAttribute(GetHandle(), kDwmwaUseImmersiveDarkMode,
+                                    &immersive_dark, sizeof(immersive_dark));
+          }
+          result->Success();
+          return;
+        }
+        result->NotImplemented();
+      });
 }
 
 LRESULT
