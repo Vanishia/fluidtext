@@ -516,23 +516,6 @@ class _BookCardsPageState extends State<BookCardsPage> {
                             );
                           },
                         ),
-                        // 左边缘向右滑动打开侧边栏（推移布局）。
-                        if (!pushMode && !sidebarVisible)
-                          Positioned(
-                            left: 0,
-                            top: 0,
-                            bottom: 0,
-                            width: 24,
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.translucent,
-                              onHorizontalDragEnd: (details) {
-                                if ((details.primaryVelocity ?? 0) > 240) {
-                                  _setSidebarVisible(true);
-                                }
-                              },
-                              child: const SizedBox.expand(),
-                            ),
-                          ),
                       ],
                     );
 
@@ -559,7 +542,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
                                   ? readerArea
                                   : SlideSidePanel(
                                       visible: sidebarVisible,
-                                      onClose: () => _setSidebarVisible(false),
+                                      onVisibilityChanged: _setSidebarVisible,
                                       panel: panel,
                                       child: readerArea,
                                     ),
