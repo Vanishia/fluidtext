@@ -116,7 +116,7 @@ void main() {
           isA<FormatException>().having(
             (error) => error.message,
             'message',
-            contains('版本过新'),
+            contains('更新版本'),
           ),
         ),
       );
@@ -286,7 +286,7 @@ void main() {
           isA<FormatException>().having(
             (error) => error.message,
             'message',
-            contains('版本过新'),
+            contains('更新版本'),
           ),
         ),
       );
