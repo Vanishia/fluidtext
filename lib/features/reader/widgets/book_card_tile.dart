@@ -51,91 +51,105 @@ class BookCardTile extends StatelessWidget {
             child: InkWell(
               onTap: onToggleRead,
               onLongPress: () => _copyCardContent(context),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(11, 10, 9, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (showBookTitle) ...[
-                      Text(
-                        bookTitle ?? card.bookTitle,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                    ],
-                    Text(
-                      '#${card.cardIndex}',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelMedium?.copyWith(color: cs.primary),
-                    ),
-                    const SizedBox(height: 8),
-                    BookCardContentView(
-                      card: card,
-                      repository: repository,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodyMedium?.copyWith(fontSize: 15),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
+              child: Stack(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(11, 10, 9, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.all(8),
-                          icon: Icon(
-                            card.isRead
-                                ? Icons.check_circle
-                                : Icons.radio_button_unchecked,
-                            color: card.isRead
-                                ? Colors.green
-                                : cs.onSurfaceVariant,
+                        if (showBookTitle) ...[
+                          Text(
+                            bookTitle ?? card.bookTitle,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
-                          tooltip: card.isRead ? '取消已读' : '标记已读',
-                          onPressed: onToggleRead,
+                          const SizedBox(height: 6),
+                        ],
+                        Text(
+                          '#${card.cardIndex}',
+                          style: Theme.of(
+                            context,
+                          ).textTheme.labelMedium?.copyWith(color: cs.primary),
                         ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.all(8),
-                          icon: Icon(
-                            card.isFavorite
-                                ? Icons.favorite
-                                : Icons.favorite_outline,
-                            color: card.isFavorite
-                                ? Colors.red
-                                : cs.onSurfaceVariant,
-                          ),
-                          tooltip: card.isFavorite ? '取消收藏' : '收藏',
-                          onPressed: onToggleFavorite,
+                        const SizedBox(height: 8),
+                        BookCardContentView(
+                          card: card,
+                          repository: repository,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.copyWith(fontSize: 15),
                         ),
-                        // 桌面端长按复制不够显眼，补一个单击复制按钮；
-                        // 移动端保持长按复制不变。
-                        if (!Platform.isAndroid && !Platform.isIOS)
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.all(8),
-                            icon: Icon(
-                              Icons.content_paste_rounded,
-                              color: cs.onSurfaceVariant,
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.all(8),
+                              icon: Icon(
+                                card.isRead
+                                    ? Icons.check_circle
+                                    : Icons.radio_button_unchecked,
+                                color: card.isRead
+                                    ? Colors.green
+                                    : cs.onSurfaceVariant,
+                              ),
+                              tooltip: card.isRead ? '取消已读' : '标记已读',
+                              onPressed: onToggleRead,
                             ),
-                            tooltip: '复制内容',
-                            onPressed: () => _copyCardContent(context),
-                          ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.all(8),
-                          icon: const Icon(Icons.unfold_more),
-                          tooltip: '展开上下文',
-                          onPressed: onShowContext,
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.all(8),
+                              icon: Icon(
+                                card.isFavorite
+                                    ? Icons.favorite
+                                    : Icons.favorite_outline,
+                                color: card.isFavorite
+                                    ? Colors.red
+                                    : cs.onSurfaceVariant,
+                              ),
+                              tooltip: card.isFavorite ? '取消收藏' : '收藏',
+                              onPressed: onToggleFavorite,
+                            ),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.all(8),
+                              icon: const Icon(Icons.unfold_more),
+                              tooltip: '展开上下文',
+                              onPressed: onShowContext,
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                  // 桌面端单击复制按钮：小号半透明，放在卡片右上角；
+                  // 移动端保持长按复制不变。
+                  if (!Platform.isAndroid && !Platform.isIOS)
+                    Positioned(
+                      top: 2,
+                      right: 2,
+                      child: IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints.tightFor(
+                          width: 26,
+                          height: 26,
+                        ),
+                        iconSize: 15,
+                        icon: Icon(
+                          Icons.copy_rounded,
+                          color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                        ),
+                        tooltip: '复制内容',
+                        onPressed: () => _copyCardContent(context),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
