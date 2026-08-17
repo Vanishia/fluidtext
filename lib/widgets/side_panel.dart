@@ -168,28 +168,56 @@ class _SlideSidePanelState extends State<SlideSidePanel>
       onHorizontalDragEnd: _handleDragEnd,
       onHorizontalDragCancel: _handleDragCancel,
       child: ClipRect(
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            return Stack(
-              children: [
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  width: kSidePanelWidth,
-                  child: widget.panel,
-                ),
-                Positioned.fill(
-                  child: Transform.translate(
-                    offset: Offset(_controller.value * kSidePanelWidth, 0),
-                    child: child,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            final height = constraints.maxHeight;
+            return AnimatedBuilder(
+              animation: _controller,
+              builder: (context, child) {
+                // 面板与主界面是一块整体画布，一起左右平移：
+                // 关闭时画布左移一个面板宽（面板在屏外），打开时归位。
+                return Transform.translate(
+                  offset: Offset((_controller.value - 1) * kSidePanelWidth, 0),
+                  child: OverflowBox(
+                    alignment: Alignment.centerLeft,
+                    minWidth: width + kSidePanelWidth,
+                    maxWidth: width + kSidePanelWidth,
+                    minHeight: height,
+                    maxHeight: height,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(width: kSidePanelWidth, child: widget.panel),
+                        SizedBox(
+                          width: width,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              ?child,
+                              // 打开后点击右侧内容区收起侧边栏。
+                              IgnorePointer(
+                                ignoring: _controller.value < 0.5,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () {
+                                    widget.onVisibilityChanged(false);
+                                    _settleTo(false);
+                                  },
+                                  child: const SizedBox.expand(),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                );
+              },
+              child: widget.child,
             );
           },
-          child: widget.child,
         ),
       ),
     );
