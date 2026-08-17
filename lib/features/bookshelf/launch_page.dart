@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../app_settings.dart';
@@ -233,7 +235,6 @@ class _LaunchPageState extends State<LaunchPage> {
                 onThemeModeChanged: saveThemeModeSetting,
                 onOpenReaderBackgroundSettings: _openReaderBackgroundSettings,
                 onRequestClose: () => _setSidebarVisible(false),
-                showCloseButton: !pushMode,
               );
 
               final content = ReaderBackgroundSurface(
@@ -244,9 +245,7 @@ class _LaunchPageState extends State<LaunchPage> {
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 440),
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -260,8 +259,7 @@ class _LaunchPageState extends State<LaunchPage> {
                                 ),
                                 const SizedBox(height: 10),
                                 Text(
-                                  _statusMessage ??
-                                      '前往书架选择书籍，选好后会直接进入阅读。',
+                                  _statusMessage ?? '前往书架选择书籍，选好后会直接进入阅读。',
                                   textAlign: TextAlign.center,
                                   style: Theme.of(context).textTheme.bodyLarge
                                       ?.copyWith(
@@ -273,9 +271,7 @@ class _LaunchPageState extends State<LaunchPage> {
                                 const SizedBox(height: 22),
                                 FilledButton.tonalIcon(
                                   onPressed: _openBookshelf,
-                                  icon: const Icon(
-                                    Icons.arrow_forward_rounded,
-                                  ),
+                                  icon: const Icon(Icons.arrow_forward_rounded),
                                   label: const Text('前往书架'),
                                 ),
                               ],
@@ -285,56 +281,59 @@ class _LaunchPageState extends State<LaunchPage> {
                       ),
               );
 
+              final readerArea = Stack(
+                children: [
+                  content,
+                  // 菜单按钮：仅桌面端显示；移动端用侧滑手势。
+                  if (!Platform.isAndroid && !Platform.isIOS)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      child: SafeArea(
+                        child: IconButton(
+                          icon: Icon(
+                            sidebarVisible && pushMode
+                                ? Icons.menu_open_rounded
+                                : Icons.menu_rounded,
+                          ),
+                          tooltip: sidebarVisible ? '收起菜单' : '打开菜单',
+                          onPressed: () => _setSidebarVisible(!sidebarVisible),
+                        ),
+                      ),
+                    ),
+                  // 左边缘向右滑动打开侧边栏（推移布局）。
+                  if (!pushMode && !sidebarVisible)
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 24,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onHorizontalDragEnd: (details) {
+                          if ((details.primaryVelocity ?? 0) > 240) {
+                            _setSidebarVisible(true);
+                          }
+                        },
+                        child: const SizedBox.expand(),
+                      ),
+                    ),
+                ],
+              );
+
               return Row(
                 children: [
                   if (pushMode)
                     PushSidePanel(visible: sidebarVisible, child: panel),
                   Expanded(
-                    child: Stack(
-                      children: [
-                        content,
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          child: SafeArea(
-                            child: IconButton(
-                              icon: Icon(
-                                sidebarVisible && pushMode
-                                    ? Icons.menu_open_rounded
-                                    : Icons.menu_rounded,
-                              ),
-                              tooltip: sidebarVisible ? '收起菜单' : '打开菜单',
-                              onPressed: () =>
-                                  _setSidebarVisible(!sidebarVisible),
-                            ),
+                    child: pushMode
+                        ? readerArea
+                        : SlideSidePanel(
+                            visible: sidebarVisible,
+                            onClose: () => _setSidebarVisible(false),
+                            panel: panel,
+                            child: readerArea,
                           ),
-                        ),
-                        if (!pushMode && !sidebarVisible)
-                          Positioned(
-                            left: 0,
-                            top: 0,
-                            bottom: 0,
-                            width: 24,
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.translucent,
-                              onHorizontalDragEnd: (details) {
-                                if ((details.primaryVelocity ?? 0) > 240) {
-                                  _setSidebarVisible(true);
-                                }
-                              },
-                              child: const SizedBox.expand(),
-                            ),
-                          ),
-                        if (!pushMode)
-                          Positioned.fill(
-                            child: OverlaySidePanel(
-                              visible: sidebarVisible,
-                              onClose: () => _setSidebarVisible(false),
-                              child: panel,
-                            ),
-                          ),
-                      ],
-                    ),
                   ),
                 ],
               );

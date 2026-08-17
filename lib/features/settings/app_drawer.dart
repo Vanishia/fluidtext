@@ -27,7 +27,6 @@ class AppSidePanel extends StatelessWidget {
     this.onContextBeforeChanged,
     this.onContextAfterChanged,
     this.onRequestClose,
-    this.showCloseButton = false,
   });
 
   final VoidCallback onOpenBookshelf;
@@ -48,9 +47,6 @@ class AppSidePanel extends StatelessWidget {
 
   /// 面板内的导航动作触发前调用，用于收起面板。
   final VoidCallback? onRequestClose;
-
-  /// 覆盖布局（窄屏）下在标题行显示关闭按钮。
-  final bool showCloseButton;
 
   @override
   Widget build(BuildContext context) {
@@ -108,18 +104,6 @@ class AppSidePanel extends StatelessWidget {
                           color: cs.onSurface,
                         ),
                       ),
-                      if (showCloseButton) ...[
-                        const SizedBox(width: 8),
-                        _QuietIconButton(
-                          tooltip: '收起菜单',
-                          onTap: onRequestClose,
-                          child: Icon(
-                            Icons.close_rounded,
-                            size: 20,
-                            color: cs.onSurface,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -325,9 +309,7 @@ class _ContextCountStepper extends StatelessWidget {
           decoration: BoxDecoration(
             color: cs.surfaceContainerHighest.withValues(alpha: 0.7),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: 0.5),
-            ),
+            border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.5)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -342,9 +324,9 @@ class _ContextCountStepper extends StatelessWidget {
                 child: Text(
                   '$value',
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                 ),
               ),
               _StepperButton(
@@ -361,11 +343,7 @@ class _ContextCountStepper extends StatelessWidget {
 }
 
 class _StepperButton extends StatelessWidget {
-  const _StepperButton({
-    required this.icon,
-    required this.tooltip,
-    this.onTap,
-  });
+  const _StepperButton({required this.icon, required this.tooltip, this.onTap});
 
   final IconData icon;
   final String tooltip;

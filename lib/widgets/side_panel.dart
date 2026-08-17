@@ -43,74 +43,61 @@ class PushSidePanel extends StatelessWidget {
   }
 }
 
-/// 覆盖式贴边面板：面板滑入滑出，背景遮罩淡入淡出。
-/// 收起后面板会从树中移除，不会常驻 BackdropFilter 的开销。
-///
-/// 需要放在 [Stack] 内使用（自身会填满父级）。
-class OverlaySidePanel extends StatelessWidget {
-  const OverlaySidePanel({
+/// 推移式布局：打开侧边栏时把整个主界面向右推，面板与主界面
+/// 连在一起同步滑动，无遮罩。用于窄屏（手机竖屏、极窄窗口）。
+/// 打开后面板或主界面上向左快速滑动即可收起。
+class SlideSidePanel extends StatelessWidget {
+  const SlideSidePanel({
     super.key,
     required this.visible,
     required this.onClose,
+    required this.panel,
     required this.child,
   });
 
   final bool visible;
   final VoidCallback onClose;
+  final Widget panel;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: IgnorePointer(
-            ignoring: !visible,
-            child: AnimatedOpacity(
-              duration: _kPanelAnimationDuration,
-              curve: Curves.easeOut,
-              opacity: visible ? 1 : 0,
-              child: GestureDetector(
-                onTap: onClose,
-                child: ColoredBox(
-                  color: Colors.black.withValues(alpha: 0.18),
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragEnd: (details) {
+        if (visible && (details.primaryVelocity ?? 0) < -240) {
+          onClose();
+        }
+      },
+      child: ClipRect(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            final fraction = width > 0
+                ? (kSidePanelWidth / width).clamp(0.0, 1.0)
+                : 0.0;
+            return Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: kSidePanelWidth,
+                  child: panel,
                 ),
-              ),
-            ),
-          ),
-        ),
-        Positioned(
-          left: 0,
-          top: 0,
-          bottom: 0,
-          child: AnimatedSwitcher(
-            duration: _kPanelAnimationDuration,
-            transitionBuilder: (child, animation) {
-              return SlideTransition(
-                position:
-                    Tween<Offset>(
-                      begin: const Offset(-1, 0),
-                      end: Offset.zero,
-                    ).animate(
-                      CurvedAnimation(
-                        parent: animation,
-                        curve: Curves.easeOutCubic,
-                      ),
-                    ),
-                child: child,
-              );
-            },
-            child: visible
-                ? SizedBox(
-                    key: const ValueKey('side-panel'),
-                    width: kSidePanelWidth,
-                    height: double.infinity,
+                Positioned.fill(
+                  child: AnimatedSlide(
+                    duration: _kPanelAnimationDuration,
+                    curve: Curves.easeOutCubic,
+                    offset: Offset(visible ? fraction : 0, 0),
                     child: child,
-                  )
-                : const SizedBox.shrink(key: ValueKey('side-panel-empty')),
-          ),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
-      ],
+      ),
     );
   }
 }
