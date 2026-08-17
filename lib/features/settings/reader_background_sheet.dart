@@ -268,6 +268,12 @@ class _ReaderBackgroundSheetState extends State<_ReaderBackgroundSheet> {
                                   '背景会立刻应用到阅读页面。',
                                   style: Theme.of(context).textTheme.bodyMedium,
                                 ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '纯色模式自适应日夜间。',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(color: cs.onSurfaceVariant),
+                                ),
                               ],
                             ),
                           ),
@@ -478,6 +484,21 @@ class _ReaderBackgroundSheetState extends State<_ReaderBackgroundSheet> {
                             max: AppBehaviorSettings.maxReaderFontScale,
                             divisions: 16,
                             onChanged: saveReaderFontScaleSetting,
+                            sliderLeading: Text(
+                              'A',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                            sliderTrailing: Text(
+                              'A',
+                              style: TextStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w700,
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
                           );
                         },
                       ),
@@ -492,6 +513,16 @@ class _ReaderBackgroundSheetState extends State<_ReaderBackgroundSheet> {
                             max: AppBehaviorSettings.maxReaderLineHeight,
                             divisions: 12,
                             onChanged: saveReaderLineHeightSetting,
+                            sliderLeading: Icon(
+                              Icons.density_small_rounded,
+                              size: 15,
+                              color: cs.onSurfaceVariant,
+                            ),
+                            sliderTrailing: Icon(
+                              Icons.density_large_rounded,
+                              size: 19,
+                              color: cs.onSurfaceVariant,
+                            ),
                           );
                         },
                       ),
@@ -570,6 +601,8 @@ class _PercentSliderRow extends StatelessWidget {
     required this.max,
     required this.divisions,
     required this.onChanged,
+    this.sliderLeading,
+    this.sliderTrailing,
   });
 
   final String label;
@@ -579,6 +612,10 @@ class _PercentSliderRow extends StatelessWidget {
   final double max;
   final int divisions;
   final ValueChanged<double> onChanged;
+
+  /// 滑杆两端的小/大示意图形（如小 A / 大 A）。
+  final Widget? sliderLeading;
+  final Widget? sliderTrailing;
 
   @override
   Widget build(BuildContext context) {
@@ -595,21 +632,59 @@ class _PercentSliderRow extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            Text(
-              valueText,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: cs.onSurface,
-                fontWeight: FontWeight.w700,
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                child: Text(
+                  valueText,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: cs.onSurface,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
           ],
         ),
-        Slider(
-          value: value,
-          min: min,
-          max: max,
-          divisions: divisions,
-          onChanged: onChanged,
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            ?sliderLeading,
+            Expanded(
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 4,
+                  trackShape: const RoundedRectSliderTrackShape(),
+                  activeTrackColor: cs.primary,
+                  inactiveTrackColor: cs.surfaceContainerHighest,
+                  activeTickMarkColor: Colors.transparent,
+                  inactiveTickMarkColor: Colors.transparent,
+                  thumbColor: cs.primary,
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 8,
+                    elevation: 1,
+                    pressedElevation: 3,
+                  ),
+                  overlayColor: cs.primary.withValues(alpha: 0.12),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 16,
+                  ),
+                ),
+                child: Slider(
+                  value: value,
+                  min: min,
+                  max: max,
+                  divisions: divisions,
+                  onChanged: onChanged,
+                ),
+              ),
+            ),
+            ?sliderTrailing,
+          ],
         ),
       ],
     );
@@ -631,7 +706,9 @@ class _PaletteChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = palette.color.computeLuminance() < 0.4;
+    final brightness = Theme.of(context).brightness;
+    final displayColor = palette.colorFor(brightness);
+    final isDark = displayColor.computeLuminance() < 0.4;
     final cs = Theme.of(context).colorScheme;
 
     return InkWell(
@@ -641,7 +718,7 @@ class _PaletteChip extends StatelessWidget {
         width: 82,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
-          color: palette.color,
+          color: displayColor,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: selected
@@ -669,7 +746,7 @@ class _PaletteChip extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             Text(
-              palette.label,
+              palette.labelFor(brightness),
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
                 color: isDark ? Colors.white : Colors.black87,
                 fontWeight: FontWeight.w700,
