@@ -77,22 +77,25 @@ class BookCardTile extends StatelessWidget {
                         // 桌面端单击复制按钮：小号半透明，放在首行右侧；
                         // 移动端保持长按复制不变。
                         if (!Platform.isAndroid && !Platform.isIOS)
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.all(4),
-                            constraints: const BoxConstraints.tightFor(
-                              width: 30,
-                              height: 30,
-                            ),
-                            iconSize: 18,
-                            icon: Icon(
-                              Icons.copy_rounded,
-                              color: cs.onSurfaceVariant.withValues(
-                                alpha: 0.55,
+                          Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: IconButton(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.all(4),
+                              constraints: const BoxConstraints.tightFor(
+                                width: 30,
+                                height: 30,
                               ),
+                              iconSize: 18,
+                              icon: Icon(
+                                Icons.copy_rounded,
+                                color: cs.onSurfaceVariant.withValues(
+                                  alpha: 0.55,
+                                ),
+                              ),
+                              tooltip: '复制内容',
+                              onPressed: () => _copyCardContent(context),
                             ),
-                            tooltip: '复制内容',
-                            onPressed: () => _copyCardContent(context),
                           ),
                       ],
                     ),
