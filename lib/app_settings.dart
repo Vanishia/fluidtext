@@ -16,6 +16,7 @@ final contextSettingsSetting = _vm.contextSettingsSetting;
 final readerBackgroundSetting = _vm.readerBackgroundSetting;
 final appFontSetting = _vm.appFontSetting;
 final analysisModuleOrderSetting = _vm.analysisModuleOrderSetting;
+final showPageTurnButtonsSetting = _vm.showPageTurnButtonsSetting;
 
 Future<void> initializeAppSettings() => _vm.init();
 
@@ -30,6 +31,9 @@ void saveContextSettingsSetting(ContextSettings settings) =>
 
 void saveAnalysisModuleOrderSetting(List<ReadingAnalysisModuleType> order) =>
     _vm.setAnalysisModuleOrder(order);
+
+void saveShowPageTurnButtonsSetting(bool value) =>
+    _vm.setShowPageTurnButtons(value);
 
 Future<void> saveReaderBackgroundSettings(ReaderBackgroundSettings settings) =>
     _vm.saveReaderBackground(settings);

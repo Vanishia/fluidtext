@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app_settings.dart';
 import '../../models/book.dart';
@@ -22,6 +23,7 @@ import 'reader_background_settings.dart';
 import 'reader_controller.dart';
 import 'widgets/book_card_tile.dart';
 import 'widgets/card_flow.dart';
+import 'widgets/page_turn_buttons.dart';
 import 'widgets/reader_background_surface.dart';
 
 class BookCardsPage extends StatefulWidget {
@@ -58,9 +60,45 @@ class _BookCardsPageState extends State<BookCardsPage> {
   bool _sidebarVisible = false;
   bool _sidebarPushMode = true;
 
+  /// 翻页按钮：滚动时显示，停止滚动 1.5 秒后收起。
+  bool _pageTurnButtonsVisible = false;
+  Timer? _pageTurnHideTimer;
+
   void _setSidebarVisible(bool visible) {
     setState(() {
       _sidebarVisibleOverride = visible;
+    });
+  }
+
+  /// 按 90% 视口高度翻页（PageUp/PageDown 与翻页按钮共用）。
+  void _pageScroll(double direction) {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final target =
+        (position.pixels + position.viewportDimension * 0.9 * direction).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        );
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _handleScrollActivity() {
+    if (!showPageTurnButtonsSetting.value) return;
+    if (!_pageTurnButtonsVisible) {
+      setState(() {
+        _pageTurnButtonsVisible = true;
+      });
+    }
+    _pageTurnHideTimer?.cancel();
+    _pageTurnHideTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (!mounted) return;
+      setState(() {
+        _pageTurnButtonsVisible = false;
+      });
     });
   }
 
@@ -69,10 +107,12 @@ class _BookCardsPageState extends State<BookCardsPage> {
     super.initState();
     _init();
     _scrollController.addListener(_maybeLoadMore);
+    _scrollController.addListener(_handleScrollActivity);
   }
 
   @override
   void dispose() {
+    _pageTurnHideTimer?.cancel();
     _scrollController.dispose();
     _controller?.dispose();
     super.dispose();
@@ -438,67 +478,104 @@ class _BookCardsPageState extends State<BookCardsPage> {
                       ),
                     );
 
-                    return Row(
-                      children: [
-                        if (pushMode)
-                          PushSidePanel(
-                            visible: sidebarVisible,
-                            child: panel,
-                          ),
-                        Expanded(
-                          child: Stack(
-                            children: [
-                              ReaderBackgroundSurface(
-                                settings: backgroundSettings,
-                                child: body,
+                    return CallbackShortcuts(
+                      bindings: <ShortcutActivator, VoidCallback>{
+                        const SingleActivator(LogicalKeyboardKey.pageDown): () =>
+                            _pageScroll(1),
+                        const SingleActivator(LogicalKeyboardKey.pageUp): () =>
+                            _pageScroll(-1),
+                      },
+                      child: Focus(
+                        autofocus: true,
+                        child: Row(
+                          children: [
+                            if (pushMode)
+                              PushSidePanel(
+                                visible: sidebarVisible,
+                                child: panel,
                               ),
-                              // 菜单按钮：所有平台可见，点击开合侧边栏。
-                              Positioned(
-                                top: 0,
-                                left: 0,
-                                child: SafeArea(
-                                  child: IconButton(
-                                    icon: Icon(
-                                      sidebarVisible && pushMode
-                                          ? Icons.menu_open_rounded
-                                          : Icons.menu_rounded,
+                            Expanded(
+                              child: Stack(
+                                children: [
+                                  ReaderBackgroundSurface(
+                                    settings: backgroundSettings,
+                                    child: body,
+                                  ),
+                                  // 菜单按钮：所有平台可见，点击开合侧边栏。
+                                  Positioned(
+                                    top: 0,
+                                    left: 0,
+                                    child: SafeArea(
+                                      child: IconButton(
+                                        icon: Icon(
+                                          sidebarVisible && pushMode
+                                              ? Icons.menu_open_rounded
+                                              : Icons.menu_rounded,
+                                        ),
+                                        tooltip: sidebarVisible
+                                            ? '收起菜单'
+                                            : '打开菜单',
+                                        onPressed: () => _setSidebarVisible(
+                                          !sidebarVisible,
+                                        ),
+                                      ),
                                     ),
-                                    tooltip: sidebarVisible ? '收起菜单' : '打开菜单',
-                                    onPressed: () =>
-                                        _setSidebarVisible(!sidebarVisible),
                                   ),
-                                ),
-                              ),
-                              // 左边缘向右滑动打开侧边栏（覆盖布局）。
-                              if (!pushMode && !sidebarVisible)
-                                Positioned(
-                                  left: 0,
-                                  top: 0,
-                                  bottom: 0,
-                                  width: 24,
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.translucent,
-                                    onHorizontalDragEnd: (details) {
-                                      if ((details.primaryVelocity ?? 0) >
-                                          240) {
-                                        _setSidebarVisible(true);
+                                  // 翻页按钮：滚动时显示，停止后收起。
+                                  ValueListenableBuilder<bool>(
+                                    valueListenable:
+                                        showPageTurnButtonsSetting,
+                                    builder: (context, enabled, _) {
+                                      if (!enabled) {
+                                        return const SizedBox.shrink();
                                       }
+                                      return Positioned(
+                                        right: 12,
+                                        top: 0,
+                                        bottom: 0,
+                                        child: Center(
+                                          child: PageTurnButtons(
+                                            visible: _pageTurnButtonsVisible,
+                                            onPageUp: () => _pageScroll(-1),
+                                            onPageDown: () => _pageScroll(1),
+                                          ),
+                                        ),
+                                      );
                                     },
-                                    child: const SizedBox.expand(),
                                   ),
-                                ),
-                              if (!pushMode)
-                                Positioned.fill(
-                                  child: OverlaySidePanel(
-                                    visible: sidebarVisible,
-                                    onClose: () => _setSidebarVisible(false),
-                                    child: panel,
-                                  ),
-                                ),
-                            ],
-                          ),
+                                  // 左边缘向右滑动打开侧边栏（覆盖布局）。
+                                  if (!pushMode && !sidebarVisible)
+                                    Positioned(
+                                      left: 0,
+                                      top: 0,
+                                      bottom: 0,
+                                      width: 24,
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.translucent,
+                                        onHorizontalDragEnd: (details) {
+                                          if ((details.primaryVelocity ?? 0) >
+                                              240) {
+                                            _setSidebarVisible(true);
+                                          }
+                                        },
+                                        child: const SizedBox.expand(),
+                                      ),
+                                    ),
+                                  if (!pushMode)
+                                    Positioned.fill(
+                                      child: OverlaySidePanel(
+                                        visible: sidebarVisible,
+                                        onClose: () =>
+                                            _setSidebarVisible(false),
+                                        child: panel,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     );
                   },
                 ),

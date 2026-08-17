@@ -16,6 +16,7 @@ class AppBehaviorSettings {
     this.showUnreadOnly = false,
     this.contextSettings = const ContextSettings(),
     this.analysisModuleOrder = defaultReadingAnalysisModuleOrder,
+    this.showPageTurnButtons = true,
   });
 
   final ThemeMode themeMode;
@@ -23,6 +24,7 @@ class AppBehaviorSettings {
   final bool showUnreadOnly;
   final ContextSettings contextSettings;
   final List<ReadingAnalysisModuleType> analysisModuleOrder;
+  final bool showPageTurnButtons;
 
   AppBehaviorSettings copyWith({
     ThemeMode? themeMode,
@@ -30,6 +32,7 @@ class AppBehaviorSettings {
     bool? showUnreadOnly,
     ContextSettings? contextSettings,
     List<ReadingAnalysisModuleType>? analysisModuleOrder,
+    bool? showPageTurnButtons,
   }) {
     return AppBehaviorSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -37,6 +40,7 @@ class AppBehaviorSettings {
       showUnreadOnly: showUnreadOnly ?? this.showUnreadOnly,
       contextSettings: contextSettings ?? this.contextSettings,
       analysisModuleOrder: analysisModuleOrder ?? this.analysisModuleOrder,
+      showPageTurnButtons: showPageTurnButtons ?? this.showPageTurnButtons,
     );
   }
 }
@@ -67,6 +71,7 @@ class AppBehaviorSettingsService {
         analysisModuleOrder: normalizeReadingAnalysisModuleOrder(
           json['analysisModuleOrder'] as List<dynamic>?,
         ),
+        showPageTurnButtons: json['showPageTurnButtons'] != false,
       );
     } catch (_) {
       return const AppBehaviorSettings();
@@ -84,6 +89,7 @@ class AppBehaviorSettingsService {
       'analysisModuleOrder': settings.analysisModuleOrder
           .map((item) => item.name)
           .toList(growable: false),
+      'showPageTurnButtons': settings.showPageTurnButtons,
       'savedAt': DateTime.now().toIso8601String(),
     };
     await JsonFileStore.writeAtomic(file, payload);
