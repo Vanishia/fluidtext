@@ -31,7 +31,7 @@ class PageTurnButtons extends StatelessWidget {
           offset: visible ? Offset.zero : const Offset(0.25, 0),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: cs.surface.withValues(alpha: isDark ? 0.72 : 0.88),
+              color: cs.surface.withValues(alpha: isDark ? 0.72 : 0.68),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
                 color: cs.outlineVariant.withValues(
