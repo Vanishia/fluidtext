@@ -212,7 +212,9 @@ class _LaunchPageState extends State<LaunchPage> {
       valueListenable: readerBackgroundSetting,
       builder: (context, backgroundSettings, _) {
         return Scaffold(
-          backgroundColor: backgroundSettings.palette.color,
+          backgroundColor: backgroundSettings.backgroundColor(
+            Theme.of(context).brightness,
+          ),
           body: LayoutBuilder(
             builder: (context, constraints) {
               final width = constraints.maxWidth;

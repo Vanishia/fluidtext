@@ -370,7 +370,9 @@ class _BookCardsPageState extends State<BookCardsPage> {
         valueListenable: readerBackgroundSetting,
         builder: (context, backgroundSettings, _) {
           return Scaffold(
-            backgroundColor: backgroundSettings.palette.color,
+            backgroundColor: backgroundSettings.backgroundColor(
+              Theme.of(context).brightness,
+            ),
             body: ReaderBackgroundSurface(
               settings: backgroundSettings,
               child: const Center(child: CircularProgressIndicator()),
@@ -417,7 +419,9 @@ class _BookCardsPageState extends State<BookCardsPage> {
                     );
 
               return Scaffold(
-                backgroundColor: backgroundSettings.palette.color,
+                backgroundColor: backgroundSettings.backgroundColor(
+                  Theme.of(context).brightness,
+                ),
                 body: LayoutBuilder(
                   builder: (context, constraints) {
                     final width = constraints.maxWidth;

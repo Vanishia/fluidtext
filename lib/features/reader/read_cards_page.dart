@@ -179,7 +179,9 @@ class _ReadCardsPageState extends State<ReadCardsPage> {
       valueListenable: readerBackgroundSetting,
       builder: (context, backgroundSettings, _) {
         return Scaffold(
-          backgroundColor: backgroundSettings.palette.color,
+          backgroundColor: backgroundSettings.backgroundColor(
+            Theme.of(context).brightness,
+          ),
           body: ReaderBackgroundSurface(
             settings: backgroundSettings,
             child: Stack(
