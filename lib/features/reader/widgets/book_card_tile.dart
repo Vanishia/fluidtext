@@ -119,7 +119,7 @@ class BookCardTile extends StatelessWidget {
                             visualDensity: VisualDensity.compact,
                             padding: const EdgeInsets.all(8),
                             icon: Icon(
-                              Icons.copy_rounded,
+                              Icons.content_paste_rounded,
                               color: cs.onSurfaceVariant,
                             ),
                             tooltip: '复制内容',
