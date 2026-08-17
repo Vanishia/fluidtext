@@ -231,11 +231,20 @@ class _FavoriteCardItem extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                card.content,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(height: 1.5, fontSize: 15),
+              AnimatedBuilder(
+                animation: Listenable.merge([
+                  readerFontScaleSetting,
+                  readerLineHeightSetting,
+                ]),
+                builder: (context, _) {
+                  return Text(
+                    card.content,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontSize: 15 * readerFontScaleSetting.value,
+                      height: readerLineHeightSetting.value,
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 4),
               Row(

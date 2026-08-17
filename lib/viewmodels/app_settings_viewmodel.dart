@@ -29,6 +29,12 @@ class AppSettingsViewModel {
         defaultReadingAnalysisModuleOrder,
       );
   final showPageTurnButtonsSetting = ValueNotifier(true);
+  final readerFontScaleSetting = ValueNotifier(
+    AppBehaviorSettings.defaultReaderFontScale,
+  );
+  final readerLineHeightSetting = ValueNotifier(
+    AppBehaviorSettings.defaultReaderLineHeight,
+  );
 
   Future<void> _saveQueue = Future.value();
 
@@ -42,6 +48,8 @@ class AppSettingsViewModel {
   List<ReadingAnalysisModuleType> get analysisModuleOrder =>
       analysisModuleOrderSetting.value;
   bool get showPageTurnButtons => showPageTurnButtonsSetting.value;
+  double get readerFontScale => readerFontScaleSetting.value;
+  double get readerLineHeight => readerLineHeightSetting.value;
 
   Future<void> init() async {
     final fontFuture = AppFontService.instance.load();
@@ -55,6 +63,8 @@ class AppSettingsViewModel {
       behaviorSettings.analysisModuleOrder,
     );
     showPageTurnButtonsSetting.value = behaviorSettings.showPageTurnButtons;
+    readerFontScaleSetting.value = behaviorSettings.readerFontScale;
+    readerLineHeightSetting.value = behaviorSettings.readerLineHeight;
     readerBackgroundSetting.value = await backgroundFuture;
     appFontSetting.value = await fontFuture;
   }
@@ -89,6 +99,22 @@ class AppSettingsViewModel {
 
   void setShowPageTurnButtons(bool value) {
     showPageTurnButtonsSetting.value = value;
+    _scheduleBehaviorSave();
+  }
+
+  void setReaderFontScale(double value) {
+    readerFontScaleSetting.value = value.clamp(
+      AppBehaviorSettings.minReaderFontScale,
+      AppBehaviorSettings.maxReaderFontScale,
+    );
+    _scheduleBehaviorSave();
+  }
+
+  void setReaderLineHeight(double value) {
+    readerLineHeightSetting.value = value.clamp(
+      AppBehaviorSettings.minReaderLineHeight,
+      AppBehaviorSettings.maxReaderLineHeight,
+    );
     _scheduleBehaviorSave();
   }
 
@@ -141,6 +167,8 @@ class AppSettingsViewModel {
       contextSettings: contextSettingsSetting.value,
       analysisModuleOrder: analysisModuleOrderSetting.value,
       showPageTurnButtons: showPageTurnButtonsSetting.value,
+      readerFontScale: readerFontScaleSetting.value,
+      readerLineHeight: readerLineHeightSetting.value,
     );
 
     _saveQueue = _saveQueue

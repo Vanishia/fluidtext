@@ -17,6 +17,8 @@ final readerBackgroundSetting = _vm.readerBackgroundSetting;
 final appFontSetting = _vm.appFontSetting;
 final analysisModuleOrderSetting = _vm.analysisModuleOrderSetting;
 final showPageTurnButtonsSetting = _vm.showPageTurnButtonsSetting;
+final readerFontScaleSetting = _vm.readerFontScaleSetting;
+final readerLineHeightSetting = _vm.readerLineHeightSetting;
 
 Future<void> initializeAppSettings() => _vm.init();
 
@@ -34,6 +36,11 @@ void saveAnalysisModuleOrderSetting(List<ReadingAnalysisModuleType> order) =>
 
 void saveShowPageTurnButtonsSetting(bool value) =>
     _vm.setShowPageTurnButtons(value);
+
+void saveReaderFontScaleSetting(double value) => _vm.setReaderFontScale(value);
+
+void saveReaderLineHeightSetting(double value) =>
+    _vm.setReaderLineHeight(value);
 
 Future<void> saveReaderBackgroundSettings(ReaderBackgroundSettings settings) =>
     _vm.saveReaderBackground(settings);

@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../app_settings.dart';
+import '../../services/app_behavior_settings_service.dart';
 import '../reader/reader_background_settings.dart';
 import '../reader/widgets/reader_background_surface.dart';
 import 'app_font_settings.dart';
@@ -203,67 +205,71 @@ class _ReaderBackgroundSheetState extends State<_ReaderBackgroundSheet> {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
     return SafeArea(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + bottomInset),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '外观设置',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '可以设置阅读背景和应用字体。',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
-            ),
-            const SizedBox(height: 16),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: SizedBox(
-                height: 148,
-                width: double.infinity,
-                child: ReaderBackgroundSurface(
-                  settings: _settings,
-                  child: Padding(
-                    padding: const EdgeInsets.all(18),
-                    child: Align(
-                      alignment: Alignment.bottomLeft,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surface.withValues(alpha: 0.56),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: cs.outlineVariant.withValues(alpha: 0.4),
+      child: SizedBox(
+        // 设置面板固定占屏高 70%，内容可上下滚动。
+        height: MediaQuery.sizeOf(context).height * 0.7,
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + bottomInset),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '外观设置',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '可以设置阅读背景和应用字体。',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+              ),
+              const SizedBox(height: 16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: SizedBox(
+                  height: 148,
+                  width: double.infinity,
+                  child: ReaderBackgroundSurface(
+                    settings: _settings,
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Align(
+                        alignment: Alignment.bottomLeft,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surface.withValues(alpha: 0.56),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: cs.outlineVariant.withValues(alpha: 0.4),
+                            ),
                           ),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '预览卡片',
-                                style: Theme.of(context).textTheme.labelMedium
-                                    ?.copyWith(
-                                      color: cs.onSurfaceVariant,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                '背景会立刻应用到阅读页面。',
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            ],
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '预览卡片',
+                                  style: Theme.of(context).textTheme.labelMedium
+                                      ?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  '背景会立刻应用到阅读页面。',
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -271,151 +277,341 @@ class _ReaderBackgroundSheetState extends State<_ReaderBackgroundSheet> {
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              '自定义图片',
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 12),
-            DecoratedBox(
-              decoration: BoxDecoration(
+              const SizedBox(height: 20),
+              Text(
+                '自定义图片',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: cs.outlineVariant.withValues(alpha: 0.45),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _settings.hasCustomImage
+                            ? '当前正在使用自定义图片背景。'
+                            : '上传后会覆盖当前预览，切回纯色时仍会保留你选的颜色。',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          FilledButton.tonalIcon(
+                            onPressed: _isImportingImage ? null : _importImage,
+                            icon: _isImportingImage
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.image_outlined),
+                            label: Text(
+                              _settings.hasCustomImage ? '更换图片' : '上传图片',
+                            ),
+                          ),
+                          if (_settings.hasCustomImage) ...[
+                            const SizedBox(width: 10),
+                            OutlinedButton.icon(
+                              onPressed: _isImportingImage ? null : _clearImage,
+                              icon: const Icon(Icons.delete_outline_rounded),
+                              label: const Text('移除图片'),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                '纯色',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final palette in readerBackgroundPalettes)
+                    _PaletteChip(
+                      palette: palette,
+                      selected:
+                          _settings.source == ReaderBackgroundSource.color &&
+                          palette.key == _settings.paletteKey,
+                      onTap: () => _apply(
+                        _settings.copyWith(
+                          source: ReaderBackgroundSource.color,
+                          paletteKey: palette.key,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Text(
+                '纹理',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final texture in ReaderTexturePreset.values)
+                    ChoiceChip(
+                      label: Text(texture.label),
+                      selected: texture == _settings.texture,
+                      onSelected: (_) =>
+                          _apply(_settings.copyWith(texture: texture)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              Text(
+                '字体',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              Material(
                 color: cs.surfaceContainerHigh,
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: cs.outlineVariant.withValues(alpha: 0.45),
+                clipBehavior: Clip.antiAlias,
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  leading: const Icon(Icons.font_download_outlined),
+                  title: const Text('字体设置'),
+                  subtitle: Text(
+                    _fontSettings.usesCustomFont
+                        ? (_fontSettings.displayName ?? '自定义字体')
+                        : '使用系统字体',
+                  ),
+                  trailing: _isChangingFont
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.chevron_right_rounded),
+                  onTap: _isChangingFont ? null : _openFontSettings,
                 ),
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _settings.hasCustomImage
-                          ? '当前正在使用自定义图片背景。'
-                          : '上传后会覆盖当前预览，切回纯色时仍会保留你选的颜色。',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        FilledButton.tonalIcon(
-                          onPressed: _isImportingImage ? null : _importImage,
-                          icon: _isImportingImage
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.image_outlined),
-                          label: Text(
-                            _settings.hasCustomImage ? '更换图片' : '上传图片',
-                          ),
-                        ),
-                        if (_settings.hasCustomImage) ...[
-                          const SizedBox(width: 10),
-                          OutlinedButton.icon(
-                            onPressed: _isImportingImage ? null : _clearImage,
-                            icon: const Icon(Icons.delete_outline_rounded),
-                            label: const Text('移除图片'),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
+              const SizedBox(height: 24),
+              Text(
+                '翻页按钮',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              Material(
+                color: cs.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(18),
+                clipBehavior: Clip.antiAlias,
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: showPageTurnButtonsSetting,
+                  builder: (context, enabled, _) {
+                    return SwitchListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      secondary: const Icon(Icons.unfold_more_rounded),
+                      title: const Text('显示翻页按钮'),
+                      subtitle: const Text('滚动时在阅读区右侧显示上下翻页箭头'),
+                      value: enabled,
+                      onChanged: saveShowPageTurnButtonsSetting,
+                    );
+                  },
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              '纯色',
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                for (final palette in readerBackgroundPalettes)
-                  _PaletteChip(
-                    palette: palette,
-                    selected:
-                        _settings.source == ReaderBackgroundSource.color &&
-                        palette.key == _settings.paletteKey,
-                    onTap: () => _apply(
-                      _settings.copyWith(
-                        source: ReaderBackgroundSource.color,
-                        paletteKey: palette.key,
+              const SizedBox(height: 24),
+              Text(
+                '字号与行距',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: cs.outlineVariant.withValues(alpha: 0.45),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: Column(
+                    children: [
+                      ValueListenableBuilder<double>(
+                        valueListenable: readerFontScaleSetting,
+                        builder: (context, scale, _) {
+                          return _PercentSliderRow(
+                            label: '字号',
+                            valueText: '${(scale * 100).round()}%',
+                            value: scale,
+                            min: AppBehaviorSettings.minReaderFontScale,
+                            max: AppBehaviorSettings.maxReaderFontScale,
+                            divisions: 16,
+                            onChanged: saveReaderFontScaleSetting,
+                          );
+                        },
+                      ),
+                      ValueListenableBuilder<double>(
+                        valueListenable: readerLineHeightSetting,
+                        builder: (context, lineHeight, _) {
+                          return _PercentSliderRow(
+                            label: '行距',
+                            valueText: '${lineHeight.toStringAsFixed(2)} 倍',
+                            value: lineHeight,
+                            min: AppBehaviorSettings.minReaderLineHeight,
+                            max: AppBehaviorSettings.maxReaderLineHeight,
+                            divisions: 12,
+                            onChanged: saveReaderLineHeightSetting,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              AnimatedBuilder(
+                animation: Listenable.merge([
+                  readerFontScaleSetting,
+                  readerLineHeightSetting,
+                ]),
+                builder: (context, _) {
+                  return DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: cs.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: cs.outlineVariant.withValues(alpha: 0.45),
                       ),
                     ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 20),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '预览',
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                          const SizedBox(height: 8),
+                          for (final paragraph in _previewParagraphs)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                paragraph,
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(
+                                      fontSize:
+                                          15 * readerFontScaleSetting.value,
+                                      height: readerLineHeightSetting.value,
+                                    ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+const _previewParagraphs = <String>[
+  '她关掉台灯，房间里只剩下窗外透进来的一线光。',
+  '那些看似平凡的日子，往往在回忆里才显出分量。',
+  '阅读的意义，或许就是在别人的故事里，遇见自己的答案。',
+];
+
+class _PercentSliderRow extends StatelessWidget {
+  const _PercentSliderRow({
+    required this.label,
+    required this.valueText,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.onChanged,
+  });
+
+  final String label;
+  final String valueText;
+  final double value;
+  final double min;
+  final double max;
+  final int divisions;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Column(
+      children: [
+        Row(
+          children: [
             Text(
-              '纹理',
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              label,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: cs.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                for (final texture in ReaderTexturePreset.values)
-                  ChoiceChip(
-                    label: Text(texture.label),
-                    selected: texture == _settings.texture,
-                    onSelected: (_) =>
-                        _apply(_settings.copyWith(texture: texture)),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 24),
+            const Spacer(),
             Text(
-              '字体',
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 12),
-            Material(
-              color: cs.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(18),
-              clipBehavior: Clip.antiAlias,
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 4,
-                ),
-                leading: const Icon(Icons.font_download_outlined),
-                title: const Text('字体设置'),
-                subtitle: Text(
-                  _fontSettings.usesCustomFont
-                      ? (_fontSettings.displayName ?? '自定义字体')
-                      : '使用系统字体',
-                ),
-                trailing: _isChangingFont
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.chevron_right_rounded),
-                onTap: _isChangingFont ? null : _openFontSettings,
+              valueText,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: cs.onSurface,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ],
         ),
-      ),
+        Slider(
+          value: value,
+          min: min,
+          max: max,
+          divisions: divisions,
+          onChanged: onChanged,
+        ),
+      ],
     );
   }
 }

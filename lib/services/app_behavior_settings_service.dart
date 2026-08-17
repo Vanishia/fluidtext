@@ -10,6 +10,13 @@ import '../storage/json_file_store.dart';
 import '../storage/storage_layout.dart';
 
 class AppBehaviorSettings {
+  static const minReaderFontScale = 0.8;
+  static const maxReaderFontScale = 1.6;
+  static const defaultReaderFontScale = 1.0;
+  static const minReaderLineHeight = 1.2;
+  static const maxReaderLineHeight = 1.8;
+  static const defaultReaderLineHeight = 1.5;
+
   const AppBehaviorSettings({
     this.themeMode = ThemeMode.system,
     this.readingOrder = ReadingOrder.random,
@@ -17,6 +24,8 @@ class AppBehaviorSettings {
     this.contextSettings = const ContextSettings(),
     this.analysisModuleOrder = defaultReadingAnalysisModuleOrder,
     this.showPageTurnButtons = true,
+    this.readerFontScale = defaultReaderFontScale,
+    this.readerLineHeight = defaultReaderLineHeight,
   });
 
   final ThemeMode themeMode;
@@ -26,6 +35,12 @@ class AppBehaviorSettings {
   final List<ReadingAnalysisModuleType> analysisModuleOrder;
   final bool showPageTurnButtons;
 
+  /// 阅读卡片字号缩放（1.0 = 100%）。
+  final double readerFontScale;
+
+  /// 阅读卡片行距倍数。
+  final double readerLineHeight;
+
   AppBehaviorSettings copyWith({
     ThemeMode? themeMode,
     ReadingOrder? readingOrder,
@@ -33,6 +48,8 @@ class AppBehaviorSettings {
     ContextSettings? contextSettings,
     List<ReadingAnalysisModuleType>? analysisModuleOrder,
     bool? showPageTurnButtons,
+    double? readerFontScale,
+    double? readerLineHeight,
   }) {
     return AppBehaviorSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -41,6 +58,8 @@ class AppBehaviorSettings {
       contextSettings: contextSettings ?? this.contextSettings,
       analysisModuleOrder: analysisModuleOrder ?? this.analysisModuleOrder,
       showPageTurnButtons: showPageTurnButtons ?? this.showPageTurnButtons,
+      readerFontScale: readerFontScale ?? this.readerFontScale,
+      readerLineHeight: readerLineHeight ?? this.readerLineHeight,
     );
   }
 }
@@ -72,6 +91,8 @@ class AppBehaviorSettingsService {
           json['analysisModuleOrder'] as List<dynamic>?,
         ),
         showPageTurnButtons: json['showPageTurnButtons'] != false,
+        readerFontScale: _readerFontScaleFromJson(json['readerFontScale']),
+        readerLineHeight: _readerLineHeightFromJson(json['readerLineHeight']),
       );
     } catch (_) {
       return const AppBehaviorSettings();
@@ -90,6 +111,8 @@ class AppBehaviorSettingsService {
           .map((item) => item.name)
           .toList(growable: false),
       'showPageTurnButtons': settings.showPageTurnButtons,
+      'readerFontScale': settings.readerFontScale,
+      'readerLineHeight': settings.readerLineHeight,
       'savedAt': DateTime.now().toIso8601String(),
     };
     await JsonFileStore.writeAtomic(file, payload);
@@ -120,6 +143,22 @@ class AppBehaviorSettingsService {
     return value.toInt().clamp(
       ContextSettings.minCount,
       ContextSettings.maxCount,
+    );
+  }
+
+  double _readerFontScaleFromJson(Object? value) {
+    if (value is! num) return AppBehaviorSettings.defaultReaderFontScale;
+    return value.toDouble().clamp(
+      AppBehaviorSettings.minReaderFontScale,
+      AppBehaviorSettings.maxReaderFontScale,
+    );
+  }
+
+  double _readerLineHeightFromJson(Object? value) {
+    if (value is! num) return AppBehaviorSettings.defaultReaderLineHeight;
+    return value.toDouble().clamp(
+      AppBehaviorSettings.minReaderLineHeight,
+      AppBehaviorSettings.maxReaderLineHeight,
     );
   }
 }
