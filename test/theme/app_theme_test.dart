@@ -51,7 +51,7 @@ void main() {
     readerBackgroundSetting.value = const ReaderBackgroundSettings(
       paletteKey: 'mist',
     );
-    await tester.pumpWidget(const MyApp(initialLaunchState: LaunchState()));
+    await tester.pumpWidget(MyApp(initialization: Future.value(const LaunchState())));
     await tester.pumpAndSettle();
     final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
     final mistPrimary = materialApp.theme!.colorScheme.primary;
@@ -85,7 +85,7 @@ void main() {
       fontPath: 'test.ttf',
     );
 
-    await tester.pumpWidget(const MyApp(initialLaunchState: LaunchState()));
+    await tester.pumpWidget(MyApp(initialization: Future.value(const LaunchState())));
     await tester.pumpAndSettle();
     final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
 

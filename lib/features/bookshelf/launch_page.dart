@@ -8,6 +8,7 @@ import '../../repositories/library_data_access.dart';
 import '../../repositories/library_repository.dart';
 import '../../services/app_logger.dart';
 import '../../services/reader_session_service.dart';
+import '../../widgets/reading_skeleton.dart';
 import '../../widgets/side_panel.dart';
 import '../reader/reader_page.dart';
 import '../reader/reader_background_settings.dart';
@@ -242,7 +243,7 @@ class _LaunchPageState extends State<LaunchPage> {
               final content = ReaderBackgroundSurface(
                 settings: backgroundSettings,
                 child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const ReadingCardSkeleton()
                     : Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 440),

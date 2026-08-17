@@ -10,12 +10,14 @@ import 'app_settings.dart';
 import 'features/bookshelf/launch_page.dart';
 import 'features/migration/migration_page.dart';
 import 'features/reader/reader_background_settings.dart';
+import 'features/reader/widgets/reader_background_surface.dart';
 import 'migration/app_bootstrap_coordinator.dart';
 import 'migration/migration_runner.dart';
 import 'repositories/library_data_access.dart';
 import 'services/app_logger.dart';
 import 'storage/storage_layout.dart';
 import 'theme/app_theme.dart';
+import 'widgets/reading_skeleton.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -76,18 +78,25 @@ Future<void> _initializeLogging() async {
 }
 
 /// Loads settings and the previous session, then runs the normal app tree.
+///
+/// The app shell runs immediately and shows a card skeleton while settings
+/// and the session load in the background, so cold start never blocks on a
+/// blank screen.
 Future<void> startNormalApplication() async {
+  runApp(MyApp(initialization: _initializeNormalSession()));
+}
+
+Future<LaunchState> _initializeNormalSession() async {
   final settingsFuture = initializeAppSettings();
   final launchStateFuture = loadLaunchState();
   await settingsFuture;
-  final launchState = await launchStateFuture;
-  runApp(MyApp(initialLaunchState: launchState));
+  return launchStateFuture;
 }
 
 class MyApp extends StatefulWidget {
-  const MyApp({super.key, required this.initialLaunchState});
+  const MyApp({super.key, required this.initialization});
 
-  final LaunchState initialLaunchState;
+  final Future<LaunchState> initialization;
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -171,9 +180,24 @@ class _MyAppState extends State<MyApp> {
                           child: child ?? const SizedBox.shrink(),
                         );
                       },
-                      home: LaunchPage(
-                        resumeLastSession: false,
-                        initialState: widget.initialLaunchState,
+                      home: FutureBuilder<LaunchState>(
+                        future: widget.initialization,
+                        builder: (context, snapshot) {
+                          final state =
+                              snapshot.data ??
+                              (snapshot.hasError
+                                  ? const LaunchState(
+                                      statusMessage: '启动时出现问题，请稍后重试。',
+                                    )
+                                  : null);
+                          if (state == null) {
+                            return const _LaunchSkeletonScreen();
+                          }
+                          return LaunchPage(
+                            resumeLastSession: false,
+                            initialState: state,
+                          );
+                        },
                       ),
                     );
                   },
@@ -198,4 +222,27 @@ class _FluidScrollBehavior extends MaterialScrollBehavior {
     PointerDeviceKind.invertedStylus,
     PointerDeviceKind.trackpad,
   };
+}
+
+/// 初始化期间的骨架屏：默认阅读背景上叠几张卡片占位。
+class _LaunchSkeletonScreen extends StatelessWidget {
+  const _LaunchSkeletonScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<ReaderBackgroundSettings>(
+      valueListenable: readerBackgroundSetting,
+      builder: (context, settings, _) {
+        return Scaffold(
+          backgroundColor: settings.backgroundColor(
+            Theme.of(context).brightness,
+          ),
+          body: ReaderBackgroundSurface(
+            settings: settings,
+            child: const ReadingCardSkeleton(),
+          ),
+        );
+      },
+    );
+  }
 }
