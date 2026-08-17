@@ -166,13 +166,13 @@ class AppSidePanel extends StatelessWidget {
                         ],
                         if (hasContextSettings) ...[
                           const SizedBox(height: 28),
-                          _DrawerSlider(
+                          _ContextCountStepper(
                             label: '上文数量',
                             value: contextBefore!,
                             onChanged: onContextBeforeChanged!,
                           ),
                           const SizedBox(height: 12),
-                          _DrawerSlider(
+                          _ContextCountStepper(
                             label: '下文数量',
                             value: contextAfter!,
                             onChanged: onContextAfterChanged!,
@@ -291,8 +291,8 @@ class _ShelfButton extends StatelessWidget {
   }
 }
 
-class _DrawerSlider extends StatelessWidget {
-  const _DrawerSlider({
+class _ContextCountStepper extends StatelessWidget {
+  const _ContextCountStepper({
     required this.label,
     required this.value,
     required this.onChanged,
@@ -305,54 +305,91 @@ class _DrawerSlider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final canDecrease = value > ContextSettings.minCount;
+    final canIncrease = value < ContextSettings.maxCount;
+
+    return Row(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
+          padding: const EdgeInsets.only(left: 2),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: cs.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const Spacer(),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: cs.outlineVariant.withValues(alpha: 0.5),
+            ),
+          ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: cs.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
+              _StepperButton(
+                icon: Icons.remove_rounded,
+                tooltip: '减少',
+                onTap: canDecrease ? () => onChanged(value - 1) : null,
+              ),
+              SizedBox(
+                width: 28,
+                child: Text(
+                  '$value',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-              const Spacer(),
-              Text(
-                '$value',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: cs.onSurface,
-                  fontWeight: FontWeight.w700,
-                ),
+              _StepperButton(
+                icon: Icons.add_rounded,
+                tooltip: '增加',
+                onTap: canIncrease ? () => onChanged(value + 1) : null,
               ),
             ],
           ),
         ),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 2,
-            activeTrackColor: cs.onSurface.withValues(alpha: 0.72),
-            inactiveTrackColor: cs.outlineVariant.withValues(alpha: 0.55),
-            thumbColor: cs.onSurface,
-            overlayShape: SliderComponentShape.noOverlay,
-            thumbShape: const RoundSliderThumbShape(
-              enabledThumbRadius: 5,
-              pressedElevation: 0,
-            ),
-          ),
-          child: Slider(
-            padding: const EdgeInsets.symmetric(horizontal: 0),
-            value: value.toDouble(),
-            min: ContextSettings.minCount.toDouble(),
-            max: ContextSettings.maxCount.toDouble(),
-            divisions: ContextSettings.maxCount - ContextSettings.minCount,
-            label: '$value',
-            onChanged: (next) => onChanged(next.toInt()),
+      ],
+    );
+  }
+}
+
+class _StepperButton extends StatelessWidget {
+  const _StepperButton({
+    required this.icon,
+    required this.tooltip,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(7),
+          child: Icon(
+            icon,
+            size: 16,
+            color: onTap == null
+                ? cs.onSurface.withValues(alpha: 0.24)
+                : cs.onSurface,
           ),
         ),
-      ],
+      ),
     );
   }
 }
