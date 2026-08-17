@@ -21,6 +21,7 @@ import 'reading_analysis_page.dart';
 import 'reader_background_settings.dart';
 import 'reader_controller.dart';
 import 'widgets/book_card_tile.dart';
+import 'widgets/card_flow.dart';
 import 'widgets/reader_background_surface.dart';
 
 class BookCardsPage extends StatefulWidget {
@@ -355,24 +356,11 @@ class _BookCardsPageState extends State<BookCardsPage> {
                   ? _EmptyCardsMessage(
                       showUnreadOnly: controller.showUnreadOnly,
                     )
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: EdgeInsets.only(
-                        top: MediaQuery.paddingOf(context).top + 2,
-                        bottom: MediaQuery.paddingOf(context).bottom + 20,
-                      ),
-                      itemCount:
-                          controller.cards.length +
-                          (controller.hasMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index >= controller.cards.length) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-
-                        final card = controller.cards[index];
+                  : BookCardFlow(
+                      scrollController: _scrollController,
+                      cards: controller.cards,
+                      hasMore: controller.hasMore,
+                      cardBuilder: (card) {
                         return BookCardTile(
                           card: card,
                           repository: controller.repository,
