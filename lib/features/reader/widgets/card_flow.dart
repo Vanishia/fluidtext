@@ -5,7 +5,7 @@ import '../../../models/book_card.dart';
 
 /// 阅读区可用宽度达到该值时，卡片流切换为双列瀑布流。
 /// 阈值基于宽度而不是字数，因此不受字号、行距设置影响。
-const double kCardWaterfallMinWidth = 1100;
+const double kCardWaterfallMinWidth = 900;
 
 /// 阅读卡片流：窄屏单列列表，超宽屏双列瀑布流（参考小红书）。
 /// 单双列切换时交叉淡入淡出，避免界面闪烁；共享同一个
