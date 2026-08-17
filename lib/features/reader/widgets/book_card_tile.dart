@@ -56,26 +56,25 @@ class BookCardTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (showBookTitle) ...[
-                      Text(
-                        bookTitle ?? card.bookTitle,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                    ],
                     Row(
                       children: [
-                        Text(
-                          '#${card.cardIndex}',
-                          style: Theme.of(
-                            context,
-                          ).textTheme.labelMedium?.copyWith(color: cs.primary),
+                        Expanded(
+                          child: Text(
+                            showBookTitle
+                                ? (bookTitle ?? card.bookTitle)
+                                : '#${card.cardIndex}',
+                            style: showBookTitle
+                                ? Theme.of(
+                                    context,
+                                  ).textTheme.labelSmall?.copyWith(
+                                    color: cs.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                  )
+                                : Theme.of(context).textTheme.labelMedium
+                                      ?.copyWith(color: cs.primary),
+                          ),
                         ),
-                        const Spacer(),
-                        // 桌面端单击复制按钮：小号半透明，与编号同行；
+                        // 桌面端单击复制按钮：小号半透明，放在首行右侧；
                         // 移动端保持长按复制不变。
                         if (!Platform.isAndroid && !Platform.isIOS)
                           IconButton(
@@ -97,6 +96,15 @@ class BookCardTile extends StatelessWidget {
                           ),
                       ],
                     ),
+                    if (showBookTitle) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        '#${card.cardIndex}',
+                        style: Theme.of(
+                          context,
+                        ).textTheme.labelMedium?.copyWith(color: cs.primary),
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     BookCardContentView(
                       card: card,
