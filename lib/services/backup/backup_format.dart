@@ -70,18 +70,18 @@ BackupLibraryData parseV2Payload(Map<String, dynamic> json) {
     throw const FormatException('备份文件缺少版本号');
   }
   if (version > BackupLibraryData.maxSupportedVersion) {
-    throw FormatException('备份文件版本过新（v${version.toInt()}），请升级 FluidText 后再恢复');
+    throw const FormatException('备份由更新版本的 FluidText 导出，请升级应用后再恢复');
   }
   if (version != 2) {
-    throw FormatException('不支持的备份版本（v${version.toInt()}），期望 v2');
+    throw const FormatException('不支持的备份版本，请使用 1.0.0 或当前版本导出的备份文件');
   }
-  return _parseLibraryRecords(json, source: 'v2 备份');
+  return _parseLibraryRecords(json, source: '备份文件');
 }
 
 /// Parses the `data/library.json` payload inside a v3 archive: same record
 /// shape as v2 but without the format/version header.
 BackupLibraryData parseLibraryJson(Map<String, dynamic> json) {
-  return _parseLibraryRecords(json, source: 'v3 library.json');
+  return _parseLibraryRecords(json, source: '备份文件');
 }
 
 BackupLibraryData _parseLibraryRecords(
@@ -357,10 +357,10 @@ class BackupManifest {
       throw const FormatException('备份清单缺少版本号');
     }
     if (version > BackupLibraryData.maxSupportedVersion) {
-      throw FormatException('备份文件版本过新（v${version.toInt()}），请升级 FluidText 后再恢复');
+      throw const FormatException('备份由更新版本的 FluidText 导出，请升级应用后再恢复');
     }
     if (version != BackupManifest.version) {
-      throw FormatException('不支持的备份清单版本（v${version.toInt()}），期望 v3');
+      throw const FormatException('不支持的备份文件格式，请使用当前版本导出的 ZIP 备份');
     }
 
     final schemaVersion = json['sqliteSchemaVersion'];

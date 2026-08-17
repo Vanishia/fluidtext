@@ -476,7 +476,7 @@ class _MigrationPageState extends State<MigrationPage> {
         _error = null;
       });
       _showSnackBar(
-        '备份恢复完成（v${result.formatVersion}）：书籍 ${result.bookCount} 本 · '
+        '备份恢复完成${result.formatVersion == 2 ? '（1.0.0 旧版备份）' : ''}：书籍 ${result.bookCount} 本 · '
         '卡片 ${result.cardCount} 张 · 警告 ${result.warnings.length} 条',
       );
       await widget.onEnterApp();

@@ -511,7 +511,8 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
           : '';
       setState(() {
         _status =
-            '已恢复备份（v${result.formatVersion}）：书籍 ${result.bookCount} 本 · '
+            '已恢复${result.formatVersion == 2 ? ' 1.0.0 旧版备份' : '备份'}：'
+            '书籍 ${result.bookCount} 本 · '
             '卡片 ${result.cardCount} 张 · 警告 ${result.warnings.length} 条'
             '$legacyNote';
       });
@@ -773,7 +774,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            '备份为 ZIP 格式，包含书库、阅读数据、阅读背景与导入字体；可导入 v2/v3 备份，v2 旧备份不含阅读背景与字体',
+                            '备份为 ZIP 格式，包含书库、阅读数据、阅读背景与导入字体；也可以导入 1.0.0 旧版导出的备份（旧版备份不含阅读背景与字体）',
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: cs.onSurfaceVariant),
                           ),
