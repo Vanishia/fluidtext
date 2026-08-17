@@ -1,12 +1,15 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
-import '../../widgets/glass.dart';
 import '../../widgets/shelf_glyph.dart';
 import '../context/context_settings.dart';
 import '../reader/reading_order.dart';
 
-class AppDrawer extends StatelessWidget {
-  const AppDrawer({
+/// 贴边常驻侧边栏：与屏幕上/下/左边齐平，保留毛玻璃质感，
+/// 右缘用细分隔线和柔和投影与阅读区分层。
+class AppSidePanel extends StatelessWidget {
+  const AppSidePanel({
     super.key,
     required this.onOpenBookshelf,
     required this.readingOrder,
@@ -23,6 +26,8 @@ class AppDrawer extends StatelessWidget {
     this.contextAfter,
     this.onContextBeforeChanged,
     this.onContextAfterChanged,
+    this.onRequestClose,
+    this.showCloseButton = false,
   });
 
   final VoidCallback onOpenBookshelf;
@@ -41,32 +46,48 @@ class AppDrawer extends StatelessWidget {
   final ValueChanged<int>? onContextBeforeChanged;
   final ValueChanged<int>? onContextAfterChanged;
 
+  /// 面板内的导航动作触发前调用，用于收起面板。
+  final VoidCallback? onRequestClose;
+
+  /// 覆盖布局（窄屏）下在标题行显示关闭按钮。
+  final bool showCloseButton;
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final glass = cs.surface.withValues(alpha: isDark ? 0.48 : 0.68);
     final hasContextSettings =
         contextBefore != null &&
         contextAfter != null &&
         onContextBeforeChanged != null &&
         onContextAfterChanged != null;
 
-    return Drawer(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Glass(
-            color: glass,
-            borderColor: cs.outlineVariant.withValues(
-              alpha: isDark ? 0.18 : 0.34,
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: cs.surface.withValues(alpha: isDark ? 0.66 : 0.88),
+            border: Border(
+              right: BorderSide(
+                color: cs.outlineVariant.withValues(
+                  alpha: isDark ? 0.28 : 0.55,
+                ),
+              ),
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.16 : 0.07),
+                blurRadius: 24,
+                offset: const Offset(6, 0),
+              ),
+            ],
+          ),
+          child: SafeArea(
             child: Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 16, 12, 8),
+                  padding: const EdgeInsets.fromLTRB(18, 14, 12, 8),
                   child: Row(
                     children: [
                       Text(
@@ -87,6 +108,18 @@ class AppDrawer extends StatelessWidget {
                           color: cs.onSurface,
                         ),
                       ),
+                      if (showCloseButton) ...[
+                        const SizedBox(width: 8),
+                        _QuietIconButton(
+                          tooltip: '收起菜单',
+                          onTap: onRequestClose,
+                          child: Icon(
+                            Icons.close_rounded,
+                            size: 20,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -96,7 +129,10 @@ class AppDrawer extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _ShelfButton(onTap: onOpenBookshelf),
+                        _ShelfButton(
+                          onTap: onOpenBookshelf,
+                          onClose: onRequestClose,
+                        ),
                         const SizedBox(height: 18),
                         SegmentedButton<ReadingOrder>(
                           showSelectedIcon: false,
@@ -152,10 +188,7 @@ class AppDrawer extends StatelessWidget {
                     children: [
                       _QuietIconButton(
                         tooltip: '外观设置',
-                        onTap: _popThen(
-                          context,
-                          onOpenReaderBackgroundSettings,
-                        ),
+                        onTap: _closeThen(onOpenReaderBackgroundSettings),
                         child: Icon(
                           Icons.settings_rounded,
                           size: 18,
@@ -167,7 +200,7 @@ class AppDrawer extends StatelessWidget {
                       const SizedBox(width: 8),
                       _QuietIconButton(
                         tooltip: '阅读分析',
-                        onTap: _popThen(context, onOpenReadingAnalysis),
+                        onTap: _closeThen(onOpenReadingAnalysis),
                         child: Icon(
                           Icons.insights_rounded,
                           size: 18,
@@ -179,7 +212,7 @@ class AppDrawer extends StatelessWidget {
                       const SizedBox(width: 8),
                       _QuietIconButton(
                         tooltip: '收藏',
-                        onTap: _popThen(context, onOpenFavoriteList),
+                        onTap: _closeThen(onOpenFavoriteList),
                         child: Icon(
                           Icons.favorite_border_rounded,
                           size: 18,
@@ -191,7 +224,7 @@ class AppDrawer extends StatelessWidget {
                       const SizedBox(width: 8),
                       _QuietIconButton(
                         tooltip: '已读',
-                        onTap: _popThen(context, onOpenReadList),
+                        onTap: _closeThen(onOpenReadList),
                         child: Icon(
                           Icons.done_all_rounded,
                           size: 18,
@@ -210,20 +243,21 @@ class AppDrawer extends StatelessWidget {
       ),
     );
   }
-}
 
-VoidCallback? _popThen(BuildContext context, VoidCallback? callback) {
-  if (callback == null) return null;
-  return () {
-    Navigator.of(context).pop();
-    callback();
-  };
+  VoidCallback? _closeThen(VoidCallback? callback) {
+    if (callback == null) return null;
+    return () {
+      onRequestClose?.call();
+      callback();
+    };
+  }
 }
 
 class _ShelfButton extends StatelessWidget {
-  const _ShelfButton({required this.onTap});
+  const _ShelfButton({required this.onTap, this.onClose});
 
   final VoidCallback onTap;
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -231,7 +265,7 @@ class _ShelfButton extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: () {
-        Navigator.of(context).pop();
+        onClose?.call();
         onTap();
       },
       child: Ink(

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -8,6 +7,7 @@ import '../../models/book.dart';
 import '../../models/book_card.dart';
 import '../../repositories/library_data_access.dart';
 import '../../services/reader_session_service.dart';
+import '../../widgets/side_panel.dart';
 import '../bookshelf/launch_page.dart';
 import '../bookshelf/bookshelf_sheet.dart';
 import '../context/context_controller.dart';
@@ -49,6 +49,19 @@ class _BookCardsPageState extends State<BookCardsPage> {
   late final List<Book> _books = List<Book>.from(widget.books);
   final _bookRemarks = <int, String>{};
   ContextSettings _contextSettings = contextSettingsSetting.value;
+
+  /// 用户手动开合过侧边栏后生效；为 null 时按屏幕宽高比自动决定。
+  bool? _sidebarVisibleOverride;
+
+  /// build 时记录的实际状态，供返回键/按钮逻辑使用。
+  bool _sidebarVisible = false;
+  bool _sidebarPushMode = true;
+
+  void _setSidebarVisible(bool visible) {
+    setState(() {
+      _sidebarVisibleOverride = visible;
+    });
+  }
 
   @override
   void initState() {
@@ -282,6 +295,12 @@ class _BookCardsPageState extends State<BookCardsPage> {
   }
 
   void _handleBack() {
+    // 覆盖布局下侧边栏打开时，返回键先收起侧边栏。
+    if (_sidebarVisible && !_sidebarPushMode) {
+      _setSidebarVisible(false);
+      return;
+    }
+
     final onExitReader = widget.onExitReader;
     if (onExitReader != null) {
       onExitReader();
@@ -368,67 +387,132 @@ class _BookCardsPageState extends State<BookCardsPage> {
 
               return Scaffold(
                 backgroundColor: backgroundSettings.palette.color,
-                drawerEdgeDragWidth: 120,
-                drawerScrimColor: Colors.black.withValues(alpha: 0.18),
-                drawer: AppDrawer(
-                  onOpenBookshelf: _openBookshelf,
-                  readingOrder: controller.readingOrder,
-                  onReadingOrderChanged: (order) {
-                    saveReadingOrderSetting(order);
-                    controller.setReadingOrder(order);
-                  },
-                  themeMode: themeModeSetting.value,
-                  onThemeModeChanged: saveThemeModeSetting,
-                  showUnreadOnly: controller.showUnreadOnly,
-                  onShowUnreadOnlyChanged: (value) {
-                    saveShowUnreadOnlySetting(value);
-                    controller.setShowUnreadOnly(value);
-                  },
-                  onOpenReadingAnalysis: _openReadingAnalysis,
-                  onOpenReadList: _openReadList,
-                  onOpenFavoriteList: _openFavoriteList,
-                  onOpenReaderBackgroundSettings: _openReaderBackgroundSettings,
-                  contextBefore: _contextSettings.before,
-                  contextAfter: _contextSettings.after,
-                  onContextBeforeChanged: (value) {
-                    final next = _contextSettings.copyWith(before: value);
-                    saveContextSettingsSetting(next);
-                    setState(() {
-                      _contextSettings = next;
-                    });
-                  },
-                  onContextAfterChanged: (value) {
-                    final next = _contextSettings.copyWith(after: value);
-                    saveContextSettingsSetting(next);
-                    setState(() {
-                      _contextSettings = next;
-                    });
-                  },
-                ),
-                body: Stack(
-                  children: [
-                    ReaderBackgroundSurface(
-                      settings: backgroundSettings,
-                      child: body,
-                    ),
-                    if (!Platform.isAndroid && !Platform.isIOS)
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        child: SafeArea(
-                          child: Builder(
-                            builder: (context) {
-                              return IconButton(
-                                icon: const Icon(Icons.menu_rounded),
-                                tooltip: '打开菜单',
-                                onPressed: () =>
-                                    Scaffold.of(context).openDrawer(),
-                              );
-                            },
+                body: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth;
+                    final aspectRatio = constraints.maxHeight > 0
+                        ? width / constraints.maxHeight
+                        : 1.0;
+                    final pushMode = width >= kSidePanelPushBreakpoint;
+                    final sidebarVisible =
+                        _sidebarVisibleOverride ??
+                        aspectRatio >= kSidePanelDefaultOpenAspectRatio;
+                    _sidebarPushMode = pushMode;
+                    _sidebarVisible = sidebarVisible;
+
+                    final panel = GestureDetector(
+                      onHorizontalDragEnd: (details) {
+                        // 面板内向左快速滑动收起（覆盖布局）。
+                        if (!pushMode &&
+                            (details.primaryVelocity ?? 0) < -240) {
+                          _setSidebarVisible(false);
+                        }
+                      },
+                      child: AppSidePanel(
+                        onOpenBookshelf: _openBookshelf,
+                        readingOrder: controller.readingOrder,
+                        onReadingOrderChanged: (order) {
+                          saveReadingOrderSetting(order);
+                          controller.setReadingOrder(order);
+                        },
+                        themeMode: themeModeSetting.value,
+                        onThemeModeChanged: saveThemeModeSetting,
+                        showUnreadOnly: controller.showUnreadOnly,
+                        onShowUnreadOnlyChanged: (value) {
+                          saveShowUnreadOnlySetting(value);
+                          controller.setShowUnreadOnly(value);
+                        },
+                        onOpenReadingAnalysis: _openReadingAnalysis,
+                        onOpenReadList: _openReadList,
+                        onOpenFavoriteList: _openFavoriteList,
+                        onOpenReaderBackgroundSettings:
+                            _openReaderBackgroundSettings,
+                        contextBefore: _contextSettings.before,
+                        contextAfter: _contextSettings.after,
+                        onContextBeforeChanged: (value) {
+                          final next = _contextSettings.copyWith(
+                            before: value,
+                          );
+                          saveContextSettingsSetting(next);
+                          setState(() {
+                            _contextSettings = next;
+                          });
+                        },
+                        onContextAfterChanged: (value) {
+                          final next = _contextSettings.copyWith(after: value);
+                          saveContextSettingsSetting(next);
+                          setState(() {
+                            _contextSettings = next;
+                          });
+                        },
+                        onRequestClose: () => _setSidebarVisible(false),
+                        showCloseButton: !pushMode,
+                      ),
+                    );
+
+                    return Row(
+                      children: [
+                        if (pushMode)
+                          PushSidePanel(
+                            visible: sidebarVisible,
+                            child: panel,
+                          ),
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              ReaderBackgroundSurface(
+                                settings: backgroundSettings,
+                                child: body,
+                              ),
+                              // 菜单按钮：所有平台可见，点击开合侧边栏。
+                              Positioned(
+                                top: 0,
+                                left: 0,
+                                child: SafeArea(
+                                  child: IconButton(
+                                    icon: Icon(
+                                      sidebarVisible && pushMode
+                                          ? Icons.menu_open_rounded
+                                          : Icons.menu_rounded,
+                                    ),
+                                    tooltip: sidebarVisible ? '收起菜单' : '打开菜单',
+                                    onPressed: () =>
+                                        _setSidebarVisible(!sidebarVisible),
+                                  ),
+                                ),
+                              ),
+                              // 左边缘向右滑动打开侧边栏（覆盖布局）。
+                              if (!pushMode && !sidebarVisible)
+                                Positioned(
+                                  left: 0,
+                                  top: 0,
+                                  bottom: 0,
+                                  width: 24,
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.translucent,
+                                    onHorizontalDragEnd: (details) {
+                                      if ((details.primaryVelocity ?? 0) >
+                                          240) {
+                                        _setSidebarVisible(true);
+                                      }
+                                    },
+                                    child: const SizedBox.expand(),
+                                  ),
+                                ),
+                              if (!pushMode)
+                                Positioned.fill(
+                                  child: OverlaySidePanel(
+                                    visible: sidebarVisible,
+                                    onClose: () => _setSidebarVisible(false),
+                                    child: panel,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                      ),
-                  ],
+                      ],
+                    );
+                  },
                 ),
               );
             },
