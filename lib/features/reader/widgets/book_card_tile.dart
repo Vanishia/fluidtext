@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -110,6 +112,19 @@ class BookCardTile extends StatelessWidget {
                           tooltip: card.isFavorite ? '取消收藏' : '收藏',
                           onPressed: onToggleFavorite,
                         ),
+                        // 桌面端长按复制不够显眼，补一个单击复制按钮；
+                        // 移动端保持长按复制不变。
+                        if (!Platform.isAndroid && !Platform.isIOS)
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.all(8),
+                            icon: Icon(
+                              Icons.copy_rounded,
+                              color: cs.onSurfaceVariant,
+                            ),
+                            tooltip: '复制内容',
+                            onPressed: () => _copyCardContent(context),
+                          ),
                         IconButton(
                           visualDensity: VisualDensity.compact,
                           padding: const EdgeInsets.all(8),
