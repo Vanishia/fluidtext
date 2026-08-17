@@ -8,6 +8,7 @@ import '../models/book.dart';
 import '../models/book_asset.dart';
 import '../models/book_card.dart';
 import '../models/book_remark.dart';
+import '../features/reader/reader_background_settings.dart';
 import '../services/diagnostic_sanitizer.dart';
 import '../storage/json_file_store.dart';
 import '../storage/sqlite/library_database.dart';
@@ -718,9 +719,9 @@ class LibraryMigrator {
     final decoded = await _tryDecodeJson(source);
     if (decoded == null) {
       warnings.add('阅读背景设置已损坏，已重置为默认值');
-      await JsonFileStore.writeAtomic(target, const <String, Object?>{
+      await JsonFileStore.writeAtomic(target, <String, Object?>{
         'source': 'color',
-        'paletteKey': 'warmPaper',
+        'paletteKey': defaultReaderBackgroundPaletteKey,
         'texture': 'none',
         'imagePath': null,
       });

@@ -45,11 +45,14 @@ const readerBackgroundPalettes = <ReaderBackgroundPalette>[
   ReaderBackgroundPalette(key: 'ink', label: '夜墨', color: Color(0xFF1E232B)),
 ];
 
+/// 未选择壁纸时的默认背景色（浅蓝）。
+const defaultReaderBackgroundPaletteKey = 'mist';
+
 @immutable
 class ReaderBackgroundSettings {
   const ReaderBackgroundSettings({
     this.source = ReaderBackgroundSource.color,
-    this.paletteKey = 'warmPaper',
+    this.paletteKey = defaultReaderBackgroundPaletteKey,
     this.texture = ReaderTexturePreset.none,
     this.imagePath,
   });
@@ -61,7 +64,9 @@ class ReaderBackgroundSettings {
 
   ReaderBackgroundPalette get palette => readerBackgroundPalettes.firstWhere(
     (item) => item.key == paletteKey,
-    orElse: () => readerBackgroundPalettes.first,
+    orElse: () => readerBackgroundPalettes.firstWhere(
+      (item) => item.key == defaultReaderBackgroundPaletteKey,
+    ),
   );
 
   bool get hasCustomImage =>
@@ -103,7 +108,9 @@ class ReaderBackgroundSettings {
         (item) => item.name == sourceName,
         orElse: () => ReaderBackgroundSource.color,
       ),
-      paletteKey: paletteKey is String ? paletteKey : 'warmPaper',
+      paletteKey: paletteKey is String
+          ? paletteKey
+          : defaultReaderBackgroundPaletteKey,
       texture: ReaderTexturePreset.values.firstWhere(
         (item) => item.name == textureName,
         orElse: () => ReaderTexturePreset.none,
