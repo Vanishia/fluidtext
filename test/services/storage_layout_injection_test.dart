@@ -53,6 +53,20 @@ void main() {
     expect(await service.loadLastOpenedBookIds(), const [7, 11]);
   });
 
+  test('behavior settings service round-trips page turn buttons flag', () async {
+    final service = AppBehaviorSettingsService(storageLayout: layoutProvider);
+
+    // 旧版本设置文件没有该键时默认开启。
+    expect((await service.load()).showPageTurnButtons, isTrue);
+
+    await service.save(
+      const AppBehaviorSettings(showPageTurnButtons: false),
+    );
+
+    final restored = await service.load();
+    expect(restored.showPageTurnButtons, isFalse);
+  });
+
   test(
     'reader background service writes through the injected layout',
     () async {

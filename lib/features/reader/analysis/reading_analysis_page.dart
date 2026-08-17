@@ -294,7 +294,9 @@ class _ReadingAnalysisPageState extends State<ReadingAnalysisPage> {
       builder: (context, backgroundSettings, _) {
         final cs = Theme.of(context).colorScheme;
         return Scaffold(
-          backgroundColor: backgroundSettings.palette.color,
+          backgroundColor: backgroundSettings.backgroundColor(
+            Theme.of(context).brightness,
+          ),
           body: ReaderBackgroundSurface(
             settings: backgroundSettings,
             child: Stack(

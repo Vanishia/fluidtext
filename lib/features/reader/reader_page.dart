@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app_settings.dart';
 import '../../models/book.dart';
 import '../../models/book_card.dart';
 import '../../repositories/library_data_access.dart';
 import '../../services/reader_session_service.dart';
+import '../../widgets/side_panel.dart';
 import '../bookshelf/launch_page.dart';
 import '../bookshelf/bookshelf_sheet.dart';
 import '../context/context_controller.dart';
@@ -21,6 +23,8 @@ import 'reading_analysis_page.dart';
 import 'reader_background_settings.dart';
 import 'reader_controller.dart';
 import 'widgets/book_card_tile.dart';
+import 'widgets/card_flow.dart';
+import 'widgets/page_turn_buttons.dart';
 import 'widgets/reader_background_surface.dart';
 
 class BookCardsPage extends StatefulWidget {
@@ -50,15 +54,67 @@ class _BookCardsPageState extends State<BookCardsPage> {
   final _bookRemarks = <int, String>{};
   ContextSettings _contextSettings = contextSettingsSetting.value;
 
+  /// 用户手动开合过侧边栏后生效；为 null 时按屏幕宽高比自动决定。
+  bool? _sidebarVisibleOverride;
+
+  /// build 时记录的实际状态，供返回键/按钮逻辑使用。
+  bool _sidebarVisible = false;
+  bool _sidebarPushMode = true;
+
+  /// 翻页按钮：滚动时显示，停止滚动 1.5 秒后收起。
+  bool _pageTurnButtonsVisible = false;
+  Timer? _pageTurnHideTimer;
+
+  void _setSidebarVisible(bool visible) {
+    setState(() {
+      _sidebarVisibleOverride = visible;
+    });
+  }
+
+  /// 按 90% 视口高度翻页（PageUp/PageDown 与翻页按钮共用）。
+  void _pageScroll(double direction) {
+    // 单双列切换的过渡动画期间会同时挂两个滚动视图，跳过该窗口。
+    if (_scrollController.positions.length != 1) return;
+    final position = _scrollController.position;
+    final target =
+        (position.pixels + position.viewportDimension * 0.9 * direction).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        );
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _handleScrollActivity() {
+    if (!showPageTurnButtonsSetting.value) return;
+    if (!_pageTurnButtonsVisible) {
+      setState(() {
+        _pageTurnButtonsVisible = true;
+      });
+    }
+    _pageTurnHideTimer?.cancel();
+    _pageTurnHideTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (!mounted) return;
+      setState(() {
+        _pageTurnButtonsVisible = false;
+      });
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _init();
     _scrollController.addListener(_maybeLoadMore);
+    _scrollController.addListener(_handleScrollActivity);
   }
 
   @override
   void dispose() {
+    _pageTurnHideTimer?.cancel();
     _scrollController.dispose();
     _controller?.dispose();
     super.dispose();
@@ -102,7 +158,8 @@ class _BookCardsPageState extends State<BookCardsPage> {
   void _maybeLoadMore() {
     final controller = _controller;
     if (controller == null) return;
-    if (!_scrollController.hasClients) return;
+    // 单双列切换的过渡动画期间会同时挂两个滚动视图，跳过该窗口。
+    if (_scrollController.positions.length != 1) return;
     if (controller.isLoadingMore || !controller.hasMore) return;
 
     final position = _scrollController.position;
@@ -282,6 +339,16 @@ class _BookCardsPageState extends State<BookCardsPage> {
   }
 
   void _handleBack() {
+    // 桌面端推移布局下侧边栏打开时，返回键先收起侧边栏；
+    // 移动端 Drawer 的返回处理由框架负责。
+    if (!Platform.isAndroid &&
+        !Platform.isIOS &&
+        _sidebarVisible &&
+        !_sidebarPushMode) {
+      _setSidebarVisible(false);
+      return;
+    }
+
     final onExitReader = widget.onExitReader;
     if (onExitReader != null) {
       onExitReader();
@@ -307,7 +374,9 @@ class _BookCardsPageState extends State<BookCardsPage> {
         valueListenable: readerBackgroundSetting,
         builder: (context, backgroundSettings, _) {
           return Scaffold(
-            backgroundColor: backgroundSettings.palette.color,
+            backgroundColor: backgroundSettings.backgroundColor(
+              Theme.of(context).brightness,
+            ),
             body: ReaderBackgroundSurface(
               settings: backgroundSettings,
               child: const Center(child: CircularProgressIndicator()),
@@ -336,24 +405,11 @@ class _BookCardsPageState extends State<BookCardsPage> {
                   ? _EmptyCardsMessage(
                       showUnreadOnly: controller.showUnreadOnly,
                     )
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: EdgeInsets.only(
-                        top: MediaQuery.paddingOf(context).top + 2,
-                        bottom: MediaQuery.paddingOf(context).bottom + 20,
-                      ),
-                      itemCount:
-                          controller.cards.length +
-                          (controller.hasMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index >= controller.cards.length) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-
-                        final card = controller.cards[index];
+                  : BookCardFlow(
+                      scrollController: _scrollController,
+                      cards: controller.cards,
+                      hasMore: controller.hasMore,
+                      cardBuilder: (card) {
                         return BookCardTile(
                           card: card,
                           repository: controller.repository,
@@ -366,11 +422,12 @@ class _BookCardsPageState extends State<BookCardsPage> {
                       },
                     );
 
-              return Scaffold(
-                backgroundColor: backgroundSettings.palette.color,
-                drawerEdgeDragWidth: 120,
-                drawerScrimColor: Colors.black.withValues(alpha: 0.18),
-                drawer: AppDrawer(
+              // 移动端回退到原生悬浮毛玻璃 Drawer：自带的手势不会
+              // 和列表滚动抢手势竞技场；桌面端用贴边常驻/推移侧边栏。
+              final useNativeDrawer = Platform.isAndroid || Platform.isIOS;
+
+              Widget menuPanel({required bool floating}) {
+                return AppSidePanel(
                   onOpenBookshelf: _openBookshelf,
                   readingOrder: controller.readingOrder,
                   onReadingOrderChanged: (order) {
@@ -404,31 +461,140 @@ class _BookCardsPageState extends State<BookCardsPage> {
                       _contextSettings = next;
                     });
                   },
-                ),
-                body: Stack(
+                  onRequestClose: () => _setSidebarVisible(false),
+                  floating: floating,
+                );
+              }
+
+              Widget buildReaderArea({
+                required bool sidebarVisible,
+                required bool pushMode,
+              }) {
+                return Stack(
                   children: [
                     ReaderBackgroundSurface(
                       settings: backgroundSettings,
                       child: body,
                     ),
-                    if (!Platform.isAndroid && !Platform.isIOS)
+                    // 菜单按钮：仅桌面端显示；移动端用 Drawer 侧滑手势，
+                    // 不占用视觉空间。
+                    if (!useNativeDrawer)
                       Positioned(
                         top: 0,
                         left: 0,
                         child: SafeArea(
-                          child: Builder(
-                            builder: (context) {
-                              return IconButton(
-                                icon: const Icon(Icons.menu_rounded),
-                                tooltip: '打开菜单',
-                                onPressed: () =>
-                                    Scaffold.of(context).openDrawer(),
-                              );
-                            },
+                          child: IconButton(
+                            icon: Icon(
+                              sidebarVisible && pushMode
+                                  ? Icons.menu_open_rounded
+                                  : Icons.menu_rounded,
+                            ),
+                            tooltip: sidebarVisible ? '收起菜单' : '打开菜单',
+                            onPressed: () =>
+                                _setSidebarVisible(!sidebarVisible),
                           ),
                         ),
                       ),
+                    // 翻页按钮：滚动时显示，停止后收起。
+                    ValueListenableBuilder<bool>(
+                      valueListenable: showPageTurnButtonsSetting,
+                      builder: (context, enabled, _) {
+                        if (!enabled) {
+                          return const SizedBox.shrink();
+                        }
+                        return Positioned(
+                          right: 12,
+                          top: 0,
+                          bottom: 0,
+                          child: Align(
+                            alignment: const Alignment(0, 0.35),
+                            child: PageTurnButtons(
+                              visible: _pageTurnButtonsVisible,
+                              onPageUp: () => _pageScroll(-1),
+                              onPageDown: () => _pageScroll(1),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ],
+                );
+              }
+
+              Widget withPageShortcuts({required Widget child}) {
+                return CallbackShortcuts(
+                  bindings: <ShortcutActivator, VoidCallback>{
+                    const SingleActivator(LogicalKeyboardKey.pageDown): () =>
+                        _pageScroll(1),
+                    const SingleActivator(LogicalKeyboardKey.pageUp): () =>
+                        _pageScroll(-1),
+                  },
+                  child: Focus(autofocus: true, child: child),
+                );
+              }
+
+              if (useNativeDrawer) {
+                return Scaffold(
+                  backgroundColor: backgroundSettings.backgroundColor(
+                    Theme.of(context).brightness,
+                  ),
+                  drawerEdgeDragWidth: 120,
+                  drawerScrimColor: Colors.black.withValues(alpha: 0.18),
+                  drawer: menuPanel(floating: true),
+                  body: withPageShortcuts(
+                    child: buildReaderArea(
+                      sidebarVisible: false,
+                      pushMode: true,
+                    ),
+                  ),
+                );
+              }
+
+              return Scaffold(
+                backgroundColor: backgroundSettings.backgroundColor(
+                  Theme.of(context).brightness,
+                ),
+                body: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth;
+                    final aspectRatio = constraints.maxHeight > 0
+                        ? width / constraints.maxHeight
+                        : 1.0;
+                    final pushMode = width >= kSidePanelPushBreakpoint;
+                    final sidebarVisible =
+                        _sidebarVisibleOverride ??
+                        aspectRatio >= kSidePanelDefaultOpenAspectRatio;
+                    _sidebarPushMode = pushMode;
+                    _sidebarVisible = sidebarVisible;
+
+                    return withPageShortcuts(
+                      child: Row(
+                        children: [
+                          if (pushMode)
+                            PushSidePanel(
+                              visible: sidebarVisible,
+                              child: menuPanel(floating: false),
+                            ),
+                          Expanded(
+                            child: pushMode
+                                ? buildReaderArea(
+                                    sidebarVisible: sidebarVisible,
+                                    pushMode: pushMode,
+                                  )
+                                : SlideSidePanel(
+                                    visible: sidebarVisible,
+                                    onVisibilityChanged: _setSidebarVisible,
+                                    panel: menuPanel(floating: false),
+                                    child: buildReaderArea(
+                                      sidebarVisible: sidebarVisible,
+                                      pushMode: pushMode,
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               );
             },

@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 
 import '../../widgets/glass.dart';
@@ -5,8 +7,10 @@ import '../../widgets/shelf_glyph.dart';
 import '../context/context_settings.dart';
 import '../reader/reading_order.dart';
 
-class AppDrawer extends StatelessWidget {
-  const AppDrawer({
+/// 应用菜单面板：默认是贴边常驻侧边栏（桌面端）；[floating] 为 true
+/// 时是悬浮毛玻璃抽屉（移动端 Scaffold.drawer 使用，手势不抢滚动）。
+class AppSidePanel extends StatelessWidget {
+  const AppSidePanel({
     super.key,
     required this.onOpenBookshelf,
     required this.readingOrder,
@@ -23,6 +27,8 @@ class AppDrawer extends StatelessWidget {
     this.contextAfter,
     this.onContextBeforeChanged,
     this.onContextAfterChanged,
+    this.onRequestClose,
+    this.floating = false,
   });
 
   final VoidCallback onOpenBookshelf;
@@ -41,189 +47,222 @@ class AppDrawer extends StatelessWidget {
   final ValueChanged<int>? onContextBeforeChanged;
   final ValueChanged<int>? onContextAfterChanged;
 
+  /// 面板内的导航动作触发前调用，用于收起面板（贴边模式）。
+  final VoidCallback? onRequestClose;
+
+  /// true 时渲染为悬浮毛玻璃 [Drawer]（移动端），导航动作前自动 pop 抽屉。
+  final bool floating;
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final glass = cs.surface.withValues(alpha: isDark ? 0.48 : 0.68);
     final hasContextSettings =
         contextBefore != null &&
         contextAfter != null &&
         onContextBeforeChanged != null &&
         onContextAfterChanged != null;
+    final close = floating
+        ? () => Navigator.of(context).pop()
+        : (onRequestClose ?? () {});
 
-    return Drawer(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Glass(
-            color: glass,
-            borderColor: cs.outlineVariant.withValues(
-              alpha: isDark ? 0.18 : 0.34,
-            ),
+    final content = Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 12, 8),
+          child: Row(
+            children: [
+              Text(
+                'FluidText',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const Spacer(),
+              _QuietIconButton(
+                tooltip: _themeTooltip(themeMode),
+                onTap: () => onThemeModeChanged(_nextThemeMode(themeMode)),
+                child: Icon(
+                  _themeIcon(themeMode),
+                  size: 20,
+                  color: cs.onSurface,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 16, 12, 8),
-                  child: Row(
-                    children: [
-                      Text(
-                        'FluidText',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                      const Spacer(),
-                      _QuietIconButton(
-                        tooltip: _themeTooltip(themeMode),
-                        onTap: () =>
-                            onThemeModeChanged(_nextThemeMode(themeMode)),
-                        child: Icon(
-                          _themeIcon(themeMode),
-                          size: 20,
-                          color: cs.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _ShelfButton(onTap: onOpenBookshelf),
-                        const SizedBox(height: 18),
-                        SegmentedButton<ReadingOrder>(
-                          showSelectedIcon: false,
-                          segments: const [
-                            ButtonSegment<ReadingOrder>(
-                              value: ReadingOrder.sequential,
-                              icon: Icon(Icons.format_list_numbered_rounded),
-                              label: Text('顺序阅读'),
-                            ),
-                            ButtonSegment<ReadingOrder>(
-                              value: ReadingOrder.random,
-                              icon: Icon(Icons.shuffle_rounded),
-                              label: Text('乱序阅读'),
-                            ),
-                          ],
-                          selected: {readingOrder},
-                          onSelectionChanged: (selection) {
-                            onReadingOrderChanged(selection.first);
-                          },
-                        ),
-                        if (onShowUnreadOnlyChanged != null) ...[
-                          const SizedBox(height: 12),
-                          SwitchListTile.adaptive(
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 2,
-                            ),
-                            title: const Text('过滤已读'),
-                            value: showUnreadOnly,
-                            onChanged: onShowUnreadOnlyChanged,
-                          ),
-                        ],
-                        if (hasContextSettings) ...[
-                          const SizedBox(height: 28),
-                          _DrawerSlider(
-                            label: '上文数量',
-                            value: contextBefore!,
-                            onChanged: onContextBeforeChanged!,
-                          ),
-                          const SizedBox(height: 12),
-                          _DrawerSlider(
-                            label: '下文数量',
-                            value: contextAfter!,
-                            onChanged: onContextAfterChanged!,
-                          ),
-                        ],
-                      ],
+                _ShelfButton(onTap: onOpenBookshelf, onClose: close),
+                const SizedBox(height: 18),
+                SegmentedButton<ReadingOrder>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment<ReadingOrder>(
+                      value: ReadingOrder.sequential,
+                      icon: Icon(Icons.format_list_numbered_rounded),
+                      label: Text('顺序阅读'),
                     ),
-                  ),
+                    ButtonSegment<ReadingOrder>(
+                      value: ReadingOrder.random,
+                      icon: Icon(Icons.shuffle_rounded),
+                      label: Text('乱序阅读'),
+                    ),
+                  ],
+                  selected: {readingOrder},
+                  onSelectionChanged: (selection) {
+                    onReadingOrderChanged(selection.first);
+                  },
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
-                  child: Row(
-                    children: [
-                      _QuietIconButton(
-                        tooltip: '外观设置',
-                        onTap: _popThen(
-                          context,
-                          onOpenReaderBackgroundSettings,
-                        ),
-                        child: Icon(
-                          Icons.settings_rounded,
-                          size: 18,
-                          color: onOpenReaderBackgroundSettings == null
-                              ? cs.onSurface.withValues(alpha: 0.32)
-                              : cs.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      _QuietIconButton(
-                        tooltip: '阅读分析',
-                        onTap: _popThen(context, onOpenReadingAnalysis),
-                        child: Icon(
-                          Icons.insights_rounded,
-                          size: 18,
-                          color: onOpenReadingAnalysis == null
-                              ? cs.onSurface.withValues(alpha: 0.32)
-                              : cs.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      _QuietIconButton(
-                        tooltip: '收藏',
-                        onTap: _popThen(context, onOpenFavoriteList),
-                        child: Icon(
-                          Icons.favorite_border_rounded,
-                          size: 18,
-                          color: onOpenFavoriteList == null
-                              ? cs.onSurface.withValues(alpha: 0.32)
-                              : cs.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      _QuietIconButton(
-                        tooltip: '已读',
-                        onTap: _popThen(context, onOpenReadList),
-                        child: Icon(
-                          Icons.done_all_rounded,
-                          size: 18,
-                          color: onOpenReadList == null
-                              ? cs.onSurface.withValues(alpha: 0.32)
-                              : cs.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
+                if (onShowUnreadOnlyChanged != null) ...[
+                  const SizedBox(height: 12),
+                  SwitchListTile.adaptive(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 2),
+                    title: const Text('过滤已读'),
+                    value: showUnreadOnly,
+                    onChanged: onShowUnreadOnlyChanged,
                   ),
-                ),
+                ],
+                if (hasContextSettings) ...[
+                  const SizedBox(height: 28),
+                  _ContextCountStepper(
+                    label: '上文数量',
+                    value: contextBefore!,
+                    onChanged: onContextBeforeChanged!,
+                  ),
+                  const SizedBox(height: 12),
+                  _ContextCountStepper(
+                    label: '下文数量',
+                    value: contextAfter!,
+                    onChanged: onContextAfterChanged!,
+                  ),
+                ],
               ],
             ),
           ),
         ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
+          child: Row(
+            children: [
+              _QuietIconButton(
+                tooltip: '外观设置',
+                onTap: _closeThen(onOpenReaderBackgroundSettings, close),
+                child: Icon(
+                  Icons.settings_rounded,
+                  size: 18,
+                  color: onOpenReaderBackgroundSettings == null
+                      ? cs.onSurface.withValues(alpha: 0.32)
+                      : cs.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _QuietIconButton(
+                tooltip: '阅读分析',
+                onTap: _closeThen(onOpenReadingAnalysis, close),
+                child: Icon(
+                  Icons.insights_rounded,
+                  size: 18,
+                  color: onOpenReadingAnalysis == null
+                      ? cs.onSurface.withValues(alpha: 0.32)
+                      : cs.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _QuietIconButton(
+                tooltip: '收藏',
+                onTap: _closeThen(onOpenFavoriteList, close),
+                child: Icon(
+                  Icons.favorite_border_rounded,
+                  size: 18,
+                  color: onOpenFavoriteList == null
+                      ? cs.onSurface.withValues(alpha: 0.32)
+                      : cs.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _QuietIconButton(
+                tooltip: '已读',
+                onTap: _closeThen(onOpenReadList, close),
+                child: Icon(
+                  Icons.done_all_rounded,
+                  size: 18,
+                  color: onOpenReadList == null
+                      ? cs.onSurface.withValues(alpha: 0.32)
+                      : cs.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    if (floating) {
+      return Drawer(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Glass(
+              color: cs.surface.withValues(alpha: isDark ? 0.48 : 0.68),
+              borderColor: cs.outlineVariant.withValues(
+                alpha: isDark ? 0.18 : 0.34,
+              ),
+              child: content,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: cs.surface.withValues(alpha: isDark ? 0.66 : 0.88),
+            border: Border(
+              right: BorderSide(
+                color: cs.outlineVariant.withValues(
+                  alpha: isDark ? 0.28 : 0.55,
+                ),
+              ),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.16 : 0.07),
+                blurRadius: 24,
+                offset: const Offset(6, 0),
+              ),
+            ],
+          ),
+          child: SafeArea(child: content),
+        ),
       ),
     );
   }
-}
 
-VoidCallback? _popThen(BuildContext context, VoidCallback? callback) {
-  if (callback == null) return null;
-  return () {
-    Navigator.of(context).pop();
-    callback();
-  };
+  VoidCallback? _closeThen(VoidCallback? callback, VoidCallback close) {
+    if (callback == null) return null;
+    return () {
+      close();
+      callback();
+    };
+  }
 }
 
 class _ShelfButton extends StatelessWidget {
-  const _ShelfButton({required this.onTap});
+  const _ShelfButton({required this.onTap, this.onClose});
 
   final VoidCallback onTap;
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -231,7 +270,7 @@ class _ShelfButton extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(18),
       onTap: () {
-        Navigator.of(context).pop();
+        onClose?.call();
         onTap();
       },
       child: Ink(
@@ -257,8 +296,8 @@ class _ShelfButton extends StatelessWidget {
   }
 }
 
-class _DrawerSlider extends StatelessWidget {
-  const _DrawerSlider({
+class _ContextCountStepper extends StatelessWidget {
+  const _ContextCountStepper({
     required this.label,
     required this.value,
     required this.onChanged,
@@ -271,54 +310,85 @@ class _DrawerSlider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final canDecrease = value > ContextSettings.minCount;
+    final canIncrease = value < ContextSettings.maxCount;
+
+    return Row(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
+          padding: const EdgeInsets.only(left: 2),
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: cs.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const Spacer(),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHighest.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.5)),
+          ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                label,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: cs.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
+              _StepperButton(
+                icon: Icons.remove_rounded,
+                tooltip: '减少',
+                onTap: canDecrease ? () => onChanged(value - 1) : null,
+              ),
+              SizedBox(
+                width: 28,
+                child: Text(
+                  '$value',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
                 ),
               ),
-              const Spacer(),
-              Text(
-                '$value',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: cs.onSurface,
-                  fontWeight: FontWeight.w700,
-                ),
+              _StepperButton(
+                icon: Icons.add_rounded,
+                tooltip: '增加',
+                onTap: canIncrease ? () => onChanged(value + 1) : null,
               ),
             ],
           ),
         ),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 2,
-            activeTrackColor: cs.onSurface.withValues(alpha: 0.72),
-            inactiveTrackColor: cs.outlineVariant.withValues(alpha: 0.55),
-            thumbColor: cs.onSurface,
-            overlayShape: SliderComponentShape.noOverlay,
-            thumbShape: const RoundSliderThumbShape(
-              enabledThumbRadius: 5,
-              pressedElevation: 0,
-            ),
-          ),
-          child: Slider(
-            padding: const EdgeInsets.symmetric(horizontal: 0),
-            value: value.toDouble(),
-            min: ContextSettings.minCount.toDouble(),
-            max: ContextSettings.maxCount.toDouble(),
-            divisions: ContextSettings.maxCount - ContextSettings.minCount,
-            label: '$value',
-            onChanged: (next) => onChanged(next.toInt()),
+      ],
+    );
+  }
+}
+
+class _StepperButton extends StatelessWidget {
+  const _StepperButton({required this.icon, required this.tooltip, this.onTap});
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(7),
+          child: Icon(
+            icon,
+            size: 16,
+            color: onTap == null
+                ? cs.onSurface.withValues(alpha: 0.24)
+                : cs.onSurface,
           ),
         ),
-      ],
+      ),
     );
   }
 }

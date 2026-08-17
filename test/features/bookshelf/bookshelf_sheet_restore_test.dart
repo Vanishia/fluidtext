@@ -119,7 +119,7 @@ void main() {
     gate.complete(restoreResult());
     await tester.pump();
     await tester.pump();
-    expect(find.text('已恢复备份（v3）：书籍 2 本 · 卡片 5 张 · 警告 0 条'), findsOneWidget);
+    expect(find.text('已恢复备份：书籍 2 本 · 卡片 5 张 · 警告 0 条'), findsOneWidget);
     expect(tester.widget<IconButton>(restoreButton()).onPressed, isNotNull);
     expect(settingsReloaded, isTrue);
   });
@@ -209,7 +209,7 @@ void main() {
     await tester.pump();
 
     expect(restoreCalled, isTrue);
-    expect(find.textContaining('已恢复备份（v3）'), findsOneWidget);
+    expect(find.textContaining('已恢复备份：'), findsOneWidget);
   });
 
   testWidgets('未选择文件时显示提示且不恢复', (tester) async {

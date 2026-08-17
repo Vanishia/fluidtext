@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -54,22 +56,58 @@ class BookCardTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (showBookTitle) ...[
-                      Text(
-                        bookTitle ?? card.bookTitle,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            showBookTitle
+                                ? (bookTitle ?? card.bookTitle)
+                                : '#${card.cardIndex}',
+                            style: showBookTitle
+                                ? Theme.of(
+                                    context,
+                                  ).textTheme.labelSmall?.copyWith(
+                                    color: cs.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                  )
+                                : Theme.of(context).textTheme.labelMedium
+                                      ?.copyWith(color: cs.primary),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                    ],
-                    Text(
-                      '#${card.cardIndex}',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelMedium?.copyWith(color: cs.primary),
+                        // 桌面端单击复制按钮：小号半透明，放在首行右侧；
+                        // 移动端保持长按复制不变。
+                        if (!Platform.isAndroid && !Platform.isIOS)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: IconButton(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.all(4),
+                              constraints: const BoxConstraints.tightFor(
+                                width: 30,
+                                height: 30,
+                              ),
+                              iconSize: 18,
+                              icon: Icon(
+                                Icons.copy_rounded,
+                                color: cs.onSurfaceVariant.withValues(
+                                  alpha: 0.55,
+                                ),
+                              ),
+                              tooltip: '复制内容',
+                              onPressed: () => _copyCardContent(context),
+                            ),
+                          ),
+                      ],
                     ),
+                    if (showBookTitle) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        '#${card.cardIndex}',
+                        style: Theme.of(
+                          context,
+                        ).textTheme.labelMedium?.copyWith(color: cs.primary),
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     BookCardContentView(
                       card: card,

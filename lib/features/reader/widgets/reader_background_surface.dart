@@ -17,8 +17,9 @@ class ReaderBackgroundSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final background = settings.backgroundColor(Theme.of(context).brightness);
     return ColoredBox(
-      color: settings.palette.color,
+      color: background,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -34,14 +35,14 @@ class ReaderBackgroundSurface extends StatelessWidget {
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: settings.palette.color.withValues(alpha: 0.14),
+                  color: background.withValues(alpha: 0.14),
                 ),
               ),
             ),
           Positioned.fill(
             child: CustomPaint(
               painter: _ReaderTexturePainter(
-                backgroundColor: settings.palette.color,
+                backgroundColor: background,
                 texture: settings.texture,
               ),
             ),

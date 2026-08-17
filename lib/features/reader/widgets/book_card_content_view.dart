@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../../../app_settings.dart';
 import '../../../models/book_asset.dart';
 import '../../../models/book_card.dart';
 import '../../../repositories/library_repository.dart';
@@ -159,25 +160,40 @@ class PlainBookCardContentText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final paragraphs = content
-        .split(RegExp(r'\n+'))
-        .map((paragraph) => paragraph.trimRight())
-        .where((paragraph) => paragraph.trim().isNotEmpty)
-        .toList(growable: false);
-    final textStyle = style?.copyWith(height: 1.5);
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        readerFontScaleSetting,
+        readerLineHeightSetting,
+      ]),
+      builder: (context, _) {
+        // 调用方传入的 fontSize 视为 100% 基准，这里应用全局字号缩放与行距。
+        final base = style;
+        final fontSize = (base?.fontSize ?? 14) * readerFontScaleSetting.value;
+        final textStyle = (base ?? const TextStyle()).copyWith(
+          fontSize: fontSize,
+          height: readerLineHeightSetting.value,
+        );
 
-    if (paragraphs.isEmpty) {
-      return Text('', style: textStyle);
-    }
+        final paragraphs = content
+            .split(RegExp(r'\n+'))
+            .map((paragraph) => paragraph.trimRight())
+            .where((paragraph) => paragraph.trim().isNotEmpty)
+            .toList(growable: false);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var index = 0; index < paragraphs.length; index += 1) ...[
-          Text(paragraphs[index], style: textStyle),
-          if (index < paragraphs.length - 1) const SizedBox(height: 2),
-        ],
-      ],
+        if (paragraphs.isEmpty) {
+          return Text('', style: textStyle);
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var index = 0; index < paragraphs.length; index += 1) ...[
+              Text(paragraphs[index], style: textStyle),
+              if (index < paragraphs.length - 1) const SizedBox(height: 2),
+            ],
+          ],
+        );
+      },
     );
   }
 }

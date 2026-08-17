@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../app_settings.dart';
@@ -6,6 +8,8 @@ import '../../repositories/library_data_access.dart';
 import '../../repositories/library_repository.dart';
 import '../../services/app_logger.dart';
 import '../../services/reader_session_service.dart';
+import '../../widgets/reading_skeleton.dart';
+import '../../widgets/side_panel.dart';
 import '../reader/reader_page.dart';
 import '../reader/reader_background_settings.dart';
 import '../reader/widgets/reader_background_surface.dart';
@@ -89,6 +93,15 @@ class _LaunchPageState extends State<LaunchPage> {
   bool _isLoading = false;
   List<Book>? _restoredBooks;
   String? _statusMessage;
+
+  /// 用户手动开合过侧边栏后生效；为 null 时按屏幕宽高比自动决定。
+  bool? _sidebarVisibleOverride;
+
+  void _setSidebarVisible(bool visible) {
+    setState(() {
+      _sidebarVisibleOverride = visible;
+    });
+  }
 
   @override
   void initState() {
@@ -199,12 +212,12 @@ class _LaunchPageState extends State<LaunchPage> {
     return ValueListenableBuilder<ReaderBackgroundSettings>(
       valueListenable: readerBackgroundSetting,
       builder: (context, backgroundSettings, _) {
-        return Scaffold(
-          backgroundColor: backgroundSettings.palette.color,
-          drawerEdgeDragWidth: 120,
-          drawerScrimColor: Colors.black.withValues(alpha: 0.18),
-          appBar: AppBar(title: const Text('FluidText')),
-          drawer: AppDrawer(
+        // 移动端回退到原生悬浮毛玻璃 Drawer（手势不抢滚动）；
+        // 桌面端用贴边常驻/推移侧边栏。
+        final useNativeDrawer = Platform.isAndroid || Platform.isIOS;
+
+        Widget menuPanel({required bool floating}) {
+          return AppSidePanel(
             onOpenBookshelf: _openBookshelf,
             readingOrder: readingOrderSetting.value,
             onReadingOrderChanged: (order) {
@@ -214,50 +227,132 @@ class _LaunchPageState extends State<LaunchPage> {
             themeMode: themeModeSetting.value,
             onThemeModeChanged: saveThemeModeSetting,
             onOpenReaderBackgroundSettings: _openReaderBackgroundSettings,
+            onRequestClose: () => _setSidebarVisible(false),
+            floating: floating,
+          );
+        }
+
+        if (useNativeDrawer) {
+          return Scaffold(
+            backgroundColor: backgroundSettings.backgroundColor(
+              Theme.of(context).brightness,
+            ),
+            drawerEdgeDragWidth: 120,
+            drawerScrimColor: Colors.black.withValues(alpha: 0.18),
+            drawer: menuPanel(floating: true),
+            body: ReaderBackgroundSurface(
+              settings: backgroundSettings,
+              child: _isLoading
+                  ? const ReadingCardSkeleton()
+                  : _buildWelcomeContent(context),
+            ),
+          );
+        }
+
+        return Scaffold(
+          backgroundColor: backgroundSettings.backgroundColor(
+            Theme.of(context).brightness,
           ),
-          body: ReaderBackgroundSurface(
-            settings: backgroundSettings,
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 440),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '从这里开始阅读',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.headlineSmall
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              _statusMessage ?? '前往书架选择书籍，选好后会直接进入阅读。',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodyLarge
-                                  ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                                  ),
-                            ),
-                            const SizedBox(height: 22),
-                            FilledButton.tonalIcon(
-                              onPressed: _openBookshelf,
-                              icon: const Icon(Icons.arrow_forward_rounded),
-                              label: const Text('前往书架'),
-                            ),
-                          ],
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              final aspectRatio = constraints.maxHeight > 0
+                  ? width / constraints.maxHeight
+                  : 1.0;
+              final pushMode = width >= kSidePanelPushBreakpoint;
+              final sidebarVisible =
+                  _sidebarVisibleOverride ??
+                  aspectRatio >= kSidePanelDefaultOpenAspectRatio;
+
+              final content = ReaderBackgroundSurface(
+                settings: backgroundSettings,
+                child: _isLoading
+                    ? const ReadingCardSkeleton()
+                    : _buildWelcomeContent(context),
+              );
+
+              final readerArea = Stack(
+                children: [
+                  content,
+                  // 菜单按钮：仅桌面端显示；移动端用 Drawer 侧滑手势。
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    child: SafeArea(
+                      child: IconButton(
+                        icon: Icon(
+                          sidebarVisible && pushMode
+                              ? Icons.menu_open_rounded
+                              : Icons.menu_rounded,
                         ),
+                        tooltip: sidebarVisible ? '收起菜单' : '打开菜单',
+                        onPressed: () => _setSidebarVisible(!sidebarVisible),
                       ),
                     ),
                   ),
+                ],
+              );
+
+              return Row(
+                children: [
+                  if (pushMode)
+                    PushSidePanel(
+                      visible: sidebarVisible,
+                      child: menuPanel(floating: false),
+                    ),
+                  Expanded(
+                    child: pushMode
+                        ? readerArea
+                        : SlideSidePanel(
+                            visible: sidebarVisible,
+                            onVisibilityChanged: _setSidebarVisible,
+                            panel: menuPanel(floating: false),
+                            child: readerArea,
+                          ),
+                  ),
+                ],
+              );
+            },
           ),
         );
       },
+    );
+  }
+
+  Widget _buildWelcomeContent(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '从这里开始阅读',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _statusMessage ?? '前往书架选择书籍，选好后会直接进入阅读。',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 22),
+              FilledButton.tonalIcon(
+                onPressed: _openBookshelf,
+                icon: const Icon(Icons.arrow_forward_rounded),
+                label: const Text('前往书架'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -8,12 +8,15 @@ import 'package:fluidtext/main.dart';
 void main() {
   testWidgets('更换阅读背景不重建根子树，页面状态保留', (tester) async {
     readerBackgroundSetting.value = const ReaderBackgroundSettings();
-    await tester.pumpWidget(const MyApp(initialLaunchState: LaunchState()));
+    await tester.pumpWidget(
+      MyApp(initialization: Future.value(const LaunchState())),
+    );
     await tester.pump();
     await tester.pump();
 
-    final stateBefore =
-        tester.state<State<LaunchPage>>(find.byType(LaunchPage));
+    final stateBefore = tester.state<State<LaunchPage>>(
+      find.byType(LaunchPage),
+    );
 
     // 模拟用户在外观设置中切换背景配色：种子色缓存 key 随之变化，
     // 但根子树（含 LaunchPage 的选书状态）不允许被重建。
