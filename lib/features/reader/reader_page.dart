@@ -72,7 +72,8 @@ class _BookCardsPageState extends State<BookCardsPage> {
 
   /// 按 90% 视口高度翻页（PageUp/PageDown 与翻页按钮共用）。
   void _pageScroll(double direction) {
-    if (!_scrollController.hasClients) return;
+    // 单双列切换的过渡动画期间会同时挂两个滚动视图，跳过该窗口。
+    if (_scrollController.positions.length != 1) return;
     final position = _scrollController.position;
     final target =
         (position.pixels + position.viewportDimension * 0.9 * direction).clamp(
@@ -156,7 +157,8 @@ class _BookCardsPageState extends State<BookCardsPage> {
   void _maybeLoadMore() {
     final controller = _controller;
     if (controller == null) return;
-    if (!_scrollController.hasClients) return;
+    // 单双列切换的过渡动画期间会同时挂两个滚动视图，跳过该窗口。
+    if (_scrollController.positions.length != 1) return;
     if (controller.isLoadingMore || !controller.hasMore) return;
 
     final position = _scrollController.position;
