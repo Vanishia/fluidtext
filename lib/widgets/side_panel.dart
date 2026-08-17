@@ -69,7 +69,6 @@ class SlideSidePanel extends StatefulWidget {
 
 class _SlideSidePanelState extends State<SlideSidePanel>
     with SingleTickerProviderStateMixin {
-  static const _edgeDragWidth = 28.0;
   static const _flingVelocity = 300.0;
 
   late final AnimationController _controller;
@@ -123,9 +122,10 @@ class _SlideSidePanelState extends State<SlideSidePanel>
   }
 
   void _handleDragStart(DragStartDetails details) {
-    // 关闭时只响应左边缘起拖；打开后任意位置都可以拖。
+    // 关闭时从屏幕左半部分起拖即可呼出；打开后任意位置都可以拖。
+    final width = context.size?.width ?? 0;
     _dragActive =
-        _controller.value > 0 || details.localPosition.dx <= _edgeDragWidth;
+        _controller.value > 0 || details.localPosition.dx <= width / 2;
     if (_dragActive) {
       _controller.stop();
     }
