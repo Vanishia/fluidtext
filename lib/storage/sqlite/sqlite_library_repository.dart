@@ -106,27 +106,74 @@ class SqliteLibraryRepository implements LibraryRepository {
   }
 
   @override
-  Future<List<BookCard>> loadReadCards(List<int> bookIds) {
+  Future<List<BookCard>> loadReadCards(
+    List<int> bookIds, {
+    int offset = 0,
+    int? limit,
+  }) {
     return _loadCardsWithState(
       bookIds: bookIds,
       stateColumn: 'is_read',
       timestampColumn: 'read_at_ms',
+      offset: offset,
+      limit: limit,
     );
   }
 
   @override
-  Future<List<BookCard>> loadFavoriteCards(List<int> bookIds) {
+  Future<List<BookCard>> loadFavoriteCards(
+    List<int> bookIds, {
+    int offset = 0,
+    int? limit,
+  }) {
     return _loadCardsWithState(
       bookIds: bookIds,
       stateColumn: 'is_favorite',
       timestampColumn: 'favorited_at_ms',
+      offset: offset,
+      limit: limit,
     );
+  }
+
+  @override
+  Future<int> countReadCards(List<int> bookIds) {
+    return _countCardsWithState(bookIds: bookIds, stateColumn: 'is_read');
+  }
+
+  @override
+  Future<int> countFavoriteCards(List<int> bookIds) {
+    return _countCardsWithState(bookIds: bookIds, stateColumn: 'is_favorite');
+  }
+
+  Future<int> _countCardsWithState({
+    required List<int> bookIds,
+    required String stateColumn,
+  }) async {
+    final query = StringBuffer(
+      'SELECT COUNT(*) AS count FROM book_cards WHERE $stateColumn = 1',
+    );
+    final variables = <Variable<Object>>[];
+    if (bookIds.isNotEmpty) {
+      query.write(' AND book_id IN (${_placeholders(bookIds.length)})');
+      variables.addAll(_variables(bookIds));
+    }
+
+    final row = await database
+        .customSelect(
+          query.toString(),
+          variables: variables,
+          readsFrom: {database.sqliteBookCards},
+        )
+        .getSingle();
+    return row.read<int>('count');
   }
 
   Future<List<BookCard>> _loadCardsWithState({
     required List<int> bookIds,
     required String stateColumn,
     required String timestampColumn,
+    int offset = 0,
+    int? limit,
   }) async {
     final query = StringBuffer(
       'SELECT * FROM book_cards WHERE $stateColumn = 1',
@@ -137,6 +184,12 @@ class SqliteLibraryRepository implements LibraryRepository {
       variables.addAll(_variables(bookIds));
     }
     query.write(' ORDER BY $timestampColumn DESC, id DESC');
+    if (limit != null || offset > 0) {
+      // LIMIT -1 表示不限制行数，仅用于配合 OFFSET。
+      query.write(' LIMIT ? OFFSET ?');
+      variables.add(Variable<int>(limit ?? -1));
+      variables.add(Variable<int>(offset));
+    }
 
     final rows = await database
         .customSelect(

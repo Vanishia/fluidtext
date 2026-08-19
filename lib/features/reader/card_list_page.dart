@@ -34,25 +34,69 @@ class CardListPage extends StatefulWidget {
 }
 
 class _CardListPageState extends State<CardListPage> {
+  static const int _pageSize = 50;
+
   final _cards = <BookCard>[];
   final _bookTitlesById = <int, String>{};
+  final _scrollController = ScrollController();
   ContextSettings _contextSettings = contextSettingsSetting.value;
   var _isLoading = true;
+  var _isLoadingMore = false;
+  var _totalCount = 0;
 
   bool get _isFavorite => widget.kind == CardListKind.favorite;
+
+  bool get _hasMore => _cards.length < _totalCount;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _load();
   }
 
-  Future<void> _load() async {
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.positions.length != 1) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 300) {
+      _loadMore();
+    }
+  }
+
+  Future<List<BookCard>> _loadCardsPage({int offset = 0}) {
     final repository = widget.repository;
-    final cards = _isFavorite
-        ? await repository.loadFavoriteCards(widget.bookIds)
-        : await repository.loadReadCards(widget.bookIds);
+    return _isFavorite
+        ? repository.loadFavoriteCards(
+            widget.bookIds,
+            offset: offset,
+            limit: _pageSize,
+          )
+        : repository.loadReadCards(
+            widget.bookIds,
+            offset: offset,
+            limit: _pageSize,
+          );
+  }
+
+  Future<int> _loadTotalCount() {
+    final repository = widget.repository;
+    return _isFavorite
+        ? repository.countFavoriteCards(widget.bookIds)
+        : repository.countReadCards(widget.bookIds);
+  }
+
+  Future<void> _load() async {
+    final cardsFuture = _loadCardsPage();
+    final totalCountFuture = _loadTotalCount();
     final bookTitlesById = await _loadBookTitlesById();
+    final cards = await cardsFuture;
+    final totalCount = await totalCountFuture;
     if (!mounted) return;
     setState(() {
       _cards
@@ -61,7 +105,19 @@ class _CardListPageState extends State<CardListPage> {
       _bookTitlesById
         ..clear()
         ..addAll(bookTitlesById);
+      _totalCount = totalCount;
       _isLoading = false;
+    });
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoading || _isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+    final cards = await _loadCardsPage(offset: _cards.length);
+    if (!mounted) return;
+    setState(() {
+      _cards.addAll(cards);
+      _isLoadingMore = false;
     });
   }
 
@@ -149,9 +205,12 @@ class _CardListPageState extends State<CardListPage> {
               _cards[i] = updated;
             }
           }
+          final lengthBeforeFilter = _cards.length;
           _cards.removeWhere(
             (c) => _isFavorite ? !c.isFavorite : !c.isRead,
           );
+          // 取消收藏/已读的卡片被移除后，总数同步减少，保证 _hasMore 正确。
+          _totalCount -= lengthBeforeFilter - _cards.length;
         });
       } else {
         contextController.dispose();
@@ -172,8 +231,9 @@ class _CardListPageState extends State<CardListPage> {
     }
 
     return ListView.separated(
+      controller: _scrollController,
       padding: const EdgeInsets.only(bottom: 20),
-      itemCount: _cards.length,
+      itemCount: _cards.length + (_isLoadingMore ? 1 : 0),
       separatorBuilder: (context, index) => Divider(
         height: 1,
         indent: 12,
@@ -183,6 +243,18 @@ class _CardListPageState extends State<CardListPage> {
         ).colorScheme.outlineVariant.withValues(alpha: 0.28),
       ),
       itemBuilder: (context, index) {
+        if (index >= _cards.length) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
         return _CardListItem(
           card: _cards[index],
           timestampText: _timestampText(_cards[index]),
@@ -214,7 +286,7 @@ class _CardListPageState extends State<CardListPage> {
                       _ListPageHeader(
                         title:
                             '${widget.shelfTitle} · ${_isFavorite ? '收藏' : '已读'}',
-                        count: _cards.length,
+                        count: _totalCount,
                       ),
                       Expanded(child: _buildBody()),
                     ],

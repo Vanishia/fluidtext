@@ -313,7 +313,15 @@ class _FakeLibraryRepository implements LibraryRepository {
       throw UnimplementedError();
 
   @override
-  Future<List<BookCard>> loadFavoriteCards(List<int> bookIds) =>
+  Future<List<BookCard>> loadFavoriteCards(
+    List<int> bookIds, {
+    int offset = 0,
+    int? limit,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<int> countFavoriteCards(List<int> bookIds) =>
       throw UnimplementedError();
 
   @override
@@ -327,8 +335,15 @@ class _FakeLibraryRepository implements LibraryRepository {
       throw UnimplementedError();
 
   @override
-  Future<List<BookCard>> loadReadCards(List<int> bookIds) =>
+  Future<List<BookCard>> loadReadCards(
+    List<int> bookIds, {
+    int offset = 0,
+    int? limit,
+  }) =>
       throw UnimplementedError();
+
+  @override
+  Future<int> countReadCards(List<int> bookIds) => throw UnimplementedError();
 
   @override
   Future<List<int>> loadUnreadOrderedCardIds(List<int> bookIds) =>

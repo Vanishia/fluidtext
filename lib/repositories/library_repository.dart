@@ -48,9 +48,21 @@ abstract interface class LibraryReadRepository {
 
   Future<List<int>> loadUnreadOrderedCardIds(List<int> bookIds);
 
-  Future<List<BookCard>> loadReadCards(List<int> bookIds);
+  Future<List<BookCard>> loadReadCards(
+    List<int> bookIds, {
+    int offset = 0,
+    int? limit,
+  });
 
-  Future<List<BookCard>> loadFavoriteCards(List<int> bookIds);
+  Future<List<BookCard>> loadFavoriteCards(
+    List<int> bookIds, {
+    int offset = 0,
+    int? limit,
+  });
+
+  Future<int> countReadCards(List<int> bookIds);
+
+  Future<int> countFavoriteCards(List<int> bookIds);
 
   Future<List<BookCardActivityEvent>> loadReadActivityEvents(List<int> bookIds);
 

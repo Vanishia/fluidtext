@@ -93,6 +93,41 @@ void runLibraryRepositoryContract(
     },
   );
 
+  test('paginates read and favorite cards and reports totals', () async {
+    final current = driver!;
+    final repository = current.repository;
+
+    expect(await repository.countReadCards([current.firstBookId]), 2);
+    expect(await repository.countFavoriteCards([current.firstBookId]), 2);
+
+    final readFirstPage = await repository.loadReadCards(
+      [current.firstBookId],
+      limit: 1,
+    );
+    expect(readFirstPage.map((card) => card.id), [current.thirdCardId]);
+
+    final readSecondPage = await repository.loadReadCards(
+      [current.firstBookId],
+      offset: 1,
+      limit: 1,
+    );
+    expect(readSecondPage.map((card) => card.id), [current.secondCardId]);
+
+    final readTail = await repository.loadReadCards(
+      [current.firstBookId],
+      offset: 2,
+      limit: 1,
+    );
+    expect(readTail, isEmpty);
+
+    final favoriteSecondPage = await repository.loadFavoriteCards(
+      [current.firstBookId],
+      offset: 1,
+      limit: 1,
+    );
+    expect(favoriteSecondPage.map((card) => card.id), [current.secondCardId]);
+  });
+
   test(
     'loads context and asset metadata through the storage-neutral API',
     () async {
