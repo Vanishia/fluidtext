@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -66,11 +67,19 @@ class HeatmapModule extends StatefulWidget {
 }
 
 class _HeatmapModuleState extends State<HeatmapModule> {
+  static const double _cellStride = 15; // 12px 格子 + 3px 间距
+  static const double _tooltipMaxWidth = 220;
+  static const _longPressTooltipDuration = Duration(milliseconds: 1500);
+
   final _scrollController = ScrollController();
+  OverlayEntry? _tooltipEntry;
+  DateTime? _tooltipDay;
+  Timer? _tooltipTimer;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_hideTooltip);
     _jumpToLatest();
   }
 
@@ -92,8 +101,86 @@ class _HeatmapModuleState extends State<HeatmapModule> {
 
   @override
   void dispose() {
+    _hideTooltip();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// 整层手势统一按命中位置换算日期，避免每格一个 GestureDetector。
+  DateTime? _dayAtOffset(Offset local, DateTime startAligned, int weekCount) {
+    final weekIndex = (local.dx / _cellStride).floor();
+    final dayIndex = (local.dy / _cellStride).floor();
+    if (weekIndex < 0 || weekIndex >= weekCount || dayIndex < 0 || dayIndex > 6) {
+      return null;
+    }
+    return startAligned.add(Duration(days: weekIndex * 7 + dayIndex));
+  }
+
+  String _tooltipMessage(DateTime day) {
+    final analysis = widget.analytics.daysByDate[day];
+    final readCount = analysis?.readCount ?? 0;
+    final favoriteCount = analysis?.favoriteCount ?? 0;
+    return '${formatDate(day)} · 已读 $readCount'
+        '${favoriteCount > 0 ? ' · 收藏 $favoriteCount' : ''}';
+  }
+
+  void _openDay(DateTime day) {
+    final analysis =
+        widget.analytics.daysByDate[day] ?? DayAnalysis.empty(day);
+    widget.onOpenDay(analysis);
+  }
+
+  /// Tooltip 只在长按 / 悬停时动态创建，消失即移除。
+  void _showTooltip(BuildContext context, Offset globalPosition, DateTime day) {
+    if (_tooltipDay == day && _tooltipEntry != null) return;
+    _hideTooltip();
+    _tooltipDay = day;
+
+    final cs = Theme.of(context).colorScheme;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final left = math.max(
+      8.0,
+      math.min(
+        globalPosition.dx - _tooltipMaxWidth / 2,
+        screenWidth - _tooltipMaxWidth - 8,
+      ),
+    );
+    final above = globalPosition.dy - 48;
+
+    _tooltipEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        left: left,
+        top: above < 8 ? globalPosition.dy + 20 : above,
+        child: IgnorePointer(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: _tooltipMaxWidth),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: cs.inverseSurface,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                _tooltipMessage(day),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelSmall?.copyWith(color: cs.onInverseSurface),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    Overlay.of(context).insert(_tooltipEntry!);
+  }
+
+  void _hideTooltip() {
+    _tooltipTimer?.cancel();
+    _tooltipTimer = null;
+    _tooltipEntry?.remove();
+    _tooltipEntry = null;
+    _tooltipDay = null;
   }
 
   @override
@@ -164,38 +251,72 @@ class _HeatmapModuleState extends State<HeatmapModule> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Row(
-                    children: List<Widget>.generate(weekCount, (weekIndex) {
-                      final columnStart = startAligned.add(
-                        Duration(days: weekIndex * 7),
+                  MouseRegion(
+                    onHover: (event) {
+                      final day = _dayAtOffset(
+                        event.localPosition,
+                        startAligned,
+                        weekCount,
                       );
-                      return Padding(
-                        padding: EdgeInsets.only(
-                          right: weekIndex == weekCount - 1 ? 0 : 3,
-                        ),
-                        child: Column(
-                          children: List<Widget>.generate(7, (dayIndex) {
-                            final day = columnStart.add(
-                              Duration(days: dayIndex),
-                            );
-                            final analysis =
-                                widget.analytics.daysByDate[day] ??
-                                DayAnalysis.empty(day);
-                            final count = analysis.readCount;
-                            final isFuture = day.isAfter(end);
-                            final isToday = day == today;
-                            final color = isFuture
-                                ? cs.surface.withValues(alpha: 0.10)
-                                : _heatColorForCount(context, count: count);
+                      if (day == null) {
+                        _hideTooltip();
+                      } else {
+                        _showTooltip(context, event.position, day);
+                      }
+                    },
+                    onExit: (_) => _hideTooltip(),
+                    child: GestureDetector(
+                      onTapUp: (details) {
+                        final day = _dayAtOffset(
+                          details.localPosition,
+                          startAligned,
+                          weekCount,
+                        );
+                        if (day != null) _openDay(day);
+                      },
+                      onLongPressStart: (details) {
+                        final day = _dayAtOffset(
+                          details.localPosition,
+                          startAligned,
+                          weekCount,
+                        );
+                        if (day == null) return;
+                        _showTooltip(context, details.globalPosition, day);
+                        _tooltipTimer = Timer(
+                          _longPressTooltipDuration,
+                          _hideTooltip,
+                        );
+                      },
+                      onLongPressEnd: (_) => _hideTooltip(),
+                      onLongPressCancel: _hideTooltip,
+                      child: Row(
+                        children: List<Widget>.generate(weekCount, (weekIndex) {
+                          final columnStart = startAligned.add(
+                            Duration(days: weekIndex * 7),
+                          );
+                          return Padding(
+                            padding: EdgeInsets.only(
+                              right: weekIndex == weekCount - 1 ? 0 : 3,
+                            ),
+                            child: Column(
+                              children: List<Widget>.generate(7, (dayIndex) {
+                                final day = columnStart.add(
+                                  Duration(days: dayIndex),
+                                );
+                                final count =
+                                    widget
+                                        .analytics
+                                        .daysByDate[day]
+                                        ?.readCount ??
+                                    0;
+                                final isFuture = day.isAfter(end);
+                                final isToday = day == today;
+                                final color = isFuture
+                                    ? cs.surface.withValues(alpha: 0.10)
+                                    : _heatColorForCount(context, count: count);
 
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 3),
-                              child: Tooltip(
-                                message:
-                                    '${formatDate(day)} · 已读 $count${analysis.favoriteCount > 0 ? ' · 收藏 ${analysis.favoriteCount}' : ''}',
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: () => widget.onOpenDay(analysis),
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 3),
                                   child: DecoratedBox(
                                     decoration: BoxDecoration(
                                       color: color,
@@ -214,13 +335,13 @@ class _HeatmapModuleState extends State<HeatmapModule> {
                                       height: 12,
                                     ),
                                   ),
-                                ),
-                              ),
-                            );
-                          }),
-                        ),
-                      );
-                    }),
+                                );
+                              }),
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
                   ),
                 ],
               ),
