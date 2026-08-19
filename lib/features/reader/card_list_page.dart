@@ -39,6 +39,7 @@ class _CardListPageState extends State<CardListPage> {
   final _cards = <BookCard>[];
   final _bookTitlesById = <int, String>{};
   final _scrollController = ScrollController();
+  Map<int, String>? _remarks;
   ContextSettings _contextSettings = contextSettingsSetting.value;
   var _isLoading = true;
   var _isLoadingMore = false;
@@ -94,17 +95,16 @@ class _CardListPageState extends State<CardListPage> {
   Future<void> _load() async {
     final cardsFuture = _loadCardsPage();
     final totalCountFuture = _loadTotalCount();
-    final bookTitlesById = await _loadBookTitlesById();
+    final remarksFuture = _loadRemarksOnce();
     final cards = await cardsFuture;
     final totalCount = await totalCountFuture;
+    await remarksFuture;
+    await _ensureBookTitles(cards.map((card) => card.bookId));
     if (!mounted) return;
     setState(() {
       _cards
         ..clear()
         ..addAll(cards);
-      _bookTitlesById
-        ..clear()
-        ..addAll(bookTitlesById);
       _totalCount = totalCount;
       _isLoading = false;
     });
@@ -114,6 +114,7 @@ class _CardListPageState extends State<CardListPage> {
     if (_isLoading || _isLoadingMore || !_hasMore) return;
     setState(() => _isLoadingMore = true);
     final cards = await _loadCardsPage(offset: _cards.length);
+    await _ensureBookTitles(cards.map((card) => card.bookId));
     if (!mounted) return;
     setState(() {
       _cards.addAll(cards);
@@ -121,10 +122,27 @@ class _CardListPageState extends State<CardListPage> {
     });
   }
 
-  Future<Map<int, String>> _loadBookTitlesById() async {
-    final books = await widget.repository.loadBooks();
-    final remarks = await widget.repository.loadRemarks();
-    return {for (final book in books) book.id: remarks[book.id] ?? book.title};
+  Future<Map<int, String>> _loadRemarksOnce() async {
+    return _remarks ??= await widget.repository.loadRemarks();
+  }
+
+  /// 只拉取当前已加载卡片涉及、且尚未知名称的书籍，避免全量 loadBooks。
+  Future<void> _ensureBookTitles(Iterable<int> bookIds) async {
+    final missing = bookIds
+        .toSet()
+        .where(
+          (id) =>
+              !_bookTitlesById.containsKey(id) &&
+              !widget.bookTitlesById.containsKey(id),
+        )
+        .toList(growable: false);
+    if (missing.isEmpty) return;
+
+    final books = await widget.repository.loadBooksByIds(missing);
+    final remarks = await _loadRemarksOnce();
+    _bookTitlesById.addAll({
+      for (final book in books) book.id: remarks[book.id] ?? book.title,
+    });
   }
 
   String _formatTimestamp(DateTime? timestamp) {
