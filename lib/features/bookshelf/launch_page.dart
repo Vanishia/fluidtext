@@ -349,6 +349,16 @@ class _LaunchPageState extends State<LaunchPage> {
                 icon: const Icon(Icons.arrow_forward_rounded),
                 label: const Text('前往书架'),
               ),
+              if (Platform.isAndroid || Platform.isIOS) ...[
+                const SizedBox(height: 14),
+                Text(
+                  '长按卡片复制段落内容',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
