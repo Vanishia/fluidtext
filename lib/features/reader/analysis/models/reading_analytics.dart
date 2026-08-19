@@ -81,6 +81,9 @@ class ReadingAnalytics {
     required this.books,
     required this.bookTitlesById,
     required this.bookSummaries,
+    required this.booksSortedByRead,
+    required this.booksSortedByProgress,
+    required this.booksSortedByFavorite,
     required this.daysByDate,
     required this.totalCards,
     required this.totalRead,
@@ -106,6 +109,12 @@ class ReadingAnalytics {
   final List<Book> books;
   final Map<int, String> bookTitlesById;
   final List<BookSummary> bookSummaries;
+
+  /// 以下三个排序结果在 fromEvents 中一次性算好，避免 build / 拖拽重建时
+  /// 每帧重复 copy + 全量 sort。
+  final List<BookSummary> booksSortedByRead;
+  final List<BookSummary> booksSortedByProgress;
+  final List<BookSummary> booksSortedByFavorite;
   final Map<DateTime, DayAnalysis> daysByDate;
   final int totalCards;
   final int totalRead;
@@ -280,10 +289,37 @@ class ReadingAnalytics {
         })
         .toList(growable: false);
 
+    final booksSortedByRead = List<BookSummary>.from(summaries)..sort((a, b) {
+      final readCompare = b.readCount.compareTo(a.readCount);
+      if (readCompare != 0) return readCompare;
+      final progressCompare = b.progress.compareTo(a.progress);
+      if (progressCompare != 0) return progressCompare;
+      return a.title.compareTo(b.title);
+    });
+    final booksSortedByProgress = List<BookSummary>.from(summaries)
+      ..sort((a, b) {
+        final progressCompare = b.progress.compareTo(a.progress);
+        if (progressCompare != 0) return progressCompare;
+        final readCompare = b.readCount.compareTo(a.readCount);
+        if (readCompare != 0) return readCompare;
+        return a.title.compareTo(b.title);
+      });
+    final booksSortedByFavorite = List<BookSummary>.from(summaries)
+      ..sort((a, b) {
+        final favoriteCompare = b.favoriteCount.compareTo(a.favoriteCount);
+        if (favoriteCompare != 0) return favoriteCompare;
+        final favoriteRateCompare = b.favoriteRate.compareTo(a.favoriteRate);
+        if (favoriteRateCompare != 0) return favoriteRateCompare;
+        return a.title.compareTo(b.title);
+      });
+
     return ReadingAnalytics(
       books: books,
       bookTitlesById: bookTitlesById,
       bookSummaries: summaries,
+      booksSortedByRead: booksSortedByRead,
+      booksSortedByProgress: booksSortedByProgress,
+      booksSortedByFavorite: booksSortedByFavorite,
       daysByDate: daysByDate,
       totalCards: totalCards,
       totalRead: totalRead,
@@ -312,42 +348,6 @@ class ReadingAnalytics {
   double get overallProgress => totalCards == 0 ? 0 : totalRead / totalCards;
   double get favoriteToReadRatio =>
       totalRead == 0 ? 0 : totalFavorites / totalRead;
-
-  List<BookSummary> get booksSortedByRead {
-    final copy = List<BookSummary>.from(bookSummaries);
-    copy.sort((a, b) {
-      final readCompare = b.readCount.compareTo(a.readCount);
-      if (readCompare != 0) return readCompare;
-      final progressCompare = b.progress.compareTo(a.progress);
-      if (progressCompare != 0) return progressCompare;
-      return a.title.compareTo(b.title);
-    });
-    return copy;
-  }
-
-  List<BookSummary> get booksSortedByProgress {
-    final copy = List<BookSummary>.from(bookSummaries);
-    copy.sort((a, b) {
-      final progressCompare = b.progress.compareTo(a.progress);
-      if (progressCompare != 0) return progressCompare;
-      final readCompare = b.readCount.compareTo(a.readCount);
-      if (readCompare != 0) return readCompare;
-      return a.title.compareTo(b.title);
-    });
-    return copy;
-  }
-
-  List<BookSummary> get booksSortedByFavorite {
-    final copy = List<BookSummary>.from(bookSummaries);
-    copy.sort((a, b) {
-      final favoriteCompare = b.favoriteCount.compareTo(a.favoriteCount);
-      if (favoriteCompare != 0) return favoriteCompare;
-      final favoriteRateCompare = b.favoriteRate.compareTo(a.favoriteRate);
-      if (favoriteRateCompare != 0) return favoriteRateCompare;
-      return a.title.compareTo(b.title);
-    });
-    return copy;
-  }
 
   int get depthBucketNotStarted =>
       bookSummaries.where((item) => item.readCount == 0).length;
@@ -418,6 +418,34 @@ class ReadingAnalytics {
   }
 
   String bookTitle(int bookId) => bookTitlesById[bookId] ?? '未知书籍';
+}
+
+/// fromEvents 的全部输入，打包成单个对象以便经 compute() 传到后台 isolate。
+class ReadingAnalyticsInput {
+  const ReadingAnalyticsInput({
+    required this.books,
+    required this.bookTitlesById,
+    required this.statsByBookId,
+    required this.readEvents,
+    required this.favoriteEvents,
+  });
+
+  final List<Book> books;
+  final Map<int, String> bookTitlesById;
+  final Map<int, BookCardStats> statsByBookId;
+  final List<BookCardActivityEvent> readEvents;
+  final List<BookCardActivityEvent> favoriteEvents;
+}
+
+/// 顶层函数，供 compute() 在后台 isolate 执行聚合。
+ReadingAnalytics buildReadingAnalytics(ReadingAnalyticsInput input) {
+  return ReadingAnalytics.fromEvents(
+    books: input.books,
+    bookTitlesById: input.bookTitlesById,
+    statsByBookId: input.statsByBookId,
+    readEvents: input.readEvents,
+    favoriteEvents: input.favoriteEvents,
+  );
 }
 
 DateTime _dateOnly(DateTime date) {

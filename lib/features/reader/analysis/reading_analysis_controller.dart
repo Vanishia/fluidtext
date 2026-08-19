@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../../repositories/library_repository.dart';
 import '../../../repositories/library_change_tracker.dart';
 import 'models/reading_analytics.dart';
@@ -66,12 +68,16 @@ class ReadingAnalysisController {
       for (final book in books) book.id: remarks[book.id] ?? book.title,
     };
 
-    final analytics = ReadingAnalytics.fromEvents(
-      books: books,
-      bookTitlesById: titlesById,
-      statsByBookId: stats,
-      readEvents: readEvents,
-      favoriteEvents: favoriteEvents,
+    // 聚合对输入不可变，事件量大时放到后台 isolate，避免 UI isolate 掉帧。
+    final analytics = await compute(
+      buildReadingAnalytics,
+      ReadingAnalyticsInput(
+        books: books,
+        bookTitlesById: titlesById,
+        statsByBookId: stats,
+        readEvents: readEvents,
+        favoriteEvents: favoriteEvents,
+      ),
     );
     if (LibraryChangeTracker.instance.revision == sourceRevision) {
       _analysisCache[cacheKey] = _ReadingAnalyticsCacheEntry(
