@@ -38,6 +38,8 @@ class ReadingAnalysisController {
   }
 
   Future<ReadingAnalytics> load({bool forceFullScan = false}) async {
+    final cached = getCachedAnalytics(forceFullScan: forceFullScan);
+    if (cached != null) return cached;
     return _loadFull(cacheKey);
   }
 
