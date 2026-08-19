@@ -17,8 +17,7 @@ import '../context/context_settings.dart';
 import '../context/context_sheet.dart';
 import '../settings/reader_background_sheet.dart';
 import '../settings/app_drawer.dart';
-import 'favorite_cards_page.dart';
-import 'read_cards_page.dart';
+import 'card_list_page.dart';
 import 'reading_analysis_page.dart';
 import 'reader_background_settings.dart';
 import 'reader_controller.dart';
@@ -182,7 +181,8 @@ class _BookCardsPageState extends State<BookCardsPage> {
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ReadCardsPage(
+        builder: (_) => CardListPage(
+          kind: CardListKind.read,
           bookIds: const <int>[],
           shelfTitle: '全部书籍',
           repository: repository,
@@ -198,7 +198,8 @@ class _BookCardsPageState extends State<BookCardsPage> {
 
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => FavoriteCardsPage(
+        builder: (_) => CardListPage(
+          kind: CardListKind.favorite,
           bookIds: const <int>[],
           shelfTitle: '全部书籍',
           repository: repository,
