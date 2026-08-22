@@ -7,6 +7,7 @@ import '../../features/context/context_settings.dart';
 import '../../features/context/context_sheet.dart';
 import '../../models/book_card.dart';
 import '../../repositories/library_repository.dart';
+import '../../widgets/reading_skeleton.dart';
 import 'reader_background_settings.dart';
 import 'widgets/reader_background_surface.dart';
 
@@ -240,7 +241,7 @@ class _CardListPageState extends State<CardListPage> {
 
   Widget _buildBody() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const CardListSkeleton();
     }
     if (_cards.isEmpty) {
       return Center(

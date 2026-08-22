@@ -58,7 +58,7 @@
 `_buildStateBody` 先判 `_error`——即使缓存内容正在展示，后台刷新失败也会把整块内容换成
 错误页。建议：已有缓存时刷新失败只提示 SnackBar/横幅，保留原内容。
 
-### UX-3 加载态只有一个转圈
+### UX-3 加载态只有一个转圈（已完成）
 
 三个页面加载中都只有 `CircularProgressIndicator`。应使用骨架屏，项目已有
 `lib/widgets/reading_skeleton.dart` 可参考/复用。（此方向已确认要做）
