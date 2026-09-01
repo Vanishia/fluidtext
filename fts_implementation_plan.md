@@ -71,18 +71,20 @@ Future<List<CardSearchResult>> searchCards(String query, {int limit = 50, int of
 
 ## 5. UI 设计
 
-- 入口：`app_drawer.dart` 的 `AppSidePanel` 底部按钮排新增"搜索"图标（启动页/阅读页共用此面板，改一处）。
+- 入口：`app_drawer.dart` 的 `AppSidePanel` 新增"搜索"图标（启动页/阅读页共用此面板，改一处）。
+  - 不在底部按钮排，放在书架按钮（`_ShelfButton`）右侧，一个小放大镜图标。
 - 搜索页（新增 `lib/features/search/search_page.dart`）：
   - 顶部搜索框，输入防抖（~300ms）触发查询；
-  - 结果列表项：书名 + 章节标题 + 高亮片段（解析 `<mark>` 渲染为高亮 TextSpan）；
-  - 分页加载（limit/offset 滚动加载更多）；
+  - 结果列表懒加载（limit/offset 滚动加载更多）；
+  - 结果卡片**默认折叠**：只显示书名 + 章节标题 + 3 行摘要，摘要中命中关键词高亮（解析 `snippet()` 的 `<mark>` 标记渲染为高亮 TextSpan）；
+  - 点击卡片后**展开为整张卡片**，展示全量正文，样式与主界面阅读卡片一致（复用阅读卡片组件）；
   - 空态 / 索引构建中提示。
-- 跳转：点击结果复用阅读页上下文弹层模式（`reader_page.dart:287` 的 `_showContext` / `ContextController`），定位到对应卡片。
+- 跳转：展开态可再进入上下文阅读，复用阅读页上下文弹层模式（`reader_page.dart:287` 的 `_showContext` / `ContextController`），定位到对应卡片。
 - 参考实现：`lib/features/reader/card_list_page.dart`（收藏/已读列表的列表模式可直接套用）。
 
 ## 6. 边界与兼容
 
-- **备份/恢复**：`buildBackupSnapshot` 不包含 FTS 表（内容可重建）；恢复后由打开时的幂等 rebuild 逻辑重建。
+- **备份/恢复**：`buildBackupSnapshot` 不包含 FTS 表（内容可自动重建）；恢复后由打开时的幂等 rebuild 逻辑重建。
 - **Isar 回滚路径**（`FLUIDTEXT_FORCE_ISAR_LIBRARY`）：搜索功能禁用（入口隐藏）——回滚路径仅为过渡残留，不为其实现搜索。
 - **跨卡片关键词**：卡片按句边界切分，关键词跨卡片时按行匹配会漏，可接受，不处理。
 
