@@ -53,8 +53,13 @@ END;
 ### 4.2 迁移（schema v1 → v2）
 
 - `library_database.dart`：`schemaVersion` 升为 2，新增 `onUpgrade`，幂等执行上述 DDL。
-- 存量回填：`INSERT INTO book_cards_fts(book_cards_fts) VALUES('rebuild')`。
-- 回填耗时：50MB 文本建 trigram 索引预计数秒。策略：打开数据库时在后台执行并记录完成标记（如 `meta` 表存 `fts_built = 1`），未完成时搜索功能提示"索引构建中"；避免阻塞启动。
+- 存量回填：**懒触发**——不在 App 启动时回填，只有进入搜索页才调用
+  `ensureSearchIndexBuilt()`（只有 v1→v2 升级的库有未建索引的存量卡片；
+  新装/迁移/恢复走的都是带触发器的 onCreate，从第一条插入起索引就是同步的，
+  `onCreate` 直接写入完成标记 `fts_index_version`）。
+- 回填实现：单事务内分批扫描（500 卡/批），经 `searchIndexProgress`
+  （`ValueNotifier<double?>`）上报真实进度；幂等，并发调用共享同一次回填；
+  失败不写标记，下次进入搜索页重试。
 - trigram 注意点：关键词长度 < 3 个字符时 trigram 无法命中（退化为全表扫），UI 层对 1–2 字查询直接走 `LIKE` 兜底或提示。
 
 ### 4.3 Repository 接口
@@ -78,7 +83,9 @@ Future<List<CardSearchResult>> searchCards(String query, {int limit = 50, int of
   - 结果列表懒加载（limit/offset 滚动加载更多）；
   - 结果卡片**默认折叠**：只显示书名 + 章节标题 + 3 行摘要，摘要中命中关键词高亮（解析 `snippet()` 的 `<mark>` 标记渲染为高亮 TextSpan）；
   - 点击卡片后**展开为整张卡片**，展示全量正文，样式与主界面阅读卡片一致（复用阅读卡片组件）；
-  - 空态 / 索引构建中提示。
+  - 空态 / 索引构建中提示：真实进度条（`searchIndexProgress`）+ 百分比文案；
+    移动端同时挂常驻通知"正在创建搜索索引"（复用导入通知的 MethodChannel，
+    独立 notification id 4202 与渠道"搜索索引"），桌面端仅页内进度条。
 - 跳转：展开态可再进入上下文阅读，复用阅读页上下文弹层模式（`reader_page.dart:287` 的 `_showContext` / `ContextController`），定位到对应卡片。
 - 参考实现：`lib/features/reader/card_list_page.dart`（收藏/已读列表的列表模式可直接套用）。
 
@@ -98,7 +105,7 @@ Future<List<CardSearchResult>> searchCards(String query, {int limit = 50, int of
 ## 8. 实施步骤
 
 1. 冒烟验证 FTS5 + trigram 在当前打包的 sqlite3 原生库上可用（含 Android 真机）。
-2. `library_database.dart`：schema v2、DDL、`onUpgrade`、后台 rebuild + 完成标记。
+2. `library_database.dart`：schema v2、DDL、`onUpgrade`、懒触发分批 rebuild + 完成标记 + 进度上报；移动端常驻通知。
 3. Repository：`searchCards` 接口 + SQLite 实现 + LIKE 兜底；Isar 实现抛 `UnimplementedError`（UI 层隐藏入口）。
 4. 契约测试与迁移测试。
 5. UI：搜索页 + 侧栏入口 + 结果跳转。
@@ -126,19 +133,19 @@ Future<List<CardSearchResult>> searchCards(String query, {int limit = 50, int of
 
 合成数据：约 300 字/卡的中文正文，部分卡片埋入中英文检索词。
 
-| 卡片数 | 导入（含 FTS） | 导入（无 FTS） | 索引回填 | 中文查询 | 英文查询 | 库文件 | FTS 开销 |
+| 卡片数 | 导入（含 FTS） | 导入（无 FTS） | 索引回填（分批） | 中文查询 | 英文查询 | 库文件 | FTS 开销 |
 |---|---|---|---|---|---|---|---|
-| 1,000 | 748ms | 319ms | 398ms | 11ms | 4ms | 3.9MB | 2.7MB |
-| 10,000 | 9.8s | 1.5s | 6.7s | 16ms | 8ms | 29MB | 18MB |
-| 50,000 | 60.5s | 6.2s | 34.8s | 20ms | 21ms | 132MB | 78MB |
+| 1,000 | 546ms | 236ms | 376ms | 9ms | 3ms | 3.9MB | 2.7MB |
+| 10,000 | 8.5s | 1.0s | 7.9s | 20ms | 12ms | 29MB | 18MB |
+| 50,000 | 59.7s | 5.7s | 41.4s | 25ms | 28ms | 131MB | 76MB |
 
 结论：
 
 - **查询延迟优秀**：50,000 卡片下中英文查询均 <30ms，满足验收标准。
 - **索引体积**约为库文件的 1.4 倍（≈正文字节的 1.7 倍），好于预估的 2–3 倍，可接受。
-- **回填耗时**：50,000 卡片极端规模 35s，真实书库（几千卡）约数秒；后台执行 + 搜索页
-  "索引构建中"提示，体验可接受。
+- **回填耗时**：50,000 卡片极端规模约 41s（分批比单条 `rebuild` 慢约 19%，
+  换来真实进度上报），真实书库（几千卡）约 1–3s；懒触发（进入搜索页才执行），
+  搜索页显示进度条，移动端另有常驻通知。
 - **导入变慢**：trigram 索引使导入约慢 2–10 倍（约 1.1ms/卡）。真实书籍
   （数百至数千卡）导入从亚秒级变为 1–4s，可接受；50,000 卡为合成压力场景。
-- 如未来导入耗时成为问题，可考虑导入时临时禁用触发器、导入后整体 rebuild
-  （rebuild 比逐卡触发器快约 40%）。
+- 如未来导入耗时成为问题，可考虑导入时临时禁用触发器、导入后整体 rebuild。

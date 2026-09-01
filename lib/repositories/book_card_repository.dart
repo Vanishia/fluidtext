@@ -1,5 +1,6 @@
 import 'dart:developer' as developer;
 
+import 'package:flutter/foundation.dart';
 import 'package:isar/isar.dart';
 
 import '../models/book.dart';
@@ -16,6 +17,8 @@ class BookCardRepository implements LibraryRepository {
   BookCardRepository(this.isar, {Isar? remarkIsar, BookAssetStore? assetStore})
     : _remarkIsar = remarkIsar,
       _assetStore = assetStore ?? BookAssetStore.instance;
+
+  static final _alwaysIdleSearchProgress = ValueNotifier<double?>(null);
 
   final Isar isar;
   final Isar? _remarkIsar;
@@ -1063,6 +1066,16 @@ class BookCardRepository implements LibraryRepository {
 
   @override
   Future<bool> isSearchIndexReady() async => false;
+
+  @override
+  Future<void> ensureSearchIndexBuilt() {
+    // 回滚路径不实现全文搜索（入口在 UI 层隐藏）。
+    throw UnimplementedError('Isar 回滚路径不支持全文搜索');
+  }
+
+  @override
+  ValueListenable<double?> get searchIndexProgress =>
+      _alwaysIdleSearchProgress;
 
   @override
   Future<void> checkpoint() async {}

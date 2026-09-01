@@ -44,6 +44,8 @@ class _SearchPageState extends State<SearchPage> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    // 懒触发回填：只有进入搜索功能才为升级前的存量卡片建索引。
+    unawaited(widget.repository.ensureSearchIndexBuilt());
     _watchIndexReadiness();
   }
 
@@ -324,24 +326,33 @@ class _SearchPageState extends State<SearchPage> {
                     ),
                     if (!_indexReady)
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 1.5,
-                                color: cs.onSurfaceVariant,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '索引构建中，结果可能不完整',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: cs.onSurfaceVariant),
-                            ),
-                          ],
+                        padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+                        child: ValueListenableBuilder<double?>(
+                          valueListenable: widget.repository
+                              .searchIndexProgress,
+                          builder: (context, progress, _) {
+                            final percent = progress == null
+                                ? null
+                                : (progress * 100).round();
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                LinearProgressIndicator(
+                                  value: progress,
+                                  minHeight: 3,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  percent == null
+                                      ? '正在创建搜索索引，结果可能不完整'
+                                      : '正在创建搜索索引 $percent%，结果可能不完整',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(color: cs.onSurfaceVariant),
+                                ),
+                              ],
+                            );
+                          },
                         ),
                       ),
                     Expanded(child: _buildBody()),

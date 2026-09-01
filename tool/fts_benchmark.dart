@@ -80,14 +80,11 @@ Future<Map<String, Object?>> _runCase(int cardCount) async {
       await repository.importBookDraft(_buildDraft(cardCount));
     });
 
-    // Measure the post-upgrade backfill cost directly: the rebuild statement
-    // is what the background task runs after open (that trigger path is
-    // covered by the upgrade test in library_database_test.dart).
-    final rebuildMs = await _measure(() async {
-      await database.customStatement(
-        "INSERT INTO book_cards_fts(book_cards_fts) VALUES('rebuild')",
-      );
-    });
+    // Measure the post-upgrade backfill cost: the chunked rebuild is what
+    // `ensureSearchIndexBuilt` runs when the search feature is first used
+    // after an upgrade (that trigger path is covered by the upgrade test in
+    // library_database_test.dart).
+    final rebuildMs = await _measure(() => database.rebuildSearchIndex());
 
     final searchChineseMs = await _measure(() async {
       final hits = await repository.searchCards('黄河之水');

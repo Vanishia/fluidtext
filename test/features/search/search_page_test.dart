@@ -84,6 +84,9 @@ class _FakeSearchRepository implements LibraryRepository {
   Future<bool> isSearchIndexReady() async => true;
 
   @override
+  Future<void> ensureSearchIndexBuilt() async {}
+
+  @override
   Future<void> toggleRead(BookCard card) async {}
 
   @override

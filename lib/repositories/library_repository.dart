@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../models/book.dart';
 import '../models/book_asset.dart';
 import '../models/book_card.dart';
@@ -131,6 +133,15 @@ abstract interface class LibrarySearchRepository {
 
   /// False while the FTS index is still being backfilled after an upgrade.
   Future<bool> isSearchIndexReady();
+
+  /// 触发存量卡片的 FTS 回填（若尚未构建）。懒触发：进入搜索页时调用，
+  /// 而不是 App 启动时——只有 v1→v2 升级后的库才有未建索引的存量卡片。
+  /// 幂等，并发调用共享同一次回填。
+  Future<void> ensureSearchIndexBuilt();
+
+  /// 回填进度（0..1），未在回填时为 null。配合 [isSearchIndexReady] 驱动
+  /// 搜索页的进度提示。
+  ValueListenable<double?> get searchIndexProgress;
 }
 
 abstract interface class RemarkRepository {

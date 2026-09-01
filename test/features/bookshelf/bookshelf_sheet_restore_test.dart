@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluidtext/features/bookshelf/bookshelf_sheet.dart';
@@ -376,4 +377,11 @@ class _FakeLibraryRepository implements LibraryRepository {
 
   @override
   Future<bool> isSearchIndexReady() => throw UnimplementedError();
+
+  @override
+  Future<void> ensureSearchIndexBuilt() => throw UnimplementedError();
+
+  @override
+  ValueListenable<double?> get searchIndexProgress =>
+      throw UnimplementedError();
 }

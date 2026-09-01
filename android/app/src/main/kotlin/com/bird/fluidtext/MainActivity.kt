@@ -18,6 +18,9 @@ import io.flutter.plugin.common.MethodChannel
  * switches apps. Deliberately not a foreground service: imports are fast and
  * the app cleans up half-imported books on next launch.
  *
+ * The same channel also drives the one-shot "creating search index"
+ * notification (id 4202, shown during the FTS backfill after an upgrade).
+ *
  * The separate migration channel drives [MigrationForegroundService], which
  * is a real foreground service because a killed migration forces a full
  * retry of the one-shot data migration.
@@ -27,7 +30,9 @@ class MainActivity : FlutterActivity() {
         private const val CHANNEL_NAME = "fluidtext/import_notifications"
         private const val MIGRATION_CHANNEL_NAME = "fluidtext/migration_service"
         private const val NOTIFICATION_CHANNEL_ID = "book_import"
+        private const val SEARCH_INDEX_CHANNEL_ID = "search_index"
         private const val IMPORT_NOTIFICATION_ID = 4201
+        private const val SEARCH_INDEX_NOTIFICATION_ID = 4202
         private const val PERMISSION_REQUEST_CODE = 7101
     }
 
@@ -37,22 +42,27 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_NAME)
             .setMethodCallHandler { call, result ->
+                val notificationId =
+                    call.argument<Int>("id") ?: IMPORT_NOTIFICATION_ID
                 when (call.method) {
                     "ensurePermission" -> ensureNotificationPermission(result)
                     "showProgress" -> {
                         val title = call.argument<String>("title") ?: "正在导入"
                         val text = call.argument<String>("text") ?: ""
                         val percent = call.argument<Int>("percent") ?: -1
-                        showImportNotification(title, text, percent, ongoing = true)
+                        showNotification(title, text, percent, ongoing = true, notificationId)
                         result.success(null)
                     }
                     "showCompleted" -> {
-                        val text = call.argument<String>("text") ?: "导入已完成"
-                        showImportNotification("导入已完成", text, percent = -1, ongoing = false)
+                        val text = call.argument<String>("text") ?: "已完成"
+                        val title =
+                            if (notificationId == SEARCH_INDEX_NOTIFICATION_ID) "搜索索引"
+                            else "导入已完成"
+                        showNotification(title, text, percent = -1, ongoing = false, notificationId)
                         result.success(null)
                     }
                     "cancel" -> {
-                        notificationManager().cancel(IMPORT_NOTIFICATION_ID)
+                        notificationManager().cancel(notificationId)
                         result.success(null)
                     }
                     else -> result.notImplemented()
@@ -120,18 +130,24 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun showImportNotification(
+    private fun showNotification(
         title: String,
         text: String,
         percent: Int,
         ongoing: Boolean,
+        notificationId: Int,
     ) {
         val manager = notificationManager()
+        val channelId =
+            if (notificationId == SEARCH_INDEX_NOTIFICATION_ID) SEARCH_INDEX_CHANNEL_ID
+            else NOTIFICATION_CHANNEL_ID
         if (Build.VERSION.SDK_INT >= 26) {
+            val channelLabel =
+                if (notificationId == SEARCH_INDEX_NOTIFICATION_ID) "搜索索引" else "书籍导入"
             manager.createNotificationChannel(
                 NotificationChannel(
-                    NOTIFICATION_CHANNEL_ID,
-                    "书籍导入",
+                    channelId,
+                    channelLabel,
                     NotificationManager.IMPORTANCE_LOW,
                 ),
             )
@@ -147,7 +163,7 @@ class MainActivity : FlutterActivity() {
 
         val builder =
             if (Build.VERSION.SDK_INT >= 26) {
-                Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+                Notification.Builder(this, channelId)
             } else {
                 @Suppress("DEPRECATION")
                 Notification.Builder(this)
@@ -167,7 +183,7 @@ class MainActivity : FlutterActivity() {
                 builder.setProgress(0, 0, true)
             }
         }
-        manager.notify(IMPORT_NOTIFICATION_ID, builder.build())
+        manager.notify(notificationId, builder.build())
     }
 
     private fun notificationManager(): NotificationManager =

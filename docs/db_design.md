@@ -100,8 +100,9 @@ KV 表（`key` PK、`value`、`updated_at_ms`），每次打开连接时 upsert�
 
 - `schema_version` = 当前 schema 版本
 - `storage_format_version` = `'sqlite-v1'`
-- `fts_index_version` = FTS 索引版本；回填完成后写入，缺失或与
-  `LibraryDatabase.ftsIndexVersion` 不符时打开后后台重建
+- `fts_index_version` = FTS 索引版本；`onCreate` 直接写入（新库靠触发器同步），
+  v1→v2 升级的库无此标记，进入搜索页时懒触发分批回填
+  （`ensureSearchIndexBuilt`，进度经 `searchIndexProgress` 上报）
 
 ### book_cards_fts —— 全文搜索索引（schema v2）
 

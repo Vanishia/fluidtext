@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../../services/app_logger.dart';
@@ -20,11 +21,7 @@ part 'library_database.g.dart';
   ],
 )
 class LibraryDatabase extends _$LibraryDatabase {
-  LibraryDatabase(super.executor) {
-    // Queries issued from beforeOpen are too early (the drift channel is not
-    // established yet), so the FTS rebuild is scheduled for right after open.
-    unawaited(doWhenOpened((_) => _rebuildSearchIndexIfNeeded()));
-  }
+  LibraryDatabase(super.executor);
 
   factory LibraryDatabase.file(File file) {
     return LibraryDatabase(openLibraryDatabase(file));
@@ -57,6 +54,9 @@ class LibraryDatabase extends _$LibraryDatabase {
         await migrator.createAll();
         await _createSchemaV1Indexes();
         await _createFtsObjects();
+        // Fresh databases index through the sync triggers from the very first
+        // insert, so they start out "ready" — only v1 upgrades backfill.
+        await _writeFtsIndexMarker();
       },
       onUpgrade: (migrator, from, to) async {
         if (from < 2) {
@@ -112,40 +112,106 @@ class LibraryDatabase extends _$LibraryDatabase {
     return row?.read<String>('value') == ftsIndexVersion;
   }
 
+  /// 0..1 while [rebuildSearchIndex] is running, null otherwise. Backed by an
+  /// in-memory notifier because the rebuild lives on the background isolate
+  /// connection — callers in the UI isolate only observe this value.
+  final ValueNotifier<double?> searchIndexProgress = ValueNotifier<double?>(
+    null,
+  );
+
   Future<void> _rebuildSearchIndexIfNeeded() async {
     try {
       if (await isSearchIndexReady()) return;
       AppLogger.instance.info('fts', 'rebuilding book_cards_fts index');
       final stopwatch = Stopwatch()..start();
-      await customStatement(
-        "INSERT INTO book_cards_fts(book_cards_fts) VALUES('rebuild')",
-      );
-      await customStatement(
-        '''
-        INSERT INTO storage_metadata(key, value, updated_at_ms)
-        VALUES (?, ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value = excluded.value,
-          updated_at_ms = excluded.updated_at_ms
-        ''',
-        [
-          _ftsIndexVersionKey,
-          ftsIndexVersion,
-          DateTime.now().toUtc().millisecondsSinceEpoch,
-        ],
-      );
+      await rebuildSearchIndex();
       AppLogger.instance.info(
         'fts',
         'book_cards_fts rebuild finished in ${stopwatch.elapsedMilliseconds}ms',
       );
     } catch (error, stackTrace) {
-      // Marker stays unset so the rebuild is retried on the next launch.
+      // Marker stays unset so the rebuild is retried on the next request.
       AppLogger.instance.error(
         'fts',
         'book_cards_fts rebuild failed: $error',
         error: error,
         stackTrace: stackTrace,
       );
+    }
+  }
+
+  Future<void>? _ongoingSearchIndexRebuild;
+
+  /// Starts the FTS backfill unless the index is already built. Idempotent:
+  /// concurrent callers share the in-flight rebuild. Deliberately NOT called
+  /// at database open — the backfill only runs when the search feature is
+  /// actually used (only v1→v2 upgrades have unindexed cards; fresh installs,
+  /// migrations and restores index through the sync triggers).
+  Future<void> ensureSearchIndexBuilt() {
+    return _ongoingSearchIndexRebuild ??= _rebuildSearchIndexIfNeeded()
+        .whenComplete(() => _ongoingSearchIndexRebuild = null);
+  }
+
+  Future<void> _writeFtsIndexMarker() {
+    return customStatement(
+      '''
+      INSERT INTO storage_metadata(key, value, updated_at_ms)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at_ms = excluded.updated_at_ms
+      ''',
+      [
+        _ftsIndexVersionKey,
+        ftsIndexVersion,
+        DateTime.now().toUtc().millisecondsSinceEpoch,
+      ],
+    );
+  }
+
+  /// Rebuilds the FTS index in chunks (inside one transaction so imports
+  /// cannot interleave and double-index rows) and reports progress through
+  /// [searchIndexProgress]. Chunked instead of the single `rebuild` command
+  /// precisely so the progress bar has something real to show.
+  Future<void> rebuildSearchIndex() async {
+    const chunkSize = 500;
+    final total = await customSelect(
+      'SELECT COUNT(*) AS count FROM book_cards',
+    ).getSingle().then((row) => row.read<int>('count'));
+    searchIndexProgress.value = 1.0;
+    if (total > 0) searchIndexProgress.value = 0.0;
+    try {
+      await transaction(() async {
+        await customStatement(
+          "INSERT INTO book_cards_fts(book_cards_fts) VALUES('delete-all')",
+        );
+        var lastId = 0;
+        var done = 0;
+        while (true) {
+          final rows = await customSelect(
+            'SELECT id, content FROM book_cards '
+            'WHERE id > ? ORDER BY id ASC LIMIT $chunkSize',
+            variables: [Variable<int>(lastId)],
+          ).get();
+          if (rows.isEmpty) break;
+          final placeholders = rows.map((_) => '(?, ?)').join(', ');
+          await customStatement(
+            'INSERT INTO book_cards_fts(rowid, content) VALUES $placeholders',
+            [
+              for (final row in rows) ...[
+                row.read<int>('id'),
+                row.read<String>('content'),
+              ],
+            ],
+          );
+          done += rows.length;
+          lastId = rows.last.read<int>('id');
+          searchIndexProgress.value = done / total;
+        }
+        await _writeFtsIndexMarker();
+      });
+    } finally {
+      searchIndexProgress.value = null;
     }
   }
 

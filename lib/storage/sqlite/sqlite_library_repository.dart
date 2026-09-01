@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../models/book.dart';
 import '../../models/book_asset.dart';
@@ -11,6 +13,7 @@ import '../../repositories/library_repository.dart';
 import '../../repositories/library_snapshot.dart';
 import '../../services/app_logger.dart';
 import '../../services/book_asset_store.dart';
+import '../../services/search_index_notification_service.dart';
 import 'library_database.dart';
 
 class SqliteLibraryRepository implements LibraryRepository {
@@ -881,6 +884,43 @@ class SqliteLibraryRepository implements LibraryRepository {
   Future<bool> isSearchIndexReady() {
     return database.isSearchIndexReady();
   }
+
+  @override
+  Future<void> ensureSearchIndexBuilt() {
+    final rebuild = database.ensureSearchIndexBuilt();
+    unawaited(_mirrorIndexRebuildToNotification(rebuild));
+    return rebuild;
+  }
+
+  /// 移动端常驻通知（和导入/迁移同一机制），桌面端服务内部自动 no-op。
+  Future<void> _mirrorIndexRebuildToNotification(Future<void> rebuild) async {
+    final notifications = SearchIndexNotificationService.instance;
+    if (!await notifications.ensurePermission()) return;
+
+    void onProgress() {
+      final progress = database.searchIndexProgress.value;
+      unawaited(
+        notifications.showProgress(
+          title: '正在创建搜索索引',
+          text: '创建期间搜索结果可能不完整',
+          percent: progress == null ? null : (progress * 100).round(),
+        ),
+      );
+    }
+
+    database.searchIndexProgress.addListener(onProgress);
+    try {
+      onProgress();
+      await rebuild;
+      await notifications.showCompleted(text: '搜索索引已就绪');
+    } finally {
+      database.searchIndexProgress.removeListener(onProgress);
+    }
+  }
+
+  @override
+  ValueListenable<double?> get searchIndexProgress =>
+      database.searchIndexProgress;
 
   Future<List<CardSearchResult>> _searchCardsWithFts(
     String query, {

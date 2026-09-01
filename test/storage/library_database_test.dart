@@ -211,12 +211,10 @@ void main() {
       database = LibraryDatabase.file(databaseFile);
       await database.customSelect('SELECT 1').get();
 
-      // The rebuild runs in the background after open; wait for the marker.
-      for (var i = 0; i < 50; i += 1) {
-        if (await database.isSearchIndexReady()) break;
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
+      // 回填是懒触发的：进入搜索功能时才调用 ensureSearchIndexBuilt。
+      await database.ensureSearchIndexBuilt();
       expect(await database.isSearchIndexReady(), isTrue);
+      expect(database.searchIndexProgress.value, isNull);
       expect(await ftsMatch('"飞入寻常百姓家"'), [1]);
     });
   });
