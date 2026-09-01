@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fluidtext/storage/sqlite/library_database.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 /// Runtime configuration and query-plan guarantees for the production
 /// (file-based) database. The SQL statements mirror the queries in
@@ -13,13 +14,15 @@ void main() {
   });
 
   late Directory directory;
+  late File databaseFile;
   late LibraryDatabase database;
 
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('fluidtext-db-test-');
-    database = LibraryDatabase.file(
-      File('${directory.path}${Platform.pathSeparator}library.sqlite'),
+    databaseFile = File(
+      '${directory.path}${Platform.pathSeparator}library.sqlite',
     );
+    database = LibraryDatabase.file(databaseFile);
     // Force the database open before asserting PRAGMAs.
     await database.customSelect('SELECT 1').get();
   });
@@ -125,5 +128,96 @@ void main() {
     );
     expect(plan, contains('idx_book_cards'));
     expect(plan, isNot(contains('SCAN book_cards')));
+  });
+
+  group('full-text search (schema v2)', () {
+    Future<List<int>> ftsMatch(String query) async {
+      final rows = await database
+          .customSelect(
+            'SELECT rowid FROM book_cards_fts WHERE book_cards_fts MATCH ?',
+            variables: [Variable(query)],
+          )
+          .get();
+      return rows.map((row) => row.read<int>('rowid')).toList();
+    }
+
+    Future<void> insertCard(int id, String content) async {
+      await database.customStatement(
+        'INSERT INTO books(id, title, created_at_ms) VALUES (?, ?, 0)',
+        [id, '书$id'],
+      );
+      await database.customStatement(
+        'INSERT INTO book_cards(id, book_id, book_title, card_index, '
+        'chapter_index, chapter_card_index, content, is_read, is_favorite) '
+        'VALUES (?, ?, ?, 0, 0, 0, ?, 0, 0)',
+        [id, id, '书$id', content],
+      );
+    }
+
+    test('creates the FTS virtual table and sync triggers on open', () async {
+      final rows = await database
+          .customSelect(
+            "SELECT name, type FROM sqlite_master "
+            "WHERE name IN ('book_cards_fts', 'book_cards_fts_ai', "
+            "'book_cards_fts_ad', 'book_cards_fts_au')",
+          )
+          .get();
+      final byName = {
+        for (final row in rows)
+          row.read<String>('name'): row.read<String>('type'),
+      };
+      expect(byName['book_cards_fts'], 'table');
+      expect(byName['book_cards_fts_ai'], 'trigger');
+      expect(byName['book_cards_fts_ad'], 'trigger');
+      expect(byName['book_cards_fts_au'], 'trigger');
+    });
+
+    test('triggers keep the FTS index in sync with book_cards', () async {
+      await insertCard(1, '白日依山尽，黄河入海流。');
+      await insertCard(2, 'Hello FluidText full text search.');
+
+      expect(await ftsMatch('"黄河入海"'), [1]);
+      expect(await ftsMatch('fluidtext'), [2]);
+
+      await database.customStatement(
+        'UPDATE book_cards SET content = ? WHERE id = 1',
+        ['欲穷千里目，更上一层楼。'],
+      );
+      expect(await ftsMatch('"黄河入海"'), isEmpty);
+      expect(await ftsMatch('"更上一层楼"'), [1]);
+
+      await database.customStatement('DELETE FROM book_cards WHERE id = 1');
+      expect(await ftsMatch('"更上一层楼"'), isEmpty);
+    });
+
+    test('upgrading from schema v1 creates FTS objects and backfills existing cards', () async {
+      await insertCard(1, '旧时王谢堂前燕，飞入寻常百姓家。');
+      final filePath = databaseFile.path;
+      await database.close();
+
+      // Rewind the file to a schema-v1 state: no FTS objects, version 1, and
+      // no fts_index_version marker (v1 never wrote one).
+      final raw = sqlite3.open(filePath);
+      raw.execute('DROP TRIGGER book_cards_fts_ai');
+      raw.execute('DROP TRIGGER book_cards_fts_ad');
+      raw.execute('DROP TRIGGER book_cards_fts_au');
+      raw.execute('DROP TABLE book_cards_fts');
+      raw.execute(
+        "DELETE FROM storage_metadata WHERE key = 'fts_index_version'",
+      );
+      raw.execute('PRAGMA user_version = 1');
+      raw.dispose();
+
+      database = LibraryDatabase.file(databaseFile);
+      await database.customSelect('SELECT 1').get();
+
+      // The rebuild runs in the background after open; wait for the marker.
+      for (var i = 0; i < 50; i += 1) {
+        if (await database.isSearchIndexReady()) break;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      expect(await database.isSearchIndexReady(), isTrue);
+      expect(await ftsMatch('"飞入寻常百姓家"'), [1]);
+    });
   });
 }

@@ -96,7 +96,7 @@ void main() {
     expect({
       for (final row in metadata)
         row.read<String>('key'): row.read<String>('value'),
-    }, containsPair('schema_version', '1'));
+    }, containsPair('schema_version', '2'));
     expect({
       for (final row in metadata)
         row.read<String>('key'): row.read<String>('value'),

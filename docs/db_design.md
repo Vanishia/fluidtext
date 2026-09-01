@@ -9,7 +9,8 @@
 
 - ORM：Drift（`drift: ^2.15.0`），底层 `sqlite3`，`NativeDatabase.createInBackground`
   在后台 isolate 中跑数据库。
-- schema 版本：`LibraryDatabase.currentSchemaVersion = 1`。
+- schema 版本：`LibraryDatabase.currentSchemaVersion = 2`（v2 新增
+  `book_cards_fts` FTS5 虚表与同步触发器，用于全文搜索）。
 - 数据库文件位置由 `StorageLayoutProvider` 决定（`layout.sqliteDatabaseFile`），
   打开前确保根目录存在（`openLibraryDatabaseForLayout`）。
 - Repository 接口：`lib/repositories/library_repository.dart` 的 `LibraryRepository`，
