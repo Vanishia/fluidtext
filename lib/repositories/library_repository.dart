@@ -29,12 +29,22 @@ class BookCardStats {
   int get unreadCount => totalCount - readCount;
 }
 
+/// A single full-text search hit. [snippet] is the `snippet()` output (or a
+/// LIKE-fallback excerpt) with matches wrapped in `<mark>` tags.
+class CardSearchResult {
+  const CardSearchResult({required this.card, required this.snippet});
+
+  final BookCard card;
+  final String snippet;
+}
+
 abstract interface class LibraryRepository
     implements
         LibraryReadRepository,
         LibraryWriteRepository,
         LibraryImportRepository,
         LibraryMaintenanceRepository,
+        LibrarySearchRepository,
         RemarkRepository,
         BackupSnapshotRepository,
         DatabaseLifecycle {}
@@ -108,6 +118,19 @@ abstract interface class LibraryMaintenanceRepository {
   /// interrupted by a process kill — together with orphaned staged asset
   /// files, and returns the deleted books so the UI can prompt a re-import.
   Future<List<Book>> pruneIncompleteBooks();
+}
+
+abstract interface class LibrarySearchRepository {
+  /// Full-text search over card contents. FTS requires at least 3 characters
+  /// (trigram tokenizer); shorter queries fall back to a LIKE scan.
+  Future<List<CardSearchResult>> searchCards(
+    String query, {
+    int limit = 50,
+    int offset = 0,
+  });
+
+  /// False while the FTS index is still being backfilled after an upgrade.
+  Future<bool> isSearchIndexReady();
 }
 
 abstract interface class RemarkRepository {

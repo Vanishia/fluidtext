@@ -1052,6 +1052,19 @@ class BookCardRepository implements LibraryRepository {
   }
 
   @override
+  Future<List<CardSearchResult>> searchCards(
+    String query, {
+    int limit = 50,
+    int offset = 0,
+  }) {
+    // 回滚路径不实现全文搜索（入口在 UI 层隐藏）。
+    throw UnimplementedError('Isar 回滚路径不支持全文搜索');
+  }
+
+  @override
+  Future<bool> isSearchIndexReady() async => false;
+
+  @override
   Future<void> checkpoint() async {}
 
   @override

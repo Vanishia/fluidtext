@@ -864,6 +864,121 @@ class SqliteLibraryRepository implements LibraryRepository {
   }
 
   @override
+  Future<List<CardSearchResult>> searchCards(
+    String query, {
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return const <CardSearchResult>[];
+    // The trigram tokenizer cannot match queries shorter than 3 characters.
+    return trimmed.length < 3
+        ? _searchCardsWithLike(trimmed, limit: limit, offset: offset)
+        : _searchCardsWithFts(trimmed, limit: limit, offset: offset);
+  }
+
+  @override
+  Future<bool> isSearchIndexReady() {
+    return database.isSearchIndexReady();
+  }
+
+  Future<List<CardSearchResult>> _searchCardsWithFts(
+    String query, {
+    required int limit,
+    required int offset,
+  }) async {
+    // Quote the whole input as an FTS5 phrase: this escapes MATCH syntax and
+    // gives substring semantics under the trigram tokenizer.
+    final matchQuery = '"${query.replaceAll('"', '""')}"';
+    final rows = await database
+        .customSelect(
+          '''
+          SELECT c.*,
+                 snippet(book_cards_fts, 0, '<mark>', '</mark>', '…', 32)
+                   AS snippet
+          FROM book_cards_fts
+          JOIN book_cards c ON c.id = book_cards_fts.rowid
+          WHERE book_cards_fts MATCH ?
+          ORDER BY bm25(book_cards_fts)
+          LIMIT ? OFFSET ?
+          ''',
+          variables: [
+            Variable(matchQuery),
+            Variable<int>(limit),
+            Variable<int>(offset),
+          ],
+          readsFrom: {database.sqliteBookCards},
+        )
+        .get();
+    return rows
+        .map(
+          (row) => CardSearchResult(
+            card: _bookCardFromQueryRow(row),
+            snippet: row.read<String>('snippet'),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<List<CardSearchResult>> _searchCardsWithLike(
+    String query, {
+    required int limit,
+    required int offset,
+  }) async {
+    final escaped = query
+        .replaceAll(r'\', r'\\')
+        .replaceAll('%', r'\%')
+        .replaceAll('_', r'\_');
+    final rows = await database
+        .customSelect(
+          '''
+          SELECT * FROM book_cards
+          WHERE content LIKE '%' || ? || '%' ESCAPE '\\'
+          ORDER BY book_id ASC, card_index ASC
+          LIMIT ? OFFSET ?
+          ''',
+          variables: [
+            Variable(escaped),
+            Variable<int>(limit),
+            Variable<int>(offset),
+          ],
+          readsFrom: {database.sqliteBookCards},
+        )
+        .get();
+    return rows
+        .map(
+          (row) => CardSearchResult(
+            card: _bookCardFromQueryRow(row),
+            snippet: _likeSnippet(row.read<String>('content'), query),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  /// Builds a `<mark>`-tagged excerpt around the first match, mirroring what
+  /// FTS `snippet()` returns so the UI can render both uniformly.
+  static String _likeSnippet(String content, String query) {
+    const window = 96;
+    final lowerContent = content.toLowerCase();
+    final index = lowerContent.indexOf(query.toLowerCase());
+    if (index < 0) {
+      final head = content.substring(
+        0,
+        content.length < window ? content.length : window,
+      );
+      return content.length > window ? '$head…' : head;
+    }
+    final start = index > window ~/ 2 ? index - window ~/ 2 : 0;
+    final end = index + query.length + window ~/ 2;
+    final clippedEnd = end > content.length ? content.length : end;
+    final prefix = start > 0 ? '…' : '';
+    final suffix = clippedEnd < content.length ? '…' : '';
+    return '$prefix${content.substring(start, index)}'
+        '<mark>${content.substring(index, index + query.length)}</mark>'
+        '${content.substring(index + query.length, clippedEnd)}$suffix';
+  }
+
+  @override
   Future<LibraryBackupSnapshot> buildBackupSnapshot() async {
     final books = await (database.select(
       database.sqliteBooks,

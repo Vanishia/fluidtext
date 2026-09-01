@@ -365,4 +365,15 @@ class _FakeLibraryRepository implements LibraryRepository {
 
   @override
   Future<void> toggleRead(BookCard card) => throw UnimplementedError();
+
+  @override
+  Future<List<CardSearchResult>> searchCards(
+    String query, {
+    int limit = 50,
+    int offset = 0,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<bool> isSearchIndexReady() => throw UnimplementedError();
 }
