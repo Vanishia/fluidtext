@@ -100,6 +100,16 @@ KV 表（`key` PK、`value`、`updated_at_ms`），每次打开连接时 upsert�
 
 - `schema_version` = 当前 schema 版本
 - `storage_format_version` = `'sqlite-v1'`
+- `fts_index_version` = FTS 索引版本；回填完成后写入，缺失或与
+  `LibraryDatabase.ftsIndexVersion` 不符时打开后后台重建
+
+### book_cards_fts —— 全文搜索索引（schema v2）
+
+FTS5 外部内容虚表（`content='book_cards'`，`tokenize='trigram'`），
+由 `book_cards_fts_ai/ad/au` 三个触发器与 `book_cards` 保持同步。
+不存正文副本，只做倒排索引；备份/导出不包含它，恢复时经触发器自动重建。
+trigram 分词对中英文都按子串匹配，因此短于 3 字符的查询不走 FTS，
+由 `SqliteLibraryRepository.searchCards` 回退为 `LIKE` 扫描。
 
 用于迁移完成标记与回滚判定。
 
