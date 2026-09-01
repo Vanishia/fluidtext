@@ -227,7 +227,7 @@ class AppSidePanel extends StatelessWidget {
         filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: cs.surface.withValues(alpha: isDark ? 0.66 : 0.88),
+            color: cs.surface.withValues(alpha: isDark ? 0.48 : 0.68),
             border: Border(
               right: BorderSide(
                 color: cs.outlineVariant.withValues(

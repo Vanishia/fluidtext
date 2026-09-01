@@ -473,10 +473,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
               }) {
                 return Stack(
                   children: [
-                    ReaderBackgroundSurface(
-                      settings: backgroundSettings,
-                      child: body,
-                    ),
+                    body,
                     // 菜单按钮：仅桌面端显示；移动端用 Drawer 侧滑手势，
                     // 不占用视觉空间。
                     if (!useNativeDrawer)
@@ -543,9 +540,12 @@ class _BookCardsPageState extends State<BookCardsPage> {
                   drawerScrimColor: Colors.black.withValues(alpha: 0.18),
                   drawer: menuPanel(floating: true),
                   body: withPageShortcuts(
-                    child: buildReaderArea(
-                      sidebarVisible: false,
-                      pushMode: true,
+                    child: ReaderBackgroundSurface(
+                      settings: backgroundSettings,
+                      child: buildReaderArea(
+                        sidebarVisible: false,
+                        pushMode: true,
+                      ),
                     ),
                   ),
                 );
@@ -569,30 +569,35 @@ class _BookCardsPageState extends State<BookCardsPage> {
                     _sidebarVisible = sidebarVisible;
 
                     return withPageShortcuts(
-                      child: Row(
-                        children: [
-                          if (pushMode)
-                            PushSidePanel(
-                              visible: sidebarVisible,
-                              child: menuPanel(floating: false),
-                            ),
-                          Expanded(
-                            child: pushMode
-                                ? buildReaderArea(
-                                    sidebarVisible: sidebarVisible,
-                                    pushMode: pushMode,
-                                  )
-                                : SlideSidePanel(
-                                    visible: sidebarVisible,
-                                    onVisibilityChanged: _setSidebarVisible,
-                                    panel: menuPanel(floating: false),
-                                    child: buildReaderArea(
+                      // 壁纸铺满整个窗口（含侧边栏下方），侧边栏的
+                      // BackdropFilter 才能模糊到真实壁纸而非纯色。
+                      child: ReaderBackgroundSurface(
+                        settings: backgroundSettings,
+                        child: Row(
+                          children: [
+                            if (pushMode)
+                              PushSidePanel(
+                                visible: sidebarVisible,
+                                child: menuPanel(floating: false),
+                              ),
+                            Expanded(
+                              child: pushMode
+                                  ? buildReaderArea(
                                       sidebarVisible: sidebarVisible,
                                       pushMode: pushMode,
+                                    )
+                                  : SlideSidePanel(
+                                      visible: sidebarVisible,
+                                      onVisibilityChanged: _setSidebarVisible,
+                                      panel: menuPanel(floating: false),
+                                      child: buildReaderArea(
+                                        sidebarVisible: sidebarVisible,
+                                        pushMode: pushMode,
+                                      ),
                                     ),
-                                  ),
-                          ),
-                        ],
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   },

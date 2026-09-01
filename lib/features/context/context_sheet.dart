@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 
 import '../../widgets/glass.dart';
@@ -53,6 +55,7 @@ class _ContextSheetState extends State<ContextSheet> {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final mediaQuery = MediaQuery.of(context);
+    final isDesktop = !Platform.isAndroid && !Platform.isIOS;
 
     return SafeArea(
       child: Padding(
@@ -60,6 +63,11 @@ class _ContextSheetState extends State<ContextSheet> {
         child: Glass(
           color: cs.surface.withValues(alpha: isDark ? 0.97 : 0.985),
           borderColor: cs.outlineVariant.withValues(alpha: 0.22),
+          // 桌面端弹窗贴着屏幕底边，下面两个角用直角（弹出菜单样式），
+          // 上面保留圆角。
+          borderRadius: isDesktop
+              ? const BorderRadius.vertical(top: Radius.circular(20))
+              : null,
           child: AnimatedBuilder(
             animation: widget.controller,
             builder: (context, _) {
@@ -192,12 +200,15 @@ class _ContextSheetState extends State<ContextSheet> {
                             ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                      padding: isDesktop
+                          ? const EdgeInsets.fromLTRB(16, 6, 16, 16)
+                          : const EdgeInsets.fromLTRB(12, 4, 12, 12),
                       child: Row(
                         children: [
                           _RangeStepper(
                             label: '前文',
                             value: settings.before,
+                            compact: isDesktop,
                             onDecrease:
                                 settings.before > ContextSettings.minCount
                                 ? () => widget.controller.updateSettings(
@@ -215,10 +226,11 @@ class _ContextSheetState extends State<ContextSheet> {
                                   )
                                 : null,
                           ),
-                          const SizedBox(width: 8),
+                          SizedBox(width: isDesktop ? 16 : 8),
                           _RangeStepper(
                             label: '后文',
                             value: settings.after,
+                            compact: isDesktop,
                             onDecrease:
                                 settings.after > ContextSettings.minCount
                                 ? () => widget.controller.updateSettings(
@@ -266,6 +278,7 @@ class _RangeStepper extends StatelessWidget {
     required this.value,
     required this.onDecrease,
     required this.onIncrease,
+    this.compact = false,
   });
 
   final String label;
@@ -273,9 +286,27 @@ class _RangeStepper extends StatelessWidget {
   final VoidCallback? onDecrease;
   final VoidCallback? onIncrease;
 
+  /// 桌面端用：样式不变，整体缩小一点。
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+
+    // 桌面端紧凑模式不用 IconButton（默认带 8px 内边距和视觉密度换算，
+    // 图标容易被挤偏），改用固定尺寸、图标严格居中的小按钮。
+    Widget stepperButton(IconData icon, VoidCallback? onPressed) {
+      if (!compact) {
+        return IconButton(
+          visualDensity: VisualDensity.compact,
+          iconSize: 18,
+          constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+          onPressed: onPressed,
+          icon: Icon(icon),
+        );
+      }
+      return _CompactStepperButton(icon: icon, onTap: onPressed);
+    }
 
     return Expanded(
       child: DecoratedBox(
@@ -287,19 +318,13 @@ class _RangeStepper extends StatelessWidget {
           ),
         ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          padding: EdgeInsets.symmetric(
+            horizontal: 4,
+            vertical: compact ? 1 : 4,
+          ),
           child: Row(
             children: [
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                iconSize: 18,
-                constraints: const BoxConstraints.tightFor(
-                  width: 30,
-                  height: 30,
-                ),
-                onPressed: onDecrease,
-                icon: const Icon(Icons.remove),
-              ),
+              stepperButton(Icons.remove, onDecrease),
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -308,28 +333,51 @@ class _RangeStepper extends StatelessWidget {
                       label,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
+                        height: compact ? 1.05 : null,
                       ),
                     ),
                     Text(
                       '$value',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
+                        height: compact ? 1.1 : null,
                       ),
                     ),
                   ],
                 ),
               ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                iconSize: 18,
-                constraints: const BoxConstraints.tightFor(
-                  width: 30,
-                  height: 30,
-                ),
-                onPressed: onIncrease,
-                icon: const Icon(Icons.add),
-              ),
+              stepperButton(Icons.add, onIncrease),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 紧凑步进器（桌面端）里的小按钮：24×24 固定尺寸，图标严格居中。
+class _CompactStepperButton extends StatelessWidget {
+  const _CompactStepperButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return InkResponse(
+      onTap: onTap,
+      radius: 18,
+      child: SizedBox(
+        width: 24,
+        height: 24,
+        child: Center(
+          child: Icon(
+            icon,
+            size: 15,
+            color: onTap == null
+                ? cs.onSurface.withValues(alpha: 0.38)
+                : null,
           ),
         ),
       ),

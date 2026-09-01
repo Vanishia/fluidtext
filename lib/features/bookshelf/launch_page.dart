@@ -264,12 +264,9 @@ class _LaunchPageState extends State<LaunchPage> {
                   _sidebarVisibleOverride ??
                   aspectRatio >= kSidePanelDefaultOpenAspectRatio;
 
-              final content = ReaderBackgroundSurface(
-                settings: backgroundSettings,
-                child: _isLoading
-                    ? const ReadingCardSkeleton()
-                    : _buildWelcomeContent(context),
-              );
+              final content = _isLoading
+                  ? const ReadingCardSkeleton()
+                  : _buildWelcomeContent(context);
 
               final readerArea = Stack(
                 children: [
@@ -293,24 +290,29 @@ class _LaunchPageState extends State<LaunchPage> {
                 ],
               );
 
-              return Row(
-                children: [
-                  if (pushMode)
-                    PushSidePanel(
-                      visible: sidebarVisible,
-                      child: menuPanel(floating: false),
+              // 壁纸铺满整个窗口（含侧边栏下方），侧边栏的
+              // BackdropFilter 才能模糊到真实壁纸而非纯色。
+              return ReaderBackgroundSurface(
+                settings: backgroundSettings,
+                child: Row(
+                  children: [
+                    if (pushMode)
+                      PushSidePanel(
+                        visible: sidebarVisible,
+                        child: menuPanel(floating: false),
+                      ),
+                    Expanded(
+                      child: pushMode
+                          ? readerArea
+                          : SlideSidePanel(
+                              visible: sidebarVisible,
+                              onVisibilityChanged: _setSidebarVisible,
+                              panel: menuPanel(floating: false),
+                              child: readerArea,
+                            ),
                     ),
-                  Expanded(
-                    child: pushMode
-                        ? readerArea
-                        : SlideSidePanel(
-                            visible: sidebarVisible,
-                            onVisibilityChanged: _setSidebarVisible,
-                            panel: menuPanel(floating: false),
-                            child: readerArea,
-                          ),
-                  ),
-                ],
+                  ],
+                ),
               );
             },
           ),
