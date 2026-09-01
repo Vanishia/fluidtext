@@ -13,6 +13,7 @@ class AppSidePanel extends StatelessWidget {
   const AppSidePanel({
     super.key,
     required this.onOpenBookshelf,
+    this.onOpenSearch,
     required this.readingOrder,
     required this.onReadingOrderChanged,
     required this.themeMode,
@@ -32,6 +33,9 @@ class AppSidePanel extends StatelessWidget {
   });
 
   final VoidCallback onOpenBookshelf;
+
+  /// 全文搜索入口；为 null（Isar 回滚路径）时不显示搜索按钮。
+  final VoidCallback? onOpenSearch;
   final ReadingOrder readingOrder;
   final ValueChanged<ReadingOrder> onReadingOrderChanged;
   final ThemeMode themeMode;
@@ -98,7 +102,28 @@ class AppSidePanel extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _ShelfButton(onTap: onOpenBookshelf, onClose: close),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ShelfButton(
+                        onTap: onOpenBookshelf,
+                        onClose: close,
+                      ),
+                    ),
+                    if (onOpenSearch != null) ...[
+                      const SizedBox(width: 8),
+                      _QuietIconButton(
+                        tooltip: '搜索',
+                        onTap: _closeThen(onOpenSearch, close),
+                        child: Icon(
+                          Icons.search_rounded,
+                          size: 18,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
                 const SizedBox(height: 18),
                 SegmentedButton<ReadingOrder>(
                   showSelectedIcon: false,

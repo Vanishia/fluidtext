@@ -15,6 +15,7 @@ import '../reader/reader_background_settings.dart';
 import '../reader/widgets/reader_background_surface.dart';
 import '../settings/app_drawer.dart';
 import '../settings/reader_background_sheet.dart';
+import '../search/search_page.dart';
 import 'bookshelf_sheet.dart';
 
 class LaunchState {
@@ -182,6 +183,14 @@ class _LaunchPageState extends State<LaunchPage> {
     });
   }
 
+  Future<void> _openSearch() async {
+    final repository = (await LibraryDataAccess.instance).repository;
+    if (!mounted) return;
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => SearchPage(repository: repository)));
+  }
+
   Future<void> _openReaderBackgroundSettings() async {
     await showReaderBackgroundSheet(
       context,
@@ -219,6 +228,9 @@ class _LaunchPageState extends State<LaunchPage> {
         Widget menuPanel({required bool floating}) {
           return AppSidePanel(
             onOpenBookshelf: _openBookshelf,
+            onOpenSearch: LibraryDataAccess.supportsFullTextSearch
+                ? _openSearch
+                : null,
             readingOrder: readingOrderSetting.value,
             onReadingOrderChanged: (order) {
               saveReadingOrderSetting(order);

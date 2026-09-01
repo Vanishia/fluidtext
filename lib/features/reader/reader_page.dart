@@ -17,6 +17,7 @@ import '../context/context_settings.dart';
 import '../context/context_sheet.dart';
 import '../settings/reader_background_sheet.dart';
 import '../settings/app_drawer.dart';
+import '../search/search_page.dart';
 import 'card_list_page.dart';
 import 'reading_analysis_page.dart';
 import 'reader_background_settings.dart';
@@ -218,6 +219,15 @@ class _BookCardsPageState extends State<BookCardsPage> {
         builder: (_) =>
             ReadingAnalysisPage(repository: repository, shelfTitle: '全部书籍'),
       ),
+    );
+  }
+
+  void _openSearch() {
+    final repository = _controller?.repository;
+    if (repository == null) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => SearchPage(repository: repository)),
     );
   }
 
@@ -430,6 +440,9 @@ class _BookCardsPageState extends State<BookCardsPage> {
               Widget menuPanel({required bool floating}) {
                 return AppSidePanel(
                   onOpenBookshelf: _openBookshelf,
+                  onOpenSearch: LibraryDataAccess.supportsFullTextSearch
+                      ? _openSearch
+                      : null,
                   readingOrder: controller.readingOrder,
                   onReadingOrderChanged: (order) {
                     saveReadingOrderSetting(order);
