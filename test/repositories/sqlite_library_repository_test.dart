@@ -290,6 +290,123 @@ void main() {
     expect(await driver.database.integrityCheck(), ['ok']);
   });
 
+  group('searchCards', () {
+    Future<void> insertCard(
+      _SqliteRepositoryDriver driver, {
+      required int id,
+      required String content,
+    }) async {
+      await driver.database
+          .into(driver.database.sqliteBookCards)
+          .insert(
+            SqliteBookCardsCompanion.insert(
+              id: Value(id),
+              bookId: _SqliteRepositoryDriver._firstBookId,
+              bookTitle: 'First',
+              cardIndex: id,
+              chapterIndex: 0,
+              chapterCardIndex: id,
+              content: content,
+              isRead: false,
+              isFavorite: false,
+            ),
+          );
+    }
+
+    test('finds Chinese and English cards with marked snippets', () async {
+      final driver = await _SqliteRepositoryDriver.create();
+      addTearDown(driver.close);
+      await insertCard(driver, id: 100, content: '春天来了，花儿开了，小鸟在歌唱。');
+      await insertCard(driver, id: 101, content: 'Autumn leaves fall slowly.');
+
+      final chinese = await driver.repository.searchCards('花儿开了');
+      expect(chinese.map((hit) => hit.card.id), [100]);
+      expect(chinese.single.snippet, contains('<mark>'));
+      expect(chinese.single.snippet, contains('花儿开'));
+
+      final english = await driver.repository.searchCards('autumn LEAVES');
+      expect(english.map((hit) => hit.card.id), [101]);
+    });
+
+    test('falls back to LIKE for queries shorter than 3 characters', () async {
+      final driver = await _SqliteRepositoryDriver.create();
+      addTearDown(driver.close);
+      await insertCard(driver, id: 100, content: '床前明月光，疑是地上霜。');
+
+      final hits = await driver.repository.searchCards('明月');
+      expect(hits.map((hit) => hit.card.id), [100]);
+      expect(hits.single.snippet, contains('<mark>明月</mark>'));
+    });
+
+    test('paginates results with limit and offset', () async {
+      final driver = await _SqliteRepositoryDriver.create();
+      addTearDown(driver.close);
+      for (var i = 0; i < 5; i += 1) {
+        await insertCard(driver, id: 100 + i, content: '第 $i 张卡片都包含搜索词。');
+      }
+
+      final page1 = await driver.repository.searchCards('搜索词', limit: 2);
+      final page2 = await driver.repository.searchCards(
+        '搜索词',
+        limit: 2,
+        offset: 2,
+      );
+      final page3 = await driver.repository.searchCards(
+        '搜索词',
+        limit: 2,
+        offset: 4,
+      );
+
+      expect(page1, hasLength(2));
+      expect(page2, hasLength(2));
+      expect(page3, hasLength(1));
+      final allIds = [
+        ...page1.map((hit) => hit.card.id),
+        ...page2.map((hit) => hit.card.id),
+        ...page3.map((hit) => hit.card.id),
+      ];
+      expect(allIds.toSet(), hasLength(5));
+    });
+
+    test('returns empty for blank queries and non-matches', () async {
+      final driver = await _SqliteRepositoryDriver.create();
+      addTearDown(driver.close);
+
+      expect(await driver.repository.searchCards('   '), isEmpty);
+      expect(await driver.repository.searchCards('不存在的词汇'), isEmpty);
+    });
+
+    test('reflects content updates and deletes', () async {
+      final driver = await _SqliteRepositoryDriver.create();
+      addTearDown(driver.close);
+      await insertCard(driver, id: 100, content: '最初的文字包含旧关键词。');
+      expect(await driver.repository.searchCards('旧关键词'), hasLength(1));
+
+      await driver.database.customStatement(
+        'UPDATE book_cards SET content = ? WHERE id = 100',
+        ['改写后的文字换成新说法。'],
+      );
+      expect(await driver.repository.searchCards('旧关键词'), isEmpty);
+      expect(await driver.repository.searchCards('新说法'), hasLength(1));
+
+      await driver.database.customStatement(
+        'DELETE FROM book_cards WHERE id = 100',
+      );
+      expect(await driver.repository.searchCards('新说法'), isEmpty);
+    });
+
+    test('fresh databases report the search index as ready', () async {
+      final driver = await _SqliteRepositoryDriver.create();
+      addTearDown(driver.close);
+
+      for (var i = 0; i < 50; i += 1) {
+        if (await driver.repository.isSearchIndexReady()) break;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      expect(await driver.repository.isSearchIndexReady(), isTrue);
+    });
+  });
+
   test('pruneIncompleteBooks keeps complete books with recorded counts', () async {
     final driver = await _SqliteRepositoryDriver.create();
     addTearDown(driver.close);
