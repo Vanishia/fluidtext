@@ -225,9 +225,7 @@ class _CardListPageState extends State<CardListPage> {
             }
           }
           final lengthBeforeFilter = _cards.length;
-          _cards.removeWhere(
-            (c) => _isFavorite ? !c.isFavorite : !c.isRead,
-          );
+          _cards.removeWhere((c) => _isFavorite ? !c.isFavorite : !c.isRead);
           // 取消收藏/已读的卡片被移除后，总数同步减少，保证 _hasMore 正确。
           _totalCount -= lengthBeforeFilter - _cards.length;
         });
@@ -244,9 +242,7 @@ class _CardListPageState extends State<CardListPage> {
       return const CardListSkeleton();
     }
     if (_cards.isEmpty) {
-      return Center(
-        child: Text(_isFavorite ? '还没有收藏卡片' : '还没有已读卡片'),
-      );
+      return Center(child: Text(_isFavorite ? '还没有收藏卡片' : '还没有已读卡片'));
     }
 
     return ListView.separated(
@@ -295,23 +291,27 @@ class _CardListPageState extends State<CardListPage> {
           ),
           body: ReaderBackgroundSurface(
             settings: backgroundSettings,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                const _SubtleReadabilityOverlay(),
-                SafeArea(
-                  child: Column(
-                    children: [
-                      _ListPageHeader(
-                        title:
-                            '${widget.shelfTitle} · ${_isFavorite ? '收藏' : '已读'}',
-                        count: _totalCount,
-                      ),
-                      Expanded(child: _buildBody()),
-                    ],
+            child: SafeArea(
+              child: Column(
+                children: [
+                  _ListPageHeader(
+                    title:
+                        '${widget.shelfTitle} · ${_isFavorite ? '收藏' : '已读'}',
+                    count: _totalCount,
                   ),
-                ),
-              ],
+                  // 遮罩只铺在卡片内容区，提升正文可读性；
+                  // 顶栏与系统导航栏区域保持透明。
+                  Expanded(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        const _SubtleReadabilityOverlay(),
+                        _buildBody(),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -402,7 +402,7 @@ class _SubtleReadabilityOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return ColoredBox(
-      color: (isDark ? Colors.black : Colors.white).withValues(alpha: 0.10),
+      color: (isDark ? Colors.black : Colors.white).withValues(alpha: 0.18),
     );
   }
 }
