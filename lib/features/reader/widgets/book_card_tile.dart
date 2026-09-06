@@ -18,6 +18,7 @@ class BookCardTile extends StatelessWidget {
     required this.onShowContext,
     this.bookTitle,
     this.showBookTitle = false,
+    this.flat = false,
   });
 
   final BookCard card;
@@ -27,6 +28,10 @@ class BookCardTile extends StatelessWidget {
   final VoidCallback onShowContext;
   final String? bookTitle;
   final bool showBookTitle;
+
+  /// 扁平样式：不用毛玻璃（BackdropFilter），改用与搜索条目一致的
+  /// 半透明平面卡片；外层间距也与搜索条目对齐。搜索页展开态使用。
+  final bool flat;
 
   @override
   Widget build(BuildContext context) {
@@ -39,130 +44,138 @@ class BookCardTile extends StatelessWidget {
         ? Colors.white.withValues(alpha: 0.14)
         : cs.outlineVariant.withValues(alpha: 0.48);
 
+    final content = Material(
+      color: Colors.transparent,
+      // 扁平模式下自身裁剪圆角，保证 InkWell 水波不溢出卡片；
+      // 毛玻璃模式下由 Glass 的 ClipRRect 裁剪。
+      borderRadius: flat ? BorderRadius.circular(14) : null,
+      clipBehavior: flat ? Clip.antiAlias : Clip.none,
+      child: InkWell(
+        onTap: onToggleRead,
+        onLongPress: () => _copyCardContent(context),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(11, 10, 9, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      showBookTitle
+                          ? (bookTitle ?? card.bookTitle)
+                          : '#${card.cardIndex}',
+                      style: showBookTitle
+                          ? Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            )
+                          : Theme.of(context).textTheme.labelMedium?.copyWith(
+                              color: cs.primary,
+                            ),
+                    ),
+                  ),
+                  // 桌面端单击复制按钮：小号半透明，放在首行右侧；
+                  // 移动端保持长按复制不变。
+                  if (!Platform.isAndroid && !Platform.isIOS)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints.tightFor(
+                          width: 30,
+                          height: 30,
+                        ),
+                        iconSize: 18,
+                        icon: Icon(
+                          Icons.copy_rounded,
+                          color: cs.onSurfaceVariant.withValues(alpha: 0.55),
+                        ),
+                        tooltip: '复制内容',
+                        onPressed: () => _copyCardContent(context),
+                      ),
+                    ),
+                ],
+              ),
+              if (showBookTitle) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '#${card.cardIndex}',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelMedium?.copyWith(color: cs.primary),
+                ),
+              ],
+              const SizedBox(height: 8),
+              BookCardContentView(
+                card: card,
+                repository: repository,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontSize: 15),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(8),
+                    icon: Icon(
+                      card.isRead
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      color: card.isRead ? Colors.green : cs.onSurfaceVariant,
+                    ),
+                    tooltip: card.isRead ? '取消已读' : '标记已读',
+                    onPressed: onToggleRead,
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(8),
+                    icon: Icon(
+                      card.isFavorite ? Icons.favorite : Icons.favorite_outline,
+                      color: card.isFavorite ? Colors.red : cs.onSurfaceVariant,
+                    ),
+                    tooltip: card.isFavorite ? '取消收藏' : '收藏',
+                    onPressed: onToggleFavorite,
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(8),
+                    icon: const Icon(Icons.unfold_more),
+                    tooltip: '展开上下文',
+                    onPressed: onShowContext,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
     return Opacity(
       opacity: card.isRead ? 0.5 : 1,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Glass(
-          color: glassColor,
-          borderColor: borderColor,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onToggleRead,
-              onLongPress: () => _copyCardContent(context),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(11, 10, 9, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            showBookTitle
-                                ? (bookTitle ?? card.bookTitle)
-                                : '#${card.cardIndex}',
-                            style: showBookTitle
-                                ? Theme.of(
-                                    context,
-                                  ).textTheme.labelSmall?.copyWith(
-                                    color: cs.onSurfaceVariant,
-                                    fontWeight: FontWeight.w600,
-                                  )
-                                : Theme.of(context).textTheme.labelMedium
-                                      ?.copyWith(color: cs.primary),
-                          ),
-                        ),
-                        // 桌面端单击复制按钮：小号半透明，放在首行右侧；
-                        // 移动端保持长按复制不变。
-                        if (!Platform.isAndroid && !Platform.isIOS)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 3),
-                            child: IconButton(
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.all(4),
-                              constraints: const BoxConstraints.tightFor(
-                                width: 30,
-                                height: 30,
-                              ),
-                              iconSize: 18,
-                              icon: Icon(
-                                Icons.copy_rounded,
-                                color: cs.onSurfaceVariant.withValues(
-                                  alpha: 0.55,
-                                ),
-                              ),
-                              tooltip: '复制内容',
-                              onPressed: () => _copyCardContent(context),
-                            ),
-                          ),
-                      ],
-                    ),
-                    if (showBookTitle) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        '#${card.cardIndex}',
-                        style: Theme.of(
-                          context,
-                        ).textTheme.labelMedium?.copyWith(color: cs.primary),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    BookCardContentView(
-                      card: card,
-                      repository: repository,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodyMedium?.copyWith(fontSize: 15),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.all(8),
-                          icon: Icon(
-                            card.isRead
-                                ? Icons.check_circle
-                                : Icons.radio_button_unchecked,
-                            color: card.isRead
-                                ? Colors.green
-                                : cs.onSurfaceVariant,
-                          ),
-                          tooltip: card.isRead ? '取消已读' : '标记已读',
-                          onPressed: onToggleRead,
-                        ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.all(8),
-                          icon: Icon(
-                            card.isFavorite
-                                ? Icons.favorite
-                                : Icons.favorite_outline,
-                            color: card.isFavorite
-                                ? Colors.red
-                                : cs.onSurfaceVariant,
-                          ),
-                          tooltip: card.isFavorite ? '取消收藏' : '收藏',
-                          onPressed: onToggleFavorite,
-                        ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.all(8),
-                          icon: const Icon(Icons.unfold_more),
-                          tooltip: '展开上下文',
-                          onPressed: onShowContext,
-                        ),
-                      ],
-                    ),
-                  ],
+        padding: flat
+            ? const EdgeInsets.symmetric(horizontal: 12, vertical: 4)
+            : const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: flat
+            ? DecoratedBox(
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest.withValues(alpha: 0.42),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: borderColor),
                 ),
+                child: content,
+              )
+            : Glass(
+                color: glassColor,
+                borderColor: borderColor,
+                child: content,
               ),
-            ),
-          ),
-        ),
       ),
     );
   }

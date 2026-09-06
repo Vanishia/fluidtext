@@ -267,96 +267,108 @@ class _SearchPageState extends State<SearchPage> {
                           : Colors.white)
                       .withValues(alpha: 0.10),
               child: SafeArea(
-                child: Column(
-                  children: [
-                    SizedBox(
-                      height: 54,
-                      child: Row(
-                        children: [
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            icon: const Icon(Icons.arrow_back),
-                            tooltip: MaterialLocalizations.of(
-                              context,
-                            ).backButtonTooltip,
-                            onPressed: () => Navigator.maybePop(context),
-                          ),
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.only(right: 14),
-                              child: TextField(
-                                controller: _searchController,
-                                autofocus: true,
-                                onChanged: _onQueryChanged,
-                                textInputAction: TextInputAction.search,
-                                decoration: InputDecoration(
-                                  hintText: '搜索正文…',
-                                  isDense: true,
-                                  prefixIcon: const Icon(
-                                    Icons.search_rounded,
-                                    size: 20,
-                                  ),
-                                  suffixIcon: _query.isEmpty
-                                      ? null
-                                      : IconButton(
-                                          visualDensity:
-                                              VisualDensity.compact,
-                                          icon: const Icon(
-                                            Icons.clear_rounded,
-                                            size: 18,
-                                          ),
-                                          onPressed: () {
-                                            _searchController.clear();
-                                            _onQueryChanged('');
-                                          },
-                                        ),
-                                  filled: true,
-                                  fillColor: cs.surfaceContainerHighest
-                                      .withValues(alpha: 0.7),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                    borderSide: BorderSide.none,
+                // 宽屏（桌面/平板横屏）下内容居中限宽：比展开上下文弹窗
+                // （Material 3 默认 640）略宽，窄屏不受影响。
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          height: 54,
+                          child: Row(
+                            children: [
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                icon: const Icon(Icons.arrow_back),
+                                tooltip: MaterialLocalizations.of(
+                                  context,
+                                ).backButtonTooltip,
+                                onPressed: () => Navigator.maybePop(context),
+                              ),
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.only(right: 14),
+                                  child: TextField(
+                                    controller: _searchController,
+                                    autofocus: true,
+                                    onChanged: _onQueryChanged,
+                                    textInputAction: TextInputAction.search,
+                                    decoration: InputDecoration(
+                                      hintText: '搜索正文…',
+                                      isDense: true,
+                                      prefixIcon: const Icon(
+                                        Icons.search_rounded,
+                                        size: 20,
+                                      ),
+                                      suffixIcon: _query.isEmpty
+                                          ? null
+                                          : IconButton(
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              icon: const Icon(
+                                                Icons.clear_rounded,
+                                                size: 18,
+                                              ),
+                                              onPressed: () {
+                                                _searchController.clear();
+                                                _onQueryChanged('');
+                                              },
+                                            ),
+                                      filled: true,
+                                      fillColor: cs.surfaceContainerHighest
+                                          .withValues(alpha: 0.7),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
+                            ],
+                          ),
+                        ),
+                        if (!_indexReady)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+                            child: ValueListenableBuilder<double?>(
+                              valueListenable:
+                                  widget.repository.searchIndexProgress,
+                              builder: (context, progress, _) {
+                                final percent = progress == null
+                                    ? null
+                                    : (progress * 100).round();
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    LinearProgressIndicator(
+                                      value: progress,
+                                      minHeight: 3,
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      percent == null
+                                          ? '正在创建搜索索引，结果可能不完整'
+                                          : '正在创建搜索索引 $percent%，结果可能不完整',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
                           ),
-                        ],
-                      ),
+                        Expanded(child: _buildBody()),
+                      ],
                     ),
-                    if (!_indexReady)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-                        child: ValueListenableBuilder<double?>(
-                          valueListenable: widget.repository
-                              .searchIndexProgress,
-                          builder: (context, progress, _) {
-                            final percent = progress == null
-                                ? null
-                                : (progress * 100).round();
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                LinearProgressIndicator(
-                                  value: progress,
-                                  minHeight: 3,
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  percent == null
-                                      ? '正在创建搜索索引，结果可能不完整'
-                                      : '正在创建搜索索引 $percent%，结果可能不完整',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(color: cs.onSurfaceVariant),
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                    Expanded(child: _buildBody()),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -395,9 +407,7 @@ class _SearchResultItem extends StatelessWidget {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-              ),
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
               icon: const Icon(Icons.expand_less, size: 18),
               label: const Text('收起'),
               onPressed: onToggleExpand,
@@ -410,6 +420,8 @@ class _SearchResultItem extends StatelessWidget {
             onToggleFavorite: onToggleFavorite,
             onShowContext: onShowContext,
             showBookTitle: true,
+            // 搜索页不用毛玻璃，与折叠态搜索条目保持一致的扁平样式。
+            flat: true,
           ),
         ],
       );
@@ -457,9 +469,7 @@ class _SearchResultItem extends StatelessWidget {
                 RichText(
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
-                  text: TextSpan(
-                    children: _snippetSpans(context, hit.snippet),
-                  ),
+                  text: TextSpan(children: _snippetSpans(context, hit.snippet)),
                 ),
               ],
             ),
