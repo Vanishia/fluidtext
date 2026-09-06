@@ -110,6 +110,9 @@ class SqliteLibraryRepository implements LibraryRepository {
     List<int> bookIds, {
     int offset = 0,
     int? limit,
+    DateTime? from,
+    DateTime? to,
+    CardListSort sort = CardListSort.activityDesc,
   }) {
     return _loadCardsWithState(
       bookIds: bookIds,
@@ -117,6 +120,9 @@ class SqliteLibraryRepository implements LibraryRepository {
       timestampColumn: 'read_at_ms',
       offset: offset,
       limit: limit,
+      from: from,
+      to: to,
+      sort: sort,
     );
   }
 
@@ -125,6 +131,9 @@ class SqliteLibraryRepository implements LibraryRepository {
     List<int> bookIds, {
     int offset = 0,
     int? limit,
+    DateTime? from,
+    DateTime? to,
+    CardListSort sort = CardListSort.activityDesc,
   }) {
     return _loadCardsWithState(
       bookIds: bookIds,
@@ -132,22 +141,48 @@ class SqliteLibraryRepository implements LibraryRepository {
       timestampColumn: 'favorited_at_ms',
       offset: offset,
       limit: limit,
+      from: from,
+      to: to,
+      sort: sort,
     );
   }
 
   @override
-  Future<int> countReadCards(List<int> bookIds) {
-    return _countCardsWithState(bookIds: bookIds, stateColumn: 'is_read');
+  Future<int> countReadCards(
+    List<int> bookIds, {
+    DateTime? from,
+    DateTime? to,
+  }) {
+    return _countCardsWithState(
+      bookIds: bookIds,
+      stateColumn: 'is_read',
+      timestampColumn: 'read_at_ms',
+      from: from,
+      to: to,
+    );
   }
 
   @override
-  Future<int> countFavoriteCards(List<int> bookIds) {
-    return _countCardsWithState(bookIds: bookIds, stateColumn: 'is_favorite');
+  Future<int> countFavoriteCards(
+    List<int> bookIds, {
+    DateTime? from,
+    DateTime? to,
+  }) {
+    return _countCardsWithState(
+      bookIds: bookIds,
+      stateColumn: 'is_favorite',
+      timestampColumn: 'favorited_at_ms',
+      from: from,
+      to: to,
+    );
   }
 
   Future<int> _countCardsWithState({
     required List<int> bookIds,
     required String stateColumn,
+    required String timestampColumn,
+    DateTime? from,
+    DateTime? to,
   }) async {
     final query = StringBuffer(
       'SELECT COUNT(*) AS count FROM book_cards WHERE $stateColumn = 1',
@@ -157,6 +192,13 @@ class SqliteLibraryRepository implements LibraryRepository {
       query.write(' AND book_id IN (${_placeholders(bookIds.length)})');
       variables.addAll(_variables(bookIds));
     }
+    _appendActivityRange(
+      query,
+      variables,
+      timestampColumn: timestampColumn,
+      from: from,
+      to: to,
+    );
 
     final row = await database
         .customSelect(
@@ -174,6 +216,9 @@ class SqliteLibraryRepository implements LibraryRepository {
     required String timestampColumn,
     int offset = 0,
     int? limit,
+    DateTime? from,
+    DateTime? to,
+    CardListSort sort = CardListSort.activityDesc,
   }) async {
     final query = StringBuffer(
       'SELECT * FROM book_cards WHERE $stateColumn = 1',
@@ -183,7 +228,21 @@ class SqliteLibraryRepository implements LibraryRepository {
       query.write(' AND book_id IN (${_placeholders(bookIds.length)})');
       variables.addAll(_variables(bookIds));
     }
-    query.write(' ORDER BY $timestampColumn DESC, id DESC');
+    _appendActivityRange(
+      query,
+      variables,
+      timestampColumn: timestampColumn,
+      from: from,
+      to: to,
+    );
+    switch (sort) {
+      case CardListSort.activityDesc:
+        query.write(' ORDER BY $timestampColumn DESC, id DESC');
+      case CardListSort.activityAsc:
+        query.write(' ORDER BY $timestampColumn ASC, id ASC');
+      case CardListSort.cardOrder:
+        query.write(' ORDER BY book_id ASC, card_index ASC');
+    }
     if (limit != null || offset > 0) {
       // LIMIT -1 表示不限制行数，仅用于配合 OFFSET。
       query.write(' LIMIT ? OFFSET ?');
@@ -199,6 +258,24 @@ class SqliteLibraryRepository implements LibraryRepository {
         )
         .get();
     return rows.map(_bookCardFromQueryRow).toList(growable: false);
+  }
+
+  /// 动作时间范围过滤：含 from、不含 to；时间为空的卡片被排除。
+  static void _appendActivityRange(
+    StringBuffer query,
+    List<Variable<Object>> variables, {
+    required String timestampColumn,
+    required DateTime? from,
+    required DateTime? to,
+  }) {
+    if (from != null) {
+      query.write(' AND $timestampColumn >= ?');
+      variables.add(Variable<int>(from.millisecondsSinceEpoch));
+    }
+    if (to != null) {
+      query.write(' AND $timestampColumn < ?');
+      variables.add(Variable<int>(to.millisecondsSinceEpoch));
+    }
   }
 
   @override

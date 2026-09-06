@@ -29,6 +29,18 @@ class BookCardStats {
   int get unreadCount => totalCount - readCount;
 }
 
+/// 已读/收藏列表的排序方式。
+enum CardListSort {
+  /// 按动作时间（已读于/收藏于）从新到旧。
+  activityDesc,
+
+  /// 按动作时间从旧到新。
+  activityAsc,
+
+  /// 按书籍卡片顺序（书籍、卡片序号升序）。
+  cardOrder,
+}
+
 abstract interface class LibraryRepository
     implements
         LibraryReadRepository,
@@ -48,21 +60,33 @@ abstract interface class LibraryReadRepository {
 
   Future<List<int>> loadUnreadOrderedCardIds(List<int> bookIds);
 
+  /// [from] / [to] 按动作时间（已读于/收藏于）过滤，含 from、不含 to；
+  /// 时间为空的卡片不参与过滤结果。[sort] 默认按动作时间从新到旧。
   Future<List<BookCard>> loadReadCards(
     List<int> bookIds, {
     int offset = 0,
     int? limit,
+    DateTime? from,
+    DateTime? to,
+    CardListSort sort = CardListSort.activityDesc,
   });
 
   Future<List<BookCard>> loadFavoriteCards(
     List<int> bookIds, {
     int offset = 0,
     int? limit,
+    DateTime? from,
+    DateTime? to,
+    CardListSort sort = CardListSort.activityDesc,
   });
 
-  Future<int> countReadCards(List<int> bookIds);
+  Future<int> countReadCards(List<int> bookIds, {DateTime? from, DateTime? to});
 
-  Future<int> countFavoriteCards(List<int> bookIds);
+  Future<int> countFavoriteCards(
+    List<int> bookIds, {
+    DateTime? from,
+    DateTime? to,
+  });
 
   Future<List<BookCardActivityEvent>> loadReadActivityEvents(List<int> bookIds);
 

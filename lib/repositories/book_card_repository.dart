@@ -82,6 +82,9 @@ class BookCardRepository implements LibraryRepository {
     List<int> bookIds, {
     int offset = 0,
     int? limit,
+    DateTime? from,
+    DateTime? to,
+    CardListSort sort = CardListSort.activityDesc,
   }) {
     final query = bookIds.isEmpty
         ? isar.bookCards.filter().isReadEqualTo(true).findAll()
@@ -97,6 +100,9 @@ class BookCardRepository implements LibraryRepository {
         timestampOf: (card) => card.readAt,
         offset: offset,
         limit: limit,
+        from: from,
+        to: to,
+        sort: sort,
       ),
     );
   }
@@ -106,6 +112,9 @@ class BookCardRepository implements LibraryRepository {
     List<int> bookIds, {
     int offset = 0,
     int? limit,
+    DateTime? from,
+    DateTime? to,
+    CardListSort sort = CardListSort.activityDesc,
   }) {
     final query = bookIds.isEmpty
         ? isar.bookCards.filter().isFavoriteEqualTo(true).findAll()
@@ -121,29 +130,73 @@ class BookCardRepository implements LibraryRepository {
         timestampOf: (card) => card.favoritedAt,
         offset: offset,
         limit: limit,
+        from: from,
+        to: to,
+        sort: sort,
       ),
     );
   }
 
-  /// 与 SQLite 路径一致的排序：时间倒序，id 倒序兜底。
+  /// 与 SQLite 路径一致的过滤与排序：时间范围含 from、不含 to，
+  /// 时间为空的卡片被排除；默认时间倒序，id 倒序兜底。
   static List<BookCard> _pageCardsByActivity(
     List<BookCard> cards, {
     required DateTime? Function(BookCard card) timestampOf,
     required int offset,
     required int? limit,
+    required DateTime? from,
+    required DateTime? to,
+    required CardListSort sort,
   }) {
-    cards.sort((a, b) {
-      final aTime = timestampOf(a)?.millisecondsSinceEpoch ?? 0;
-      final bTime = timestampOf(b)?.millisecondsSinceEpoch ?? 0;
-      final timeCompare = bTime.compareTo(aTime);
-      if (timeCompare != 0) return timeCompare;
-      return b.id.compareTo(a.id);
-    });
+    if (from != null || to != null) {
+      cards = cards.where((card) {
+        final timestamp = timestampOf(card);
+        if (timestamp == null) return false;
+        if (from != null && timestamp.isBefore(from)) return false;
+        if (to != null && !timestamp.isBefore(to)) return false;
+        return true;
+      }).toList();
+    }
+    switch (sort) {
+      case CardListSort.activityDesc:
+        cards.sort((a, b) {
+          final aTime = timestampOf(a)?.millisecondsSinceEpoch ?? 0;
+          final bTime = timestampOf(b)?.millisecondsSinceEpoch ?? 0;
+          final timeCompare = bTime.compareTo(aTime);
+          if (timeCompare != 0) return timeCompare;
+          return b.id.compareTo(a.id);
+        });
+      case CardListSort.activityAsc:
+        cards.sort((a, b) {
+          final aTime = timestampOf(a)?.millisecondsSinceEpoch ?? 0;
+          final bTime = timestampOf(b)?.millisecondsSinceEpoch ?? 0;
+          final timeCompare = aTime.compareTo(bTime);
+          if (timeCompare != 0) return timeCompare;
+          return a.id.compareTo(b.id);
+        });
+      case CardListSort.cardOrder:
+        cards.sort((a, b) {
+          final bookCompare = a.bookId.compareTo(b.bookId);
+          if (bookCompare != 0) return bookCompare;
+          return a.cardIndex.compareTo(b.cardIndex);
+        });
+    }
     return _applyOffsetLimit(cards, offset: offset, limit: limit);
   }
 
   @override
-  Future<int> countReadCards(List<int> bookIds) {
+  Future<int> countReadCards(
+    List<int> bookIds, {
+    DateTime? from,
+    DateTime? to,
+  }) {
+    if (from != null || to != null) {
+      return loadReadCards(
+        bookIds,
+        from: from,
+        to: to,
+      ).then((cards) => cards.length);
+    }
     if (bookIds.isEmpty) {
       return isar.bookCards.filter().isReadEqualTo(true).count();
     }
@@ -156,7 +209,18 @@ class BookCardRepository implements LibraryRepository {
   }
 
   @override
-  Future<int> countFavoriteCards(List<int> bookIds) {
+  Future<int> countFavoriteCards(
+    List<int> bookIds, {
+    DateTime? from,
+    DateTime? to,
+  }) {
+    if (from != null || to != null) {
+      return loadFavoriteCards(
+        bookIds,
+        from: from,
+        to: to,
+      ).then((cards) => cards.length);
+    }
     if (bookIds.isEmpty) {
       return isar.bookCards.filter().isFavoriteEqualTo(true).count();
     }
@@ -175,7 +239,9 @@ class BookCardRepository implements LibraryRepository {
   }) {
     if (offset <= 0 && limit == null) return cards;
     if (offset >= cards.length) return const <BookCard>[];
-    final end = limit == null ? cards.length : (offset + limit).clamp(0, cards.length);
+    final end = limit == null
+        ? cards.length
+        : (offset + limit).clamp(0, cards.length);
     return cards.sublist(offset, end);
   }
 
@@ -687,7 +753,8 @@ class BookCardRepository implements LibraryRepository {
           .count();
       final recorded = book.cardCount;
       final isIncomplete =
-          actualCardCount <= 0 || (recorded != null && recorded != actualCardCount);
+          actualCardCount <= 0 ||
+          (recorded != null && recorded != actualCardCount);
       if (isIncomplete) incomplete.add(book);
     }
 

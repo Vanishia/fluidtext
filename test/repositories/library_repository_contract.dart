@@ -100,10 +100,9 @@ void runLibraryRepositoryContract(
     expect(await repository.countReadCards([current.firstBookId]), 2);
     expect(await repository.countFavoriteCards([current.firstBookId]), 2);
 
-    final readFirstPage = await repository.loadReadCards(
-      [current.firstBookId],
-      limit: 1,
-    );
+    final readFirstPage = await repository.loadReadCards([
+      current.firstBookId,
+    ], limit: 1);
     expect(readFirstPage.map((card) => card.id), [current.thirdCardId]);
 
     final readSecondPage = await repository.loadReadCards(
@@ -126,6 +125,62 @@ void runLibraryRepositoryContract(
       limit: 1,
     );
     expect(favoriteSecondPage.map((card) => card.id), [current.secondCardId]);
+  });
+
+  test('filters read and favorite cards by activity range and sort', () async {
+    final current = driver!;
+    final repository = current.repository;
+    final bookIds = [current.firstBookId];
+
+    // 种子数据：已读于 2026-01-02、收藏于 2026-01-03；范围含 from、不含 to。
+    expect(
+      await repository.countReadCards(
+        bookIds,
+        from: DateTime(2026, 1, 2),
+        to: DateTime(2026, 1, 3),
+      ),
+      2,
+    );
+    expect(
+      await repository.countReadCards(bookIds, to: DateTime(2026, 1, 2)),
+      0,
+    );
+    expect(
+      await repository.countFavoriteCards(bookIds, from: DateTime(2026, 1, 4)),
+      0,
+    );
+
+    // 从旧到新：时间相同按 id 升序兜底。
+    final ascending = await repository.loadReadCards(
+      bookIds,
+      sort: CardListSort.activityAsc,
+    );
+    expect(ascending.map((card) => card.id), [
+      current.secondCardId,
+      current.thirdCardId,
+    ]);
+
+    // 卡片顺序：按书籍、卡片序号升序。
+    final cardOrder = await repository.loadFavoriteCards(
+      bookIds,
+      sort: CardListSort.cardOrder,
+    );
+    expect(cardOrder.map((card) => card.id), [
+      current.secondCardId,
+      current.thirdCardId,
+    ]);
+
+    // 过滤 + 排序组合：时间倒序时 id 倒序兜底。
+    final ranged = await repository.loadReadCards(
+      bookIds,
+      from: DateTime(2026, 1, 2),
+      to: DateTime(2026, 1, 3),
+      sort: CardListSort.activityDesc,
+    );
+    expect(ranged.map((card) => card.id), [
+      current.thirdCardId,
+      current.secondCardId,
+    ]);
   });
 
   test(
