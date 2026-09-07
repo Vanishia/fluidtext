@@ -26,6 +26,7 @@ class AppBehaviorSettings {
     this.showPageTurnButtons = true,
     this.readerFontScale = defaultReaderFontScale,
     this.readerLineHeight = defaultReaderLineHeight,
+    this.showUpdateNotification = true,
   });
 
   final ThemeMode themeMode;
@@ -41,6 +42,9 @@ class AppBehaviorSettings {
   /// 阅读卡片行距倍数。
   final double readerLineHeight;
 
+  /// 发现新版本时是否在侧边栏显示更新通知。
+  final bool showUpdateNotification;
+
   AppBehaviorSettings copyWith({
     ThemeMode? themeMode,
     ReadingOrder? readingOrder,
@@ -50,6 +54,7 @@ class AppBehaviorSettings {
     bool? showPageTurnButtons,
     double? readerFontScale,
     double? readerLineHeight,
+    bool? showUpdateNotification,
   }) {
     return AppBehaviorSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -60,6 +65,8 @@ class AppBehaviorSettings {
       showPageTurnButtons: showPageTurnButtons ?? this.showPageTurnButtons,
       readerFontScale: readerFontScale ?? this.readerFontScale,
       readerLineHeight: readerLineHeight ?? this.readerLineHeight,
+      showUpdateNotification:
+          showUpdateNotification ?? this.showUpdateNotification,
     );
   }
 }
@@ -93,6 +100,7 @@ class AppBehaviorSettingsService {
         showPageTurnButtons: json['showPageTurnButtons'] != false,
         readerFontScale: _readerFontScaleFromJson(json['readerFontScale']),
         readerLineHeight: _readerLineHeightFromJson(json['readerLineHeight']),
+        showUpdateNotification: json['showUpdateNotification'] != false,
       );
     } catch (_) {
       return const AppBehaviorSettings();
@@ -113,6 +121,7 @@ class AppBehaviorSettingsService {
       'showPageTurnButtons': settings.showPageTurnButtons,
       'readerFontScale': settings.readerFontScale,
       'readerLineHeight': settings.readerLineHeight,
+      'showUpdateNotification': settings.showUpdateNotification,
       'savedAt': DateTime.now().toIso8601String(),
     };
     await JsonFileStore.writeAtomic(file, payload);

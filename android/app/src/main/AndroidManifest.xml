@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 检查新版本更新（GitHub Releases）。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- 导入 EPUB 时展示常驻通知（Android 13+ 需要运行时请求）。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 数据迁移期间以前台服务（dataSync）保活，防止后台被系统杀死。 -->

@@ -6,6 +6,7 @@ import '../../widgets/glass.dart';
 import '../../widgets/shelf_glyph.dart';
 import '../context/context_settings.dart';
 import '../reader/reading_order.dart';
+import 'update_notice.dart';
 
 /// 应用菜单面板：默认是贴边常驻侧边栏（桌面端）；[floating] 为 true
 /// 时是悬浮毛玻璃抽屉（移动端 Scaffold.drawer 使用，手势不抢滚动）。
@@ -153,6 +154,9 @@ class AppSidePanel extends StatelessWidget {
                     onChanged: onShowUnreadOnlyChanged,
                   ),
                 ],
+                const SizedBox(height: 12),
+                const UpdateNotificationSwitch(),
+                const UpdateNoticeBlock(),
                 if (hasContextSettings) ...[
                   const SizedBox(height: 28),
                   _ContextCountStepper(

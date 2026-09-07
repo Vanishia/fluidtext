@@ -15,6 +15,7 @@ import 'migration/app_bootstrap_coordinator.dart';
 import 'migration/migration_runner.dart';
 import 'repositories/library_data_access.dart';
 import 'services/app_logger.dart';
+import 'services/update_check_service.dart';
 import 'storage/storage_layout.dart';
 import 'theme/app_theme.dart';
 import 'widgets/reading_skeleton.dart';
@@ -90,6 +91,7 @@ Future<LaunchState> _initializeNormalSession() async {
   final settingsFuture = initializeAppSettings();
   final launchStateFuture = loadLaunchState();
   await settingsFuture;
+  unawaited(UpdateCheckService.instance.checkForUpdate());
   return launchStateFuture;
 }
 

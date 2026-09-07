@@ -67,6 +67,21 @@ void main() {
     expect(restored.showPageTurnButtons, isFalse);
   });
 
+  test('behavior settings service round-trips update notification flag',
+      () async {
+    final service = AppBehaviorSettingsService(storageLayout: layoutProvider);
+
+    // 旧版本设置文件没有该键时默认开启。
+    expect((await service.load()).showUpdateNotification, isTrue);
+
+    await service.save(
+      const AppBehaviorSettings(showUpdateNotification: false),
+    );
+
+    final restored = await service.load();
+    expect(restored.showUpdateNotification, isFalse);
+  });
+
   test(
     'reader background service writes through the injected layout',
     () async {
