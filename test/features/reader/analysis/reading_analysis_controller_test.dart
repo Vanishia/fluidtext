@@ -21,9 +21,32 @@ void main() {
     LibraryChangeTracker.instance.markChanged();
     expect(controller.getCachedAnalytics(), isNull);
   });
+
+  test('load returns cached analytics without re-querying the repository', () async {
+    ReadingAnalysisController.clearCache();
+    final repository = _AnalysisRepository();
+    final controller = ReadingAnalysisController(
+      repository: repository,
+      bookIds: const [],
+      loadRemarks: () async => const {},
+    );
+
+    final loaded = await controller.load();
+    final queriesAfterFirstLoad = repository.statsQueryCount;
+
+    final cached = await controller.load();
+
+    expect(cached, same(loaded));
+    expect(repository.statsQueryCount, queriesAfterFirstLoad);
+
+    final rescanned = await controller.load(forceFullScan: true);
+    expect(rescanned, isNot(same(loaded)));
+    expect(repository.statsQueryCount, queriesAfterFirstLoad + 1);
+  });
 }
 
 class _AnalysisRepository implements LibraryRepository {
+  var statsQueryCount = 0;
   final _book = Book()
     ..id = 1
     ..title = 'Book'
@@ -33,9 +56,12 @@ class _AnalysisRepository implements LibraryRepository {
   Future<List<Book>> loadBooks() async => [_book];
 
   @override
-  Future<Map<int, BookCardStats>> loadBookStats(List<int> bookIds) async => {
-    1: const BookCardStats(totalCount: 1, readCount: 0, favoriteCount: 0),
-  };
+  Future<Map<int, BookCardStats>> loadBookStats(List<int> bookIds) async {
+    statsQueryCount += 1;
+    return {
+      1: const BookCardStats(totalCount: 1, readCount: 0, favoriteCount: 0),
+    };
+  }
 
   @override
   Future<List<BookCardActivityEvent>> loadReadActivityEvents(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app_settings.dart';
 import '../../../repositories/library_repository.dart';
+import '../../../widgets/reading_skeleton.dart';
 import '../reader_background_settings.dart';
 import '../widgets/reader_background_surface.dart';
 import 'models/reading_analytics.dart';
@@ -249,7 +250,7 @@ class _ReadingAnalysisPageState extends State<ReadingAnalysisPage> {
     ReaderBackgroundSettings backgroundSettings,
   ) {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const ReadingAnalysisSkeleton();
     }
 
     if (_error != null) {

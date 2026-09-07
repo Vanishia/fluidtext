@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../models/book.dart';
 import '../../models/book_asset.dart';
@@ -11,6 +13,7 @@ import '../../repositories/library_repository.dart';
 import '../../repositories/library_snapshot.dart';
 import '../../services/app_logger.dart';
 import '../../services/book_asset_store.dart';
+import '../../services/search_index_notification_service.dart';
 import 'library_database.dart';
 
 class SqliteLibraryRepository implements LibraryRepository {
@@ -106,27 +109,74 @@ class SqliteLibraryRepository implements LibraryRepository {
   }
 
   @override
-  Future<List<BookCard>> loadReadCards(List<int> bookIds) {
+  Future<List<BookCard>> loadReadCards(
+    List<int> bookIds, {
+    int offset = 0,
+    int? limit,
+  }) {
     return _loadCardsWithState(
       bookIds: bookIds,
       stateColumn: 'is_read',
       timestampColumn: 'read_at_ms',
+      offset: offset,
+      limit: limit,
     );
   }
 
   @override
-  Future<List<BookCard>> loadFavoriteCards(List<int> bookIds) {
+  Future<List<BookCard>> loadFavoriteCards(
+    List<int> bookIds, {
+    int offset = 0,
+    int? limit,
+  }) {
     return _loadCardsWithState(
       bookIds: bookIds,
       stateColumn: 'is_favorite',
       timestampColumn: 'favorited_at_ms',
+      offset: offset,
+      limit: limit,
     );
+  }
+
+  @override
+  Future<int> countReadCards(List<int> bookIds) {
+    return _countCardsWithState(bookIds: bookIds, stateColumn: 'is_read');
+  }
+
+  @override
+  Future<int> countFavoriteCards(List<int> bookIds) {
+    return _countCardsWithState(bookIds: bookIds, stateColumn: 'is_favorite');
+  }
+
+  Future<int> _countCardsWithState({
+    required List<int> bookIds,
+    required String stateColumn,
+  }) async {
+    final query = StringBuffer(
+      'SELECT COUNT(*) AS count FROM book_cards WHERE $stateColumn = 1',
+    );
+    final variables = <Variable<Object>>[];
+    if (bookIds.isNotEmpty) {
+      query.write(' AND book_id IN (${_placeholders(bookIds.length)})');
+      variables.addAll(_variables(bookIds));
+    }
+
+    final row = await database
+        .customSelect(
+          query.toString(),
+          variables: variables,
+          readsFrom: {database.sqliteBookCards},
+        )
+        .getSingle();
+    return row.read<int>('count');
   }
 
   Future<List<BookCard>> _loadCardsWithState({
     required List<int> bookIds,
     required String stateColumn,
     required String timestampColumn,
+    int offset = 0,
+    int? limit,
   }) async {
     final query = StringBuffer(
       'SELECT * FROM book_cards WHERE $stateColumn = 1',
@@ -137,6 +187,12 @@ class SqliteLibraryRepository implements LibraryRepository {
       variables.addAll(_variables(bookIds));
     }
     query.write(' ORDER BY $timestampColumn DESC, id DESC');
+    if (limit != null || offset > 0) {
+      // LIMIT -1 表示不限制行数，仅用于配合 OFFSET。
+      query.write(' LIMIT ? OFFSET ?');
+      variables.add(Variable<int>(limit ?? -1));
+      variables.add(Variable<int>(offset));
+    }
 
     final rows = await database
         .customSelect(
@@ -808,6 +864,158 @@ class SqliteLibraryRepository implements LibraryRepository {
     if (deleted > 0) {
       _changeTracker.markChanged();
     }
+  }
+
+  @override
+  Future<List<CardSearchResult>> searchCards(
+    String query, {
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return const <CardSearchResult>[];
+    // The trigram tokenizer cannot match queries shorter than 3 characters.
+    return trimmed.length < 3
+        ? _searchCardsWithLike(trimmed, limit: limit, offset: offset)
+        : _searchCardsWithFts(trimmed, limit: limit, offset: offset);
+  }
+
+  @override
+  Future<bool> isSearchIndexReady() {
+    return database.isSearchIndexReady();
+  }
+
+  @override
+  Future<void> ensureSearchIndexBuilt() {
+    final rebuild = database.ensureSearchIndexBuilt();
+    unawaited(_mirrorIndexRebuildToNotification(rebuild));
+    return rebuild;
+  }
+
+  /// 移动端常驻通知（和导入/迁移同一机制），桌面端服务内部自动 no-op。
+  Future<void> _mirrorIndexRebuildToNotification(Future<void> rebuild) async {
+    final notifications = SearchIndexNotificationService.instance;
+    if (!await notifications.ensurePermission()) return;
+
+    void onProgress() {
+      final progress = database.searchIndexProgress.value;
+      unawaited(
+        notifications.showProgress(
+          title: '正在创建搜索索引',
+          text: '创建期间搜索结果可能不完整',
+          percent: progress == null ? null : (progress * 100).round(),
+        ),
+      );
+    }
+
+    database.searchIndexProgress.addListener(onProgress);
+    try {
+      onProgress();
+      await rebuild;
+      await notifications.showCompleted(text: '搜索索引已就绪');
+    } finally {
+      database.searchIndexProgress.removeListener(onProgress);
+    }
+  }
+
+  @override
+  ValueListenable<double?> get searchIndexProgress =>
+      database.searchIndexProgress;
+
+  Future<List<CardSearchResult>> _searchCardsWithFts(
+    String query, {
+    required int limit,
+    required int offset,
+  }) async {
+    // Quote the whole input as an FTS5 phrase: this escapes MATCH syntax and
+    // gives substring semantics under the trigram tokenizer.
+    final matchQuery = '"${query.replaceAll('"', '""')}"';
+    final rows = await database
+        .customSelect(
+          '''
+          SELECT c.*,
+                 snippet(book_cards_fts, 0, '<mark>', '</mark>', '…', 32)
+                   AS snippet
+          FROM book_cards_fts
+          JOIN book_cards c ON c.id = book_cards_fts.rowid
+          WHERE book_cards_fts MATCH ?
+          ORDER BY bm25(book_cards_fts)
+          LIMIT ? OFFSET ?
+          ''',
+          variables: [
+            Variable(matchQuery),
+            Variable<int>(limit),
+            Variable<int>(offset),
+          ],
+          readsFrom: {database.sqliteBookCards},
+        )
+        .get();
+    return rows
+        .map(
+          (row) => CardSearchResult(
+            card: _bookCardFromQueryRow(row),
+            snippet: row.read<String>('snippet'),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<List<CardSearchResult>> _searchCardsWithLike(
+    String query, {
+    required int limit,
+    required int offset,
+  }) async {
+    final escaped = query
+        .replaceAll(r'\', r'\\')
+        .replaceAll('%', r'\%')
+        .replaceAll('_', r'\_');
+    final rows = await database
+        .customSelect(
+          '''
+          SELECT * FROM book_cards
+          WHERE content LIKE '%' || ? || '%' ESCAPE '\\'
+          ORDER BY book_id ASC, card_index ASC
+          LIMIT ? OFFSET ?
+          ''',
+          variables: [
+            Variable(escaped),
+            Variable<int>(limit),
+            Variable<int>(offset),
+          ],
+          readsFrom: {database.sqliteBookCards},
+        )
+        .get();
+    return rows
+        .map(
+          (row) => CardSearchResult(
+            card: _bookCardFromQueryRow(row),
+            snippet: _likeSnippet(row.read<String>('content'), query),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  /// Builds a `<mark>`-tagged excerpt around the first match, mirroring what
+  /// FTS `snippet()` returns so the UI can render both uniformly.
+  static String _likeSnippet(String content, String query) {
+    const window = 96;
+    final lowerContent = content.toLowerCase();
+    final index = lowerContent.indexOf(query.toLowerCase());
+    if (index < 0) {
+      final head = content.substring(
+        0,
+        content.length < window ? content.length : window,
+      );
+      return content.length > window ? '$head…' : head;
+    }
+    final start = index > window ~/ 2 ? index - window ~/ 2 : 0;
+    final end = index + query.length + window ~/ 2;
+    final clippedEnd = end > content.length ? content.length : end;
+    final prefix = start > 0 ? '…' : '';
+    final suffix = clippedEnd < content.length ? '…' : '';
+    return '$prefix${content.substring(start, index)}'
+        '<mark>${content.substring(index, index + query.length)}</mark>'
+        '${content.substring(index + query.length, clippedEnd)}$suffix';
   }
 
   @override

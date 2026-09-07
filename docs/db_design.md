@@ -9,7 +9,8 @@
 
 - ORM：Drift（`drift: ^2.15.0`），底层 `sqlite3`，`NativeDatabase.createInBackground`
   在后台 isolate 中跑数据库。
-- schema 版本：`LibraryDatabase.currentSchemaVersion = 1`。
+- schema 版本：`LibraryDatabase.currentSchemaVersion = 2`（v2 新增
+  `book_cards_fts` FTS5 虚表与同步触发器，用于全文搜索）。
 - 数据库文件位置由 `StorageLayoutProvider` 决定（`layout.sqliteDatabaseFile`），
   打开前确保根目录存在（`openLibraryDatabaseForLayout`）。
 - Repository 接口：`lib/repositories/library_repository.dart` 的 `LibraryRepository`，
@@ -99,6 +100,17 @@ KV 表（`key` PK、`value`、`updated_at_ms`），每次打开连接时 upsert�
 
 - `schema_version` = 当前 schema 版本
 - `storage_format_version` = `'sqlite-v1'`
+- `fts_index_version` = FTS 索引版本；`onCreate` 直接写入（新库靠触发器同步），
+  v1→v2 升级的库无此标记，进入搜索页时懒触发分批回填
+  （`ensureSearchIndexBuilt`，进度经 `searchIndexProgress` 上报）
+
+### book_cards_fts —— 全文搜索索引（schema v2）
+
+FTS5 外部内容虚表（`content='book_cards'`，`tokenize='trigram'`），
+由 `book_cards_fts_ai/ad/au` 三个触发器与 `book_cards` 保持同步。
+不存正文副本，只做倒排索引；备份/导出不包含它，恢复时经触发器自动重建。
+trigram 分词对中英文都按子串匹配，因此短于 3 字符的查询不走 FTS，
+由 `SqliteLibraryRepository.searchCards` 回退为 `LIKE` 扫描。
 
 用于迁移完成标记与回滚判定。
 

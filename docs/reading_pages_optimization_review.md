@@ -19,7 +19,7 @@
 
 ## P0 —— 严重性能问题
 
-### P0-1 收藏/已读页全量加载，无分页
+### P0-1 收藏/已读页全量加载，无分页（已完成）
 
 `SqliteLibraryRepository._loadCardsWithState`（`sqlite_library_repository.dart:126-149`）
 一条 `SELECT *` 把所有已读/收藏卡片一次性拉回，包括每张卡片的 `content` 全文和
@@ -29,7 +29,7 @@
 建议：查询加 `LIMIT/OFFSET` 分页（现有索引 `idx_book_cards_read_activity` /
 `idx_book_cards_favorite_activity` 已覆盖排序，分页成本低），滚动到底再加载下一页。
 
-### P0-2 统计页缓存形同虚设：`load()` 忽略 `forceFullScan`
+### P0-2 统计页缓存形同虚设：`load()` 忽略 `forceFullScan`（已完成）
 
 `ReadingAnalysisController.load`（`reading_analysis_controller.dart:40-42`）无论缓存是否
 有效都无条件 `_loadFull(cacheKey)`。页面 `_load()` 设计了「先展示缓存再后台刷新」
@@ -38,7 +38,7 @@
 
 建议：`load()` 内先查 `getCachedAnalytics()`，命中且非 `forceFullScan` 直接返回缓存。
 
-### P0-3 统计聚合跑在 UI isolate
+### P0-3 统计聚合跑在 UI isolate（已完成）
 
 `ReadingAnalytics.fromEvents`（`reading_analytics.dart:130-308`）对每个事件做 `toLocal()`、
 `copyWith`、多次 map 更新，事件量大时会掉帧。输入数据不可变，适合 `compute()` 下沉。
@@ -58,7 +58,7 @@
 `_buildStateBody` 先判 `_error`——即使缓存内容正在展示，后台刷新失败也会把整块内容换成
 错误页。建议：已有缓存时刷新失败只提示 SnackBar/横幅，保留原内容。
 
-### UX-3 加载态只有一个转圈
+### UX-3 加载态只有一个转圈（已完成）
 
 三个页面加载中都只有 `CircularProgressIndicator`。应使用骨架屏，项目已有
 `lib/widgets/reading_skeleton.dart` 可参考/复用。（此方向已确认要做）
@@ -67,26 +67,26 @@
 
 ## P1 —— 中等问题
 
-### P1-1 收藏/已读页 `_load()` 串行 await，且拉了全量书籍
+### P1-1 收藏/已读页 `_load()` 串行 await，且拉了全量书籍（已完成）
 
 两页 `_load()`（各 43-56 行）先等卡片查询，再等 `_loadBookTitlesById()`（内部又串行
 `loadBooks()` + `loadRemarks()`）。三者互不依赖，应 `Future.wait` 并行；且 `loadBooks()`
 拉全部书籍，实际只需要 `widget.bookIds` 范围内的，应走已有的 `loadBooksByIds`。
 
-### P1-2 统计页排序 getter 在 build / 拖拽中重复计算
+### P1-2 统计页排序 getter 在 build / 拖拽中重复计算（已完成）
 
 `booksSortedByRead/Progress/Favorite` 每次都是 copy + 全量 sort
 （`reading_analytics.dart:316-350`）。`RankingsModule.build` 一次调 3 个，
 `DepthModule.build` 再调一次；拖动模块排序时 `ReorderableListView` 每帧重建，这些排序
 每帧都在跑。应在 `fromEvents` 里算好存为 final 字段。
 
-### P1-3 热力图一次性铺约 371 个 `Tooltip + GestureDetector`
+### P1-3 热力图一次性铺约 371 个 `Tooltip + GestureDetector`（已完成）
 
 `analysis_modules.dart:168-223`，53 周 × 7 天，每格一个 Tooltip（带 overlay 管理，较重）。
 热力图是统计页重做后要保留的模块，值得优化：改为整层一个 GestureDetector 按命中位置换算
 日期，Tooltip 只在长按/悬停时动态创建。
 
-### P1-4 收藏/已读两页是 340 行 ×2 的逐行复制
+### P1-4 收藏/已读两页是 340 行 ×2 的逐行复制（已完成）
 
 `favorite_cards_page.dart` 与 `read_cards_page.dart` 仅文案和过滤条件不同。后续任何优化
 都要做两遍，应合并为一个参数化的列表页。
@@ -128,10 +128,13 @@ padLeft 拼接；且每个 item 各自挂一个合并两个全局 setting 的 `A
 `sortByReadAtDesc` 为全集合内存排序。SQLite 路径已全部解决，此项仅在维护回滚路径时
 顺手处理，或直接随 Isar 路径退役而消失。
 
-### P2-4 热力图空格子的重复对象分配
+### P2-4 热力图空格子的重复对象分配（已完成）
 
 `analysis_modules.dart:182` 在 lookup miss 时每次 build 都 `DayAnalysis.empty(day)` 新建
 对象；miss 时只需要 count=0，用常量空实例即可。
+
+（随 P1-3 热力图整层手势改造一并解决：格子颜色改为直接查 `daysByDate` 计数，
+不再每格新建空对象。）
 
 ### P2-5 统计页无数据时效提示
 

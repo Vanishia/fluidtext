@@ -37,6 +37,11 @@ class LibraryDataAccess {
     'FLUIDTEXT_USE_SQLITE_LIBRARY',
   );
 
+  /// Full-text search only exists on the SQLite backend; the Isar rollback
+  /// path hides the search entry.
+  static const bool supportsFullTextSearch =
+      !forceIsarLibrary || _sqliteRepositoryEnabled;
+
   static Future<LibraryDataAccess> get instance => _instanceFuture ??= _open();
 
   /// Whether the singleton has been opened. Only for tests.

@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import '../../services/app_logger.dart';
 import '../storage_layout.dart';
 
 part 'library_database.g.dart';
@@ -29,7 +32,12 @@ class LibraryDatabase extends _$LibraryDatabase {
   }
 
   /// The current schema version, mirrored in migration completion markers.
-  static const int currentSchemaVersion = 1;
+  static const int currentSchemaVersion = 2;
+
+  /// Bump when the FTS index definition changes (tokenizer/columns) so
+  /// existing installs rebuild the index on next launch.
+  static const String ftsIndexVersion = '1';
+  static const String _ftsIndexVersionKey = 'fts_index_version';
 
   @override
   int get schemaVersion => currentSchemaVersion;
@@ -45,6 +53,15 @@ class LibraryDatabase extends _$LibraryDatabase {
       onCreate: (migrator) async {
         await migrator.createAll();
         await _createSchemaV1Indexes();
+        await _createFtsObjects();
+        // Fresh databases index through the sync triggers from the very first
+        // insert, so they start out "ready" — only v1 upgrades backfill.
+        await _writeFtsIndexMarker();
+      },
+      onUpgrade: (migrator, from, to) async {
+        if (from < 2) {
+          await _createFtsObjects();
+        }
       },
     );
   }
@@ -76,6 +93,125 @@ class LibraryDatabase extends _$LibraryDatabase {
   Future<void> _createSchemaV1Indexes() async {
     for (final statement in sqliteSchemaV1Indexes) {
       await customStatement(statement);
+    }
+  }
+
+  Future<void> _createFtsObjects() async {
+    for (final statement in sqliteSchemaV2FtsStatements) {
+      await customStatement(statement);
+    }
+  }
+
+  /// Whether the FTS index has been rebuilt for [ftsIndexVersion]. Until this
+  /// returns true (freshly upgraded installs), search may miss existing cards.
+  Future<bool> isSearchIndexReady() async {
+    final row = await customSelect(
+      'SELECT value FROM storage_metadata WHERE key = ?',
+      variables: [Variable(_ftsIndexVersionKey)],
+    ).getSingleOrNull();
+    return row?.read<String>('value') == ftsIndexVersion;
+  }
+
+  /// 0..1 while [rebuildSearchIndex] is running, null otherwise. Backed by an
+  /// in-memory notifier because the rebuild lives on the background isolate
+  /// connection — callers in the UI isolate only observe this value.
+  final ValueNotifier<double?> searchIndexProgress = ValueNotifier<double?>(
+    null,
+  );
+
+  Future<void> _rebuildSearchIndexIfNeeded() async {
+    try {
+      if (await isSearchIndexReady()) return;
+      AppLogger.instance.info('fts', 'rebuilding book_cards_fts index');
+      final stopwatch = Stopwatch()..start();
+      await rebuildSearchIndex();
+      AppLogger.instance.info(
+        'fts',
+        'book_cards_fts rebuild finished in ${stopwatch.elapsedMilliseconds}ms',
+      );
+    } catch (error, stackTrace) {
+      // Marker stays unset so the rebuild is retried on the next request.
+      AppLogger.instance.error(
+        'fts',
+        'book_cards_fts rebuild failed: $error',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  Future<void>? _ongoingSearchIndexRebuild;
+
+  /// Starts the FTS backfill unless the index is already built. Idempotent:
+  /// concurrent callers share the in-flight rebuild. Deliberately NOT called
+  /// at database open — the backfill only runs when the search feature is
+  /// actually used (only v1→v2 upgrades have unindexed cards; fresh installs,
+  /// migrations and restores index through the sync triggers).
+  Future<void> ensureSearchIndexBuilt() {
+    return _ongoingSearchIndexRebuild ??= _rebuildSearchIndexIfNeeded()
+        .whenComplete(() => _ongoingSearchIndexRebuild = null);
+  }
+
+  Future<void> _writeFtsIndexMarker() {
+    return customStatement(
+      '''
+      INSERT INTO storage_metadata(key, value, updated_at_ms)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at_ms = excluded.updated_at_ms
+      ''',
+      [
+        _ftsIndexVersionKey,
+        ftsIndexVersion,
+        DateTime.now().toUtc().millisecondsSinceEpoch,
+      ],
+    );
+  }
+
+  /// Rebuilds the FTS index in chunks (inside one transaction so imports
+  /// cannot interleave and double-index rows) and reports progress through
+  /// [searchIndexProgress]. Chunked instead of the single `rebuild` command
+  /// precisely so the progress bar has something real to show.
+  Future<void> rebuildSearchIndex() async {
+    const chunkSize = 500;
+    final total = await customSelect(
+      'SELECT COUNT(*) AS count FROM book_cards',
+    ).getSingle().then((row) => row.read<int>('count'));
+    searchIndexProgress.value = 1.0;
+    if (total > 0) searchIndexProgress.value = 0.0;
+    try {
+      await transaction(() async {
+        await customStatement(
+          "INSERT INTO book_cards_fts(book_cards_fts) VALUES('delete-all')",
+        );
+        var lastId = 0;
+        var done = 0;
+        while (true) {
+          final rows = await customSelect(
+            'SELECT id, content FROM book_cards '
+            'WHERE id > ? ORDER BY id ASC LIMIT $chunkSize',
+            variables: [Variable<int>(lastId)],
+          ).get();
+          if (rows.isEmpty) break;
+          final placeholders = rows.map((_) => '(?, ?)').join(', ');
+          await customStatement(
+            'INSERT INTO book_cards_fts(rowid, content) VALUES $placeholders',
+            [
+              for (final row in rows) ...[
+                row.read<int>('id'),
+                row.read<String>('content'),
+              ],
+            ],
+          );
+          done += rows.length;
+          lastId = rows.last.read<int>('id');
+          searchIndexProgress.value = done / total;
+        }
+        await _writeFtsIndexMarker();
+      });
+    } finally {
+      searchIndexProgress.value = null;
     }
   }
 
@@ -157,6 +293,39 @@ const sqliteSchemaV1Indexes = <String>[
   '''
   CREATE INDEX IF NOT EXISTS idx_book_assets_normalized_href
     ON book_assets(normalized_href)
+  ''',
+];
+
+/// Schema v2: FTS5 external-content index over book_cards.content with
+/// triggers keeping it in sync. The trigram tokenizer makes substring
+/// matching work for both Chinese and English (unicode61 cannot tokenize
+/// Chinese); queries shorter than 3 characters bypass FTS and use LIKE.
+const sqliteSchemaV2FtsStatements = <String>[
+  '''
+  CREATE VIRTUAL TABLE IF NOT EXISTS book_cards_fts USING fts5(
+    content,
+    content='book_cards',
+    content_rowid='id',
+    tokenize='trigram'
+  )
+  ''',
+  '''
+  CREATE TRIGGER IF NOT EXISTS book_cards_fts_ai AFTER INSERT ON book_cards BEGIN
+    INSERT INTO book_cards_fts(rowid, content) VALUES (new.id, new.content);
+  END
+  ''',
+  '''
+  CREATE TRIGGER IF NOT EXISTS book_cards_fts_ad AFTER DELETE ON book_cards BEGIN
+    INSERT INTO book_cards_fts(book_cards_fts, rowid, content)
+    VALUES ('delete', old.id, old.content);
+  END
+  ''',
+  '''
+  CREATE TRIGGER IF NOT EXISTS book_cards_fts_au AFTER UPDATE OF content ON book_cards BEGIN
+    INSERT INTO book_cards_fts(book_cards_fts, rowid, content)
+    VALUES ('delete', old.id, old.content);
+    INSERT INTO book_cards_fts(rowid, content) VALUES (new.id, new.content);
+  END
   ''',
 ];
 

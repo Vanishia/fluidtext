@@ -1,5 +1,6 @@
 import 'dart:developer' as developer;
 
+import 'package:flutter/foundation.dart';
 import 'package:isar/isar.dart';
 
 import '../models/book.dart';
@@ -16,6 +17,8 @@ class BookCardRepository implements LibraryRepository {
   BookCardRepository(this.isar, {Isar? remarkIsar, BookAssetStore? assetStore})
     : _remarkIsar = remarkIsar,
       _assetStore = assetStore ?? BookAssetStore.instance;
+
+  static final _alwaysIdleSearchProgress = ValueNotifier<double?>(null);
 
   final Isar isar;
   final Isar? _remarkIsar;
@@ -78,41 +81,105 @@ class BookCardRepository implements LibraryRepository {
   }
 
   @override
-  Future<List<BookCard>> loadReadCards(List<int> bookIds) {
-    if (bookIds.isEmpty) {
-      return isar.bookCards
-          .filter()
-          .isReadEqualTo(true)
-          .sortByReadAtDesc()
-          .findAll();
-    }
+  Future<List<BookCard>> loadReadCards(
+    List<int> bookIds, {
+    int offset = 0,
+    int? limit,
+  }) {
+    final query = bookIds.isEmpty
+        ? isar.bookCards.filter().isReadEqualTo(true).findAll()
+        : isar.bookCards
+              .filter()
+              .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
+              .and()
+              .isReadEqualTo(true)
+              .findAll();
+    return query.then(
+      (cards) => _pageCardsByActivity(
+        cards,
+        timestampOf: (card) => card.readAt,
+        offset: offset,
+        limit: limit,
+      ),
+    );
+  }
 
+  @override
+  Future<List<BookCard>> loadFavoriteCards(
+    List<int> bookIds, {
+    int offset = 0,
+    int? limit,
+  }) {
+    final query = bookIds.isEmpty
+        ? isar.bookCards.filter().isFavoriteEqualTo(true).findAll()
+        : isar.bookCards
+              .filter()
+              .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
+              .and()
+              .isFavoriteEqualTo(true)
+              .findAll();
+    return query.then(
+      (cards) => _pageCardsByActivity(
+        cards,
+        timestampOf: (card) => card.favoritedAt,
+        offset: offset,
+        limit: limit,
+      ),
+    );
+  }
+
+  /// 与 SQLite 路径一致的排序：时间倒序，id 倒序兜底。
+  static List<BookCard> _pageCardsByActivity(
+    List<BookCard> cards, {
+    required DateTime? Function(BookCard card) timestampOf,
+    required int offset,
+    required int? limit,
+  }) {
+    cards.sort((a, b) {
+      final aTime = timestampOf(a)?.millisecondsSinceEpoch ?? 0;
+      final bTime = timestampOf(b)?.millisecondsSinceEpoch ?? 0;
+      final timeCompare = bTime.compareTo(aTime);
+      if (timeCompare != 0) return timeCompare;
+      return b.id.compareTo(a.id);
+    });
+    return _applyOffsetLimit(cards, offset: offset, limit: limit);
+  }
+
+  @override
+  Future<int> countReadCards(List<int> bookIds) {
+    if (bookIds.isEmpty) {
+      return isar.bookCards.filter().isReadEqualTo(true).count();
+    }
     return isar.bookCards
         .filter()
         .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
         .and()
         .isReadEqualTo(true)
-        .sortByReadAtDesc()
-        .findAll();
+        .count();
   }
 
   @override
-  Future<List<BookCard>> loadFavoriteCards(List<int> bookIds) {
+  Future<int> countFavoriteCards(List<int> bookIds) {
     if (bookIds.isEmpty) {
-      return isar.bookCards
-          .filter()
-          .isFavoriteEqualTo(true)
-          .sortByFavoritedAtDesc()
-          .findAll();
+      return isar.bookCards.filter().isFavoriteEqualTo(true).count();
     }
-
     return isar.bookCards
         .filter()
         .anyOf(bookIds, (query, bookId) => query.bookIdEqualTo(bookId))
         .and()
         .isFavoriteEqualTo(true)
-        .sortByFavoritedAtDesc()
-        .findAll();
+        .count();
+  }
+
+  static List<BookCard> _applyOffsetLimit(
+    List<BookCard> cards, {
+    required int offset,
+    required int? limit,
+  }) {
+    if (offset <= 0 && limit == null) return cards;
+    if (offset >= cards.length) return const <BookCard>[];
+    final end = limit == null ? cards.length : (offset + limit).clamp(0, cards.length);
+    return cards.sublist(offset, end);
   }
 
   @override
@@ -986,6 +1053,29 @@ class BookCardRepository implements LibraryRepository {
       bookRemarks: remarks,
     );
   }
+
+  @override
+  Future<List<CardSearchResult>> searchCards(
+    String query, {
+    int limit = 50,
+    int offset = 0,
+  }) {
+    // 回滚路径不实现全文搜索（入口在 UI 层隐藏）。
+    throw UnimplementedError('Isar 回滚路径不支持全文搜索');
+  }
+
+  @override
+  Future<bool> isSearchIndexReady() async => false;
+
+  @override
+  Future<void> ensureSearchIndexBuilt() {
+    // 回滚路径不实现全文搜索（入口在 UI 层隐藏）。
+    throw UnimplementedError('Isar 回滚路径不支持全文搜索');
+  }
+
+  @override
+  ValueListenable<double?> get searchIndexProgress =>
+      _alwaysIdleSearchProgress;
 
   @override
   Future<void> checkpoint() async {}

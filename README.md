@@ -148,8 +148,7 @@ lib/
 │   ├── reader/                         # 阅读核心
 │   │   ├── reader_page.dart            # 卡片流页面
 │   │   ├── reader_controller.dart      # 阅读状态控制（加载、切换顺序、筛选）
-│   │   ├── read_cards_page.dart        # 全局已读列表
-│   │   ├── favorite_cards_page.dart    # 全局收藏列表
+│   │   ├── card_list_page.dart         # 已读 / 收藏列表（CardListKind 区分）
 │   │   ├── analysis/                   # 阅读分析（统计页）
 │   │   ├── reading_order.dart          # 顺序 / 乱序枚举
 │   │   ├── reader_background_settings.dart

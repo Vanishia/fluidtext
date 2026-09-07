@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -53,26 +55,57 @@ class ContextCardTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isCenter
-                        ? colorScheme.primary.withValues(alpha: 0.14)
-                        : colorScheme.surfaceContainerHighest.withValues(
-                            alpha: 0.62,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
                           ),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    isCenter ? '当前卡片 #${card.cardIndex}' : '#${card.cardIndex}',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colorScheme.primary,
-                      fontWeight: FontWeight.w700,
+                          decoration: BoxDecoration(
+                            color: isCenter
+                                ? colorScheme.primary.withValues(alpha: 0.14)
+                                : colorScheme.surfaceContainerHighest
+                                      .withValues(alpha: 0.62),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            isCenter
+                                ? '当前卡片 #${card.cardIndex}'
+                                : '#${card.cardIndex}',
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(
+                                  color: colorScheme.primary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                    // 桌面端单击复制按钮：与主界面卡片一致，放在首行右侧；
+                    // 移动端保持长按复制不变。
+                    if (!Platform.isAndroid && !Platform.isIOS)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints.tightFor(
+                          width: 30,
+                          height: 30,
+                        ),
+                        iconSize: 18,
+                        icon: Icon(
+                          Icons.copy_rounded,
+                          color: colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.55,
+                          ),
+                        ),
+                        tooltip: '复制内容',
+                        onPressed: () => _copyCardContent(context),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 6),
                 BookCardContentView(
