@@ -151,10 +151,7 @@ void main() {
     expect(find.textContaining('恢复备份将替换当前书库'), findsNothing);
     expect(restoreCalled, isTrue);
     expect(insuranceCalled, isFalse);
-    expect(
-      find.textContaining('核心书库已恢复，外观设置未包含在旧版备份中'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('核心书库已恢复，外观设置未包含在旧版备份中'), findsOneWidget);
   });
 
   testWidgets('恢复失败显示错误状态文案', (tester) async {
@@ -287,8 +284,7 @@ class _FakeLibraryRepository implements LibraryRepository {
   Future<List<BookAsset>> loadBookAssets({
     required int bookId,
     required List<String> assetKeys,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<List<Book>> loadBooksByIds(List<int> ids) =>
@@ -304,26 +300,29 @@ class _FakeLibraryRepository implements LibraryRepository {
     required int centerCardIndex,
     required int before,
     required int after,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<List<BookCardActivityEvent>> loadFavoriteActivityEvents(
     List<int> bookIds,
-  ) =>
-      throw UnimplementedError();
+  ) => throw UnimplementedError();
 
   @override
   Future<List<BookCard>> loadFavoriteCards(
     List<int> bookIds, {
     int offset = 0,
     int? limit,
-  }) =>
-      throw UnimplementedError();
+    DateTime? from,
+    DateTime? to,
+    CardListSort sort = CardListSort.activityDesc,
+  }) => throw UnimplementedError();
 
   @override
-  Future<int> countFavoriteCards(List<int> bookIds) =>
-      throw UnimplementedError();
+  Future<int> countFavoriteCards(
+    List<int> bookIds, {
+    DateTime? from,
+    DateTime? to,
+  }) => throw UnimplementedError();
 
   @override
   Future<List<int>> loadOrderedCardIds(List<int> bookIds) =>
@@ -332,19 +331,24 @@ class _FakeLibraryRepository implements LibraryRepository {
   @override
   Future<List<BookCardActivityEvent>> loadReadActivityEvents(
     List<int> bookIds,
-  ) =>
-      throw UnimplementedError();
+  ) => throw UnimplementedError();
 
   @override
   Future<List<BookCard>> loadReadCards(
     List<int> bookIds, {
     int offset = 0,
     int? limit,
-  }) =>
-      throw UnimplementedError();
+    DateTime? from,
+    DateTime? to,
+    CardListSort sort = CardListSort.activityDesc,
+  }) => throw UnimplementedError();
 
   @override
-  Future<int> countReadCards(List<int> bookIds) => throw UnimplementedError();
+  Future<int> countReadCards(
+    List<int> bookIds, {
+    DateTime? from,
+    DateTime? to,
+  }) => throw UnimplementedError();
 
   @override
   Future<List<int>> loadUnreadOrderedCardIds(List<int> bookIds) =>
