@@ -3,57 +3,29 @@
 <p align="center">
   一个切分书籍、实现「卡片式阅读」和「乱序阅读」的 EPUB 电子书客户端。
 </p>
-
-
 <p align="center">
   <img src="https://img.shields.io/badge/Flutter-3.10+-02569B?logo=flutter&logoColor=white" alt="Flutter">
   <img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License">
   <img src="https://img.shields.io/badge/platform-Android%20%7C%20Windows-lightgrey.svg" alt="Platform">
 </p>
-
----
-
-## 目录
-
-- [简介](#简介)
-- [核心功能](#核心功能)
-- [使用流程](#使用流程)
-- [技术栈](#技术栈)
-- [项目架构](#项目架构)
-- [数据模型](#数据模型)
-- [导入引擎详解](#导入引擎详解)
-- [构建与运行](#构建与运行)
-- [数据存放位置](#数据存放位置)
-- [从 1.0.0 升级](#从-100-升级)
-- [平台支持说明](#平台支持说明)
-- [路线图](#路线图)
-- [文档索引](#文档索引)
-- [许可证](#许可证)
-
----
-
+<p align="center">
+  <b>中文</b> | <a href="README_EN.md">English</a>
+</p>
 ## 简介
 
 **FluidText** 是一款将长文本 EPUB 书籍切碎为短小阅读卡片、并且支持乱序阅读的 Flutter 应用。
 
 它可以：
 
-**不用顺着看完前面的部分、就能知道后面的事**——不被书籍的线性结构绑架。
+**不用顺着看完前面的部分、就能知道后面的事**——不因为书籍的线性结构错失后面的精彩。
 
 **降低阅读的心理门槛**——阅读不需要预期读完、正襟危坐、挑选出整块时间，随手可读。
 
 **多本书混合、乱序阅读**——就像刷流媒体软件一样刷书。
 
-适合：
-- 碎片时间随时卡片式阅读
-- 通过「乱序阅读」打破线性叙事的惯性，获得新的理解角度
-- 通过「混合阅读」丰富阅读时的视角、心境
+数据存放于设备本地。书架管理页面支持导出完整备份（含图片与外观设置），也可以随时导入恢复；支持自定义背景、自定义字体、深浅色模式切换；
 
-数据存放于您的设备，您掌控您的数据。书架管理页面支持导出完整备份（ZIP 归档，含图片与外观设置），也可以随时导入恢复。
-
-支持自定义背景、自定义字体、深浅色模式切换，自定义您的个人图书馆。
-
-当前版本：**1.1.0**（首个 SQLite 存储正式版，1.0.0 用户升级时自动迁移数据）。
+*readme文档更新于2026-09-08*
 
 ---
 
@@ -69,8 +41,8 @@
 
 ### ✂️ 文本切分（导入引擎）
 - **传送带切分算法**：线性 O(N) 遍历章节文本，在句子边界（中文/英文句号、感叹号、问号、换行等）处切分，将长文切分为目标字数（可选300字符、750字符）的卡片。
-- **内容流解析**：不再简单丢弃 HTML 结构，而是将章节解析为文本块、图片块、换行块的序列，保留原文排版意图。
-- **图片单独成卡**：EPUB 中的图片会被提取并保存到本地沙盒，在原文位置附近生成独立的图片卡片，第一版暂不做图文混排，以保证渲染稳定性。
+- **内容流解析**：将章节解析为文本块、图片块、换行块的序列
+- **图片浏览**：支持导入含有图片的书籍
 - **容错导入**：单个章节解析失败不会导致整本书导入失败；图片缺失或损坏会记录日志并跳过，不影响文本导入。
 - **导入前台通知（Android）**：导入期间显示常驻前台通知（dataSync 前台服务），防止进程被系统回收。
 
@@ -82,7 +54,8 @@
 - **收藏与已读**：
   - 手动标记卡片为「已读」或「收藏」。点击卡片空白区域已读
   - 支持过滤已读卡片
-  - 独立的收藏列表与已读列表页面。
+  - 独立的收藏列表与已读列表页面，支持按时间范围、按书籍筛选与多种排序，筛选条随列表滚动。
+- **全文搜索**：基于 SQLite FTS5 的书库全文检索，中英文均可命中；结果折叠为命中摘要并高亮关键词，点击展开为完整卡片，滚动到底自动加载下一页；存量卡片在首次进入搜索时后台懒建索引。
 - **阅读分析**：独立的阅读统计页，包含总览、热力图、连续阅读、动态、排行、深度、收藏等模块，模块顺序可自定义。
 - **阅读背景**：支持纯色背景、自定义图片背景。
 - **自定义字体**：导入本地字体文件（`.ttf` / `.otf` 等），作为应用阅读字体。
@@ -94,13 +67,14 @@
 - **主题模式**：跟随系统 / 浅色 / 深色。
 - **阅读顺序**：顺序 / 乱序，随时切换。
 - **上下文范围**：自定义展开上下文时的「前文张数」与「后文张数」。
-- **未读过滤**：一键隐藏已读卡片，聚焦剩余内容。
+- **过滤已读**：一键隐藏已读卡片。
+
+### 🔔 应用更新
+- **软件内更新检查**：设置中可开关「显示更新通知」；开启后启动时检查 GitHub 最新 release，发现新版本时侧边栏显示通知块，可查看更新说明并下载对应平台安装包。
 
 ### 🔄 数据一致性
-- **重复导入检测**：通过 `fileHash`（文件 SHA-256）和 `contentFingerprint`（内容指纹）双重识别同一本书，避免产生重复数据。
 - **原子写入**：解析和切卡全部在内存中完成后，再在单个 SQLite 事务中写入 `books` + `book_cards` + `book_assets`，杜绝出现空书或半本书。
 - **约束兜底**：卡片表带外键（`ON DELETE CASCADE`）、唯一键（`book_id + card_index`）与 CHECK 约束，删书自动级联清理。
-- 旧书兼容（只和使用了早期版本的用户有关）：对早期没有身份字段的纯文本书籍，支持惰性回填 `contentFingerprint`，使其也能参与重复检测。
 
 ---
 
@@ -114,6 +88,29 @@
    └────── 收藏列表 / 已读列表 / 阅读分析
 ```
 
+### 第一次使用
+
+1. **导入书籍**：打开侧边栏（移动端右滑或点菜单，桌面端看右侧停靠面板），选择「导入书籍」，从文件管理器中选取 `.epub` 文件；有两种切分字数可选；
+2. **打开书架**：导入完成后书籍出现在书架页。点选一本进入阅读；勾选多本则进入「混合阅读」——多本书的卡片会混在一起呈现。
+3. **开始阅读**：可在侧边栏切换正序阅读/乱序阅读
+4. **同时阅读多本**：可在书架页同时勾选多本书籍加入阅读卡片池
+
+### 日常阅读
+
+- **标记已读**：点击卡片即可标记为已读；已读卡片可以在侧边栏一键过滤，只看剩余内容。
+- **收藏卡片**：点击卡片上的收藏按钮；收藏和已读各有独立列表页，从书架页或侧边栏进入。
+- **展开上下文**：乱序模式下，刷到想查看上下文的卡片时，点击卡片右下角箭头展开阅读（卡片张数可在设置中调整）
+- **复制文本**：桌面端点卡片右上角复制按钮，移动端长按卡片即可复制。
+
+### 个性化
+
+- **外观**：侧边栏切换日夜间模式，设置纯色或图片阅读背景，还可以导入本地 `.ttf` / `.otf` 字体作为阅读字体。
+
+### 数据与统计
+
+- **阅读分析**：从侧边栏进入阅读统计页，查看总览、热力图、连续阅读天数、排行等模块，模块顺序可自定义。
+- **备份**：书架管理页可导出完整 ZIP 备份（含书籍、卡片、图片、背景与字体设置）
+
 ---
 
 ## 技术栈
@@ -121,7 +118,7 @@
 | 类别 | 技术选型 | 说明 |
 |------|---------|------|
 | 框架 | [Flutter](https://flutter.dev/) | 跨平台 UI 框架，单套 Dart 代码覆盖多端 |
-| 数据库 | [Drift](https://drift.simonbinder.eu/) + [sqlite3](https://pub.dev/packages/sqlite3) / [sqlite3_flutter_libs](https://pub.dev/packages/sqlite3_flutter_libs) | 类型安全的 SQLite 访问层，数据库连接在后台 isolate 中运行 |
+| 数据库 | [Drift](https://drift.simonbinder.eu/) + [sqlite3](https://pub.dev/packages/sqlite3) / [sqlite3_flutter_libs](https://pub.dev/packages/sqlite3_flutter_libs) | 类型安全的 SQLite 访问层，数据库连接在后台 isolate 中运行；内置 FTS5 全文索引 |
 | 旧数据迁移 | [Isar](https://isar.dev/) | 仅用于只读打开 1.0.0 的 Isar 库并迁移到 SQLite，不参与新数据读写 |
 | EPUB 解析 | [epub_plus](https://pub.dev/packages/epub_plus) | EPUB 结构读取、章节导航、图片资源提取 |
 | HTML 解析 | [html](https://pub.dev/packages/html) | 将章节 HTML 解析为内容流，处理 DOM 遍历 |
@@ -129,6 +126,7 @@
 | 路径管理 | [path_provider](https://pub.dev/packages/path_provider) | 获取应用沙盒目录，存储图片资源 |
 | 压缩归档 | [archive](https://pub.dev/packages/archive) | v3 备份 ZIP 的导出与导入 |
 | 加密/哈希 | [crypto](https://pub.dev/packages/crypto) | SHA-256 计算文件哈希与内容指纹 |
+| 更新检查 | [package_info_plus](https://pub.dev/packages/package_info_plus) + [url_launcher](https://pub.dev/packages/url_launcher) | 读取本地版本、查询 GitHub 最新 release 并打开下载链接 |
 | 状态管理 | `ChangeNotifier` + `ValueListenable` | 最小化依赖，不引入 Riverpod / Bloc 等重型框架 |
 
 ---
@@ -157,6 +155,7 @@ lib/
 │   │   ├── context_sheet.dart
 │   │   ├── context_controller.dart
 │   │   └── context_settings.dart
+│   ├── search/                         # 全文搜索（FTS5 检索、结果高亮、分页）
 │   ├── migration/                      # Isar → SQLite 迁移页
 │   └── settings/                       # 设置与侧边栏
 │       ├── app_drawer.dart             # 移动端 Drawer
@@ -182,6 +181,8 @@ lib/
 │   ├── reader_background_service.dart  # 阅读背景持久化
 │   ├── app_font_service.dart           # 自定义字体导入与注册
 │   ├── backup/                         # v3 ZIP 备份导出 / 恢复 / 安全校验
+│   ├── update_check_service.dart       # GitHub release 更新检查
+│   ├── search_index_notification_service.dart # Android 搜索索引构建通知
 │   ├── import_notification_service.dart    # Android 导入前台通知
 │   └── migration_notification_service.dart # Android 迁移前台通知
 │
@@ -209,17 +210,15 @@ lib/
 └── app_settings.dart                   # 设置项的 ValueListenable 对外暴露（兼容层）
 ```
 
-### 架构原则
 1. **View 不直接持有 Repository**：`reader_page.dart` 通过 `ReaderController` 操作数据，而非直接调 Repository。
 2. **Service 无 Flutter 依赖**：导入、切分、文件存储等纯逻辑放在 `services/`，可在单元测试中独立运行。
 3. **原子事务**：所有写操作（导入、删书、批量更新卡片状态）都封装在 SQLite 事务内。
-4. **最小依赖**：不引入 GetIt、Riverpod、Bloc 等状态管理库，降低概念负担。
 
 ---
 
 ## 数据模型
 
-1.1.0 起使用 SQLite（Drift 管理 schema），库文件为数据根目录下的 `fluidtext_library.sqlite`，共 5 张表：
+1.1.0 起使用 SQLite（Drift 管理 schema），库文件为数据根目录下的 `fluidtext_library.sqlite`，共 5 张表，另有 `book_cards_fts` FTS5 虚拟表（外部内容索引，为全文搜索服务）：
 
 ### books（书籍）
 
@@ -281,7 +280,7 @@ lib/
 
 ## 导入引擎详解
 
-导入是 FluidText 最核心的链路，流程如下：
+导入epub书籍的流程如下：
 
 ```
 用户选择 EPUB 文件
@@ -323,7 +322,7 @@ EpubReader.openBook(bytes) ──> 解析 EPUB 包结构
 返回导入结果（bookId, 插入卡片数, 是否重复）
 ```
 
-### 关键设计决策
+### 设计决策
 
 - **不在切分过程中写库**：先全量生成内存对象，再一次性批量写入，避免部分失败留下脏数据。
 - **双重重复检测**：`fileHash` 识别同一文件；`contentFingerprint` 识别「不同文件、同一内容」的场景（如重新下载的 EPUB）。
@@ -384,7 +383,7 @@ flutter pub run flutter_launcher_icons:main
 
 目录内容：SQLite 库 `fluidtext_library.sqlite`、`book_assets/`（书籍图片）、`reader_backgrounds/`（背景图）、`app_fonts/`（自定义字体）、`settings/`（JSON 设置文件）、`recovery/`（恢复前自动备份）。
 
-数据库未做应用层静态加密，依赖系统账户隔离与设备加密；建议保持系统盘加密（BitLocker 等）开启。
+数据库未做应用层静态加密，依赖系统账户隔离与设备加密；
 
 ---
 
@@ -393,12 +392,9 @@ flutter pub run flutter_launcher_icons:main
 1.0.0 使用 Isar 存储，1.1.0 起切换为 SQLite。覆盖安装后首次启动会进入迁移页：
 
 1. 建议先在迁移页**导出 ZIP 备份**，再开始迁移。
-2. 迁移为真实进度展示，完成后自动校验（计数 + 校验摘要）再切换。
-3. 迁移失败或中断：旧 Isar 数据**原样保留**，可重试，或卸载后装回 1.0.0 用旧数据。
-4. 迁移完成后旧文件不会被删除；确认新版本正常前**不要手动删除**旧目录。
-5. 注意：旧版本（1.0.0）无法识别新目录中的 SQLite 数据，请勿降级后直接打开。
-
-迁移与备份导出的详细设计与回滚手册见 `docs/sqlite_storage_migration_plan.md` 与 `docs/sqlite_release_checklist.md`。
+2. 迁移失败或中断：旧 Isar 数据**原样保留**，可重试，或卸载后装回 1.0.0 用旧数据。
+3. 迁移完成后旧文件不会被删除；确认新版本正常前**不要手动删除**旧目录。
+4. 注意：旧版本（1.0.0）无法识别新目录中的 SQLite 数据，请勿降级后直接打开。
 
 ---
 
@@ -415,35 +411,19 @@ flutter pub run flutter_launcher_icons:main
 
 ---
 
-## 路线图
-
-1. ✅ **书架与多书管理** — 已完成
-2. ✅ **导入进度与容错** — 已完成（阻塞加载层、tolerant parsing、重复检测）
-3. ✅ **章节信息入库** — 已完成（`chapter_index`、`chapter_card_index`、`chapter_title`）
-4. ✅ **Android 前台服务** — 已完成（导入/迁移常驻通知，dataSync）
-5. ✅ **乱序阅读** — 已实现
-6. ✅ **收藏 / 已读 / 筛选** — 已实现
-7. ✅ **图片导入与卡片渲染** — 第一阶段已实现（图片单独成卡）
-8. ✅ **Isar → SQLite 迁移** — 已完成（1.1.0，含迁移页、校验与回滚策略）
-9. ✅ **备份导出 / 导入恢复** — 已完成（v3 ZIP，兼容 v2）
-10. ✅ **阅读分析统计** — 已实现
-11. ✅ **自定义字体** — 已实现
-12. ⬜ **全文搜索** — 可基于 SQLite FTS 实现
-13. ⬜ **恢复到上次阅读的具体卡片** — 待实现
-
----
-
 ## 文档索引
 
 | 文档 | 内容 |
 |------|------|
 | [`README.md`](README.md) | 本文件，项目总览与使用指南 |
+| [`README_EN.md`](README_EN.md) | English version of this README |
+| [`fts_implementation_plan.md`](fts_implementation_plan.md) | 全文搜索（FTS5）实施计划 |
 | [`docs/sqlite_storage_migration_plan.md`](docs/sqlite_storage_migration_plan.md) | Isar → SQLite 迁移设计与分阶段实施记录 |
 | [`docs/sqlite_release_checklist.md`](docs/sqlite_release_checklist.md) | 1.1.0 发布检查清单、验收矩阵与回滚手册 |
 | [`docs/sqlite_migration_code_review_2026-08-15.md`](docs/sqlite_migration_code_review_2026-08-15.md) | SQLite 迁移代码评审记录 |
 | [`docs/db_design.md`](docs/db_design.md) | 数据模型设计笔记、导入一致性策略 |
-| [`docs/reading_analysis_refactor.md`](docs/reading_analysis_refactor.md) | 阅读分析模块重构记录 |
-| [`docs/mvvm_refactor_plan.md`](docs/mvvm_refactor_plan.md) | MVVM 架构整理规划与实施记录（已完成） |
+| [`docs/reading_pages_optimization_review.md`](docs/reading_pages_optimization_review.md) | 阅读页优化评审记录 |
+| [`docs/i18n_english_support_plan.md`](docs/i18n_english_support_plan.md) | 英文多语言支持实施计划（待实施） |
 
 ---
 
@@ -458,4 +438,3 @@ flutter pub run flutter_launcher_icons:main
 <p align="center">
   Made with 💙 for readers who love fragments.
 </p>
-特别鸣谢：gpt-5.4，gpt-5.5
