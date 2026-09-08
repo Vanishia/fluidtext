@@ -426,7 +426,7 @@ class _ReaderBackgroundSheetState extends State<_ReaderBackgroundSheet> {
               ),
               const SizedBox(height: 24),
               Text(
-                '翻页按钮',
+                '显示设置',
                 style: Theme.of(
                   context,
                 ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
@@ -436,21 +436,41 @@ class _ReaderBackgroundSheetState extends State<_ReaderBackgroundSheet> {
                 color: cs.surfaceContainerHigh,
                 borderRadius: BorderRadius.circular(18),
                 clipBehavior: Clip.antiAlias,
-                child: ValueListenableBuilder<bool>(
-                  valueListenable: showPageTurnButtonsSetting,
-                  builder: (context, enabled, _) {
-                    return SwitchListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      secondary: const Icon(Icons.unfold_more_rounded),
-                      title: const Text('显示翻页按钮'),
-                      subtitle: const Text('滚动时在阅读区右侧显示上下翻页箭头'),
-                      value: enabled,
-                      onChanged: saveShowPageTurnButtonsSetting,
-                    );
-                  },
+                child: Column(
+                  children: [
+                    ValueListenableBuilder<bool>(
+                      valueListenable: showPageTurnButtonsSetting,
+                      builder: (context, enabled, _) {
+                        return SwitchListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 4,
+                          ),
+                          secondary: const Icon(Icons.unfold_more_rounded),
+                          title: const Text('显示翻页按钮'),
+                          subtitle: const Text('滚动时在阅读区右侧显示上下翻页箭头'),
+                          value: enabled,
+                          onChanged: saveShowPageTurnButtonsSetting,
+                        );
+                      },
+                    ),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: showUpdateNotificationSetting,
+                      builder: (context, show, _) {
+                        return SwitchListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 4,
+                          ),
+                          secondary: const Icon(Icons.system_update_alt_rounded),
+                          title: const Text('显示更新通知'),
+                          subtitle: const Text('发现新版本时在侧边栏显示通知块'),
+                          value: show,
+                          onChanged: saveShowUpdateNotificationSetting,
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 24),

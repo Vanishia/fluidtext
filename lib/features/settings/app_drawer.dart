@@ -1,7 +1,9 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../services/app_logger.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/shelf_glyph.dart';
 import '../context/context_settings.dart';
@@ -77,13 +79,7 @@ class AppSidePanel extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(18, 14, 12, 8),
           child: Row(
             children: [
-              Text(
-                'FluidText',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
-                ),
-              ),
+              const _RepoLinkTitle(),
               const Spacer(),
               _QuietIconButton(
                 tooltip: _themeTooltip(themeMode),
@@ -155,7 +151,6 @@ class AppSidePanel extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 12),
-                const UpdateNotificationSwitch(),
                 const UpdateNoticeBlock(),
                 if (hasContextSettings) ...[
                   const SizedBox(height: 28),
@@ -284,6 +279,81 @@ class AppSidePanel extends StatelessWidget {
       close();
       callback();
     };
+  }
+}
+
+/// 侧边栏标题：样式与普通文本完全一致；10 秒内连点两次弹出提示，
+/// 第三次点击打开项目仓库页面。
+class _RepoLinkTitle extends StatefulWidget {
+  const _RepoLinkTitle();
+
+  static final Uri _repoUrl = Uri.parse(
+    'https://github.com/Vanishia/fluidtext',
+  );
+
+  @override
+  State<_RepoLinkTitle> createState() => _RepoLinkTitleState();
+}
+
+class _RepoLinkTitleState extends State<_RepoLinkTitle> {
+  static const Duration _window = Duration(seconds: 10);
+
+  DateTime? _windowStart;
+  var _tapCount = 0;
+
+  void _onTap() {
+    final now = DateTime.now();
+    if (_windowStart == null || now.difference(_windowStart!) > _window) {
+      _windowStart = now;
+      _tapCount = 0;
+    }
+    _tapCount++;
+    if (_tapCount == 2) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('再点击一次将打开项目仓库页面')),
+        );
+    } else if (_tapCount >= 3) {
+      _tapCount = 0;
+      _windowStart = null;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      _openRepo();
+    }
+  }
+
+  Future<void> _openRepo() async {
+    try {
+      final launched = await launchUrl(
+        _RepoLinkTitle._repoUrl,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        AppLogger.instance.warning('AppSidePanel', '无法打开项目仓库链接');
+      }
+    } catch (error, stackTrace) {
+      AppLogger.instance.warning(
+        'AppSidePanel',
+        '打开项目仓库链接失败',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _onTap,
+      child: Text(
+        'FluidText',
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.2,
+        ),
+      ),
+    );
   }
 }
 

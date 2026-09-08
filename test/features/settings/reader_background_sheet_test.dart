@@ -73,7 +73,9 @@ void main() {
     tester,
   ) async {
     final previous = showPageTurnButtonsSetting.value;
+    final previousUpdate = showUpdateNotificationSetting.value;
     addTearDown(() => saveShowPageTurnButtonsSetting(previous));
+    addTearDown(() => saveShowUpdateNotificationSetting(previousUpdate));
 
     await openSheet(tester);
 
@@ -83,6 +85,7 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
 
+    expect(find.text('显示设置'), findsOneWidget);
     expect(find.text('字号'), findsOneWidget);
     expect(find.text('行距'), findsOneWidget);
     expect(find.text('预览'), findsOneWidget);
@@ -90,5 +93,9 @@ void main() {
     await tester.tap(find.text('显示翻页按钮'));
     await tester.pumpAndSettle();
     expect(showPageTurnButtonsSetting.value, !previous);
+
+    await tester.tap(find.text('显示更新通知'));
+    await tester.pumpAndSettle();
+    expect(showUpdateNotificationSetting.value, !previousUpdate);
   });
 }

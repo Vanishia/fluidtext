@@ -5,27 +5,8 @@ import '../../app_settings.dart';
 import '../../services/app_logger.dart';
 import '../../services/update_check_service.dart';
 
-/// 侧边栏里的更新设置开关：控制发现新版本时是否显示 [UpdateNoticeBlock]。
-class UpdateNotificationSwitch extends StatelessWidget {
-  const UpdateNotificationSwitch({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: showUpdateNotificationSetting,
-      builder: (context, show, _) {
-        return SwitchListTile.adaptive(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 2),
-          title: const Text('显示更新通知'),
-          value: show,
-          onChanged: saveShowUpdateNotificationSetting,
-        );
-      },
-    );
-  }
-}
-
 /// 侧边栏里的新版本通知块：有新版本且开关打开时显示，点击查看更新详情。
+/// 开关本身在外观设置的「显示设置」一节（显示更新通知）。
 class UpdateNoticeBlock extends StatelessWidget {
   const UpdateNoticeBlock({super.key});
 
