@@ -452,6 +452,7 @@ class _SearchResultItem extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    fontSize: 11.5,
                     color: cs.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
                   ),
@@ -462,6 +463,7 @@ class _SearchResultItem extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontSize: 10.5,
                     color: cs.onSurfaceVariant.withValues(alpha: 0.8),
                   ),
                 ),
@@ -484,7 +486,7 @@ class _SearchResultItem extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final base = Theme.of(
       context,
-    ).textTheme.bodyMedium?.copyWith(fontSize: 14, height: 1.5);
+    ).textTheme.bodyMedium?.copyWith(fontSize: 16, height: 1.5);
     final highlight = base?.copyWith(
       color: cs.onTertiaryContainer,
       backgroundColor: cs.tertiaryContainer,
