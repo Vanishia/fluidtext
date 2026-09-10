@@ -72,6 +72,9 @@ class AppSidePanel extends StatelessWidget {
     final close = floating
         ? () => Navigator.of(context).pop()
         : (onRequestClose ?? () {});
+    // 移动端抽屉是一层路由，打开子页面前必须 pop 抽屉；
+    // 桌面贴边面板只有「书架」按钮需要收起面板，其余按钮保持展开。
+    final closeDrawer = floating ? close : null;
 
     final content = Column(
       children: [
@@ -111,7 +114,7 @@ class AppSidePanel extends StatelessWidget {
                       const SizedBox(width: 8),
                       _QuietIconButton(
                         tooltip: '搜索',
-                        onTap: _closeThen(onOpenSearch, close),
+                        onTap: _closeThen(onOpenSearch, closeDrawer),
                         child: Icon(
                           Icons.search_rounded,
                           size: 18,
@@ -176,7 +179,7 @@ class AppSidePanel extends StatelessWidget {
             children: [
               _QuietIconButton(
                 tooltip: '外观设置',
-                onTap: _closeThen(onOpenReaderBackgroundSettings, close),
+                onTap: _closeThen(onOpenReaderBackgroundSettings, closeDrawer),
                 child: Icon(
                   Icons.settings_rounded,
                   size: 18,
@@ -188,7 +191,7 @@ class AppSidePanel extends StatelessWidget {
               const SizedBox(width: 8),
               _QuietIconButton(
                 tooltip: '阅读分析',
-                onTap: _closeThen(onOpenReadingAnalysis, close),
+                onTap: _closeThen(onOpenReadingAnalysis, closeDrawer),
                 child: Icon(
                   Icons.insights_rounded,
                   size: 18,
@@ -200,7 +203,7 @@ class AppSidePanel extends StatelessWidget {
               const SizedBox(width: 8),
               _QuietIconButton(
                 tooltip: '收藏',
-                onTap: _closeThen(onOpenFavoriteList, close),
+                onTap: _closeThen(onOpenFavoriteList, closeDrawer),
                 child: Icon(
                   Icons.favorite_border_rounded,
                   size: 18,
@@ -212,7 +215,7 @@ class AppSidePanel extends StatelessWidget {
               const SizedBox(width: 8),
               _QuietIconButton(
                 tooltip: '已读',
-                onTap: _closeThen(onOpenReadList, close),
+                onTap: _closeThen(onOpenReadList, closeDrawer),
                 child: Icon(
                   Icons.done_all_rounded,
                   size: 18,
@@ -273,8 +276,9 @@ class AppSidePanel extends StatelessWidget {
     );
   }
 
-  VoidCallback? _closeThen(VoidCallback? callback, VoidCallback close) {
+  VoidCallback? _closeThen(VoidCallback? callback, VoidCallback? close) {
     if (callback == null) return null;
+    if (close == null) return callback;
     return () {
       close();
       callback();
@@ -312,7 +316,15 @@ class _RepoLinkTitleState extends State<_RepoLinkTitle> {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(content: Text('再点击一次将打开项目仓库页面')),
+          SnackBar(
+            content: const Text('再点击一次将打开项目仓库页面'),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(milliseconds: 1200),
+            margin: const EdgeInsets.fromLTRB(24, 0, 24, 18),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
         );
     } else if (_tapCount >= 3) {
       _tapCount = 0;
