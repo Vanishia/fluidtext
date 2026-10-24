@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import '../../models/book.dart';
 import '../../repositories/library_data_access.dart';
 import '../../repositories/library_repository.dart';
 import '../../services/app_logger.dart';
+import '../../services/external_epub_service.dart';
 import '../../services/reader_session_service.dart';
 import '../../widgets/reading_skeleton.dart';
 import '../../widgets/side_panel.dart';
@@ -81,10 +83,14 @@ class LaunchPage extends StatefulWidget {
     super.key,
     this.resumeLastSession = true,
     this.initialState = const LaunchState(),
+    this.externalEpubService,
+    this.bookshelfOpener,
   });
 
   final bool resumeLastSession;
   final LaunchState initialState;
+  final ExternalEpubService? externalEpubService;
+  final Future<List<Book>?> Function(BuildContext context)? bookshelfOpener;
 
   @override
   State<LaunchPage> createState() => _LaunchPageState();
@@ -94,6 +100,11 @@ class _LaunchPageState extends State<LaunchPage> {
   bool _isLoading = false;
   List<Book>? _restoredBooks;
   String? _statusMessage;
+  late final _externalEpubService =
+      widget.externalEpubService ?? ExternalEpubService.instance;
+  bool _bookshelfOpen = false;
+  bool _externalOpenScheduled = false;
+  bool _prunedBooksDialogOpen = false;
 
   /// 用户手动开合过侧边栏后生效；为 null 时按屏幕宽高比自动决定。
   bool? _sidebarVisibleOverride;
@@ -109,7 +120,10 @@ class _LaunchPageState extends State<LaunchPage> {
     super.initState();
     _restoredBooks = widget.initialState.restoredBooks;
     _statusMessage = widget.initialState.statusMessage;
+    _externalEpubService.addListener(_onExternalEpubAvailable);
+    unawaited(_externalEpubService.start());
     if (widget.initialState.prunedBookTitles.isNotEmpty) {
+      _prunedBooksDialogOpen = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _showPrunedBooksDialog(widget.initialState.prunedBookTitles);
@@ -120,6 +134,39 @@ class _LaunchPageState extends State<LaunchPage> {
       _isLoading = true;
       _restoreSession();
     }
+    _onExternalEpubAvailable();
+  }
+
+  @override
+  void dispose() {
+    _externalEpubService.removeListener(_onExternalEpubAvailable);
+    super.dispose();
+  }
+
+  void _onExternalEpubAvailable() {
+    if (!mounted ||
+        _isLoading ||
+        _bookshelfOpen ||
+        _externalEpubService.hasActiveBookshelf ||
+        _prunedBooksDialogOpen ||
+        _externalOpenScheduled ||
+        !_externalEpubService.hasPendingFiles) {
+      return;
+    }
+    _externalOpenScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _externalOpenScheduled = false;
+      if (!mounted ||
+          _isLoading ||
+          _bookshelfOpen ||
+          _externalEpubService.hasActiveBookshelf ||
+          _prunedBooksDialogOpen ||
+          !_externalEpubService.hasPendingFiles) {
+        return;
+      }
+      unawaited(_openBookshelf());
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   Future<void> _restoreSession() async {
@@ -134,10 +181,12 @@ class _LaunchPageState extends State<LaunchPage> {
     if (state.prunedBookTitles.isNotEmpty) {
       _showPrunedBooksDialog(state.prunedBookTitles);
     }
+    _onExternalEpubAvailable();
   }
 
-  void _showPrunedBooksDialog(List<String> titles) {
-    showDialog<void>(
+  Future<void> _showPrunedBooksDialog(List<String> titles) async {
+    _prunedBooksDialogOpen = true;
+    await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('已清理未完成导入的书籍'),
@@ -153,15 +202,26 @@ class _LaunchPageState extends State<LaunchPage> {
         ],
       ),
     );
+    _prunedBooksDialogOpen = false;
+    _onExternalEpubAvailable();
   }
 
   Future<void> _openBookshelf() async {
-    final selected = await showBookshelfSheet(
-      context,
-      initialSelectedBookIds:
-          _restoredBooks?.map((book) => book.id).toList(growable: false) ??
-          const <int>[],
-    );
+    if (_bookshelfOpen) return;
+    _bookshelfOpen = true;
+    final shelfFuture =
+        widget.bookshelfOpener?.call(context) ??
+        showBookshelfSheet(
+          context,
+          externalEpubService: _externalEpubService,
+          initialSelectedBookIds:
+              _restoredBooks?.map((book) => book.id).toList(growable: false) ??
+              const <int>[],
+        );
+    final selected = await shelfFuture.whenComplete(() {
+      _bookshelfOpen = false;
+      _onExternalEpubAvailable();
+    });
     if (selected == null || !mounted) return;
 
     await ReaderSessionService.instance.saveLastOpenedBookIds(
@@ -186,9 +246,9 @@ class _LaunchPageState extends State<LaunchPage> {
   Future<void> _openSearch() async {
     final repository = (await LibraryDataAccess.instance).repository;
     if (!mounted) return;
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => SearchPage(repository: repository)));
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => SearchPage(repository: repository)),
+    );
   }
 
   Future<void> _openReaderBackgroundSettings() async {

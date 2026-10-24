@@ -37,9 +37,12 @@ class MainActivity : FlutterActivity() {
     }
 
     private var pendingPermissionResult: MethodChannel.Result? = null
+    private var externalEpubHandler: ExternalEpubHandler? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        externalEpubHandler = ExternalEpubHandler(this, flutterEngine.dartExecutor.binaryMessenger)
+        externalEpubHandler?.handleIntent(intent)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_NAME)
             .setMethodCallHandler { call, result ->
                 val notificationId =
@@ -92,6 +95,12 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        externalEpubHandler?.handleIntent(intent)
     }
 
     private fun ensureNotificationPermission(result: MethodChannel.Result) {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:io';
 
@@ -15,6 +16,7 @@ import '../../services/app_logger.dart';
 import '../../services/backup/backup_restore_service.dart';
 import '../../services/backup/pre_restore_backup.dart';
 import '../../services/book_import_service.dart';
+import '../../services/external_epub_service.dart';
 import '../../services/import_notification_service.dart';
 import '../../storage/storage_layout.dart';
 import '../../widgets/blocking_loader.dart';
@@ -24,6 +26,7 @@ import '../migration/migration_page.dart';
 Future<List<Book>?> showBookshelfSheet(
   BuildContext context, {
   List<int> initialSelectedBookIds = const <int>[],
+  ExternalEpubService? externalEpubService,
 }) {
   return showModalBottomSheet<List<Book>>(
     context: context,
@@ -31,8 +34,10 @@ Future<List<Book>?> showBookshelfSheet(
     enableDrag: false,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) =>
-        BookshelfSheet(initialSelectedBookIds: initialSelectedBookIds),
+    builder: (_) => BookshelfSheet(
+      initialSelectedBookIds: initialSelectedBookIds,
+      externalEpubService: externalEpubService,
+    ),
   );
 }
 
@@ -84,6 +89,14 @@ Future<void> showImportFailureDialog(
   );
 }
 
+typedef EpubImporter =
+    Future<BookImportResult> Function({
+      required Uint8List bytes,
+      String? sourceFileName,
+      int targetCharsPerCard,
+      void Function(BookImportProgress progress)? onProgress,
+    });
+
 class BookshelfSheet extends StatefulWidget {
   const BookshelfSheet({
     super.key,
@@ -94,6 +107,8 @@ class BookshelfSheet extends StatefulWidget {
     this.preRestoreBackup,
     this.backupRestoreRunner,
     this.settingsReloader,
+    this.externalEpubService,
+    this.epubImporter,
   });
 
   final List<int> initialSelectedBookIds;
@@ -107,6 +122,8 @@ class BookshelfSheet extends StatefulWidget {
   final Future<BackupRestoreResult> Function(File backupFile)?
   backupRestoreRunner;
   final Future<void> Function()? settingsReloader;
+  final ExternalEpubService? externalEpubService;
+  final EpubImporter? epubImporter;
 
   @override
   State<BookshelfSheet> createState() => _BookshelfSheetState();
@@ -129,11 +146,69 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
   String? _importProgressLabel;
   double? _importProgressValue;
   String? _lastImportNotificationText;
+  late final _externalEpubService =
+      widget.externalEpubService ?? ExternalEpubService.instance;
+  bool _isInteracting = false;
+  bool _externalImportScheduled = false;
 
   @override
   void initState() {
     super.initState();
+    _externalEpubService.attachBookshelf();
+    _externalEpubService.addListener(_scheduleExternalImport);
     _init();
+  }
+
+  @override
+  void dispose() {
+    _externalEpubService.removeListener(_scheduleExternalImport);
+    _externalEpubService.detachBookshelf();
+    super.dispose();
+  }
+
+  /// Serialize file-open requests with picker imports, restore and dialogs.
+  Future<void> _runOperation(Future<void> Function() operation) async {
+    if (_isInteracting || _isBusy) return;
+    _isInteracting = true;
+    try {
+      await operation();
+    } finally {
+      _isInteracting = false;
+      _scheduleExternalImport();
+    }
+  }
+
+  void _scheduleExternalImport() {
+    if (!mounted ||
+        _isLoading ||
+        _isBusy ||
+        _isInteracting ||
+        _externalImportScheduled ||
+        !_externalEpubService.hasPendingFiles) {
+      return;
+    }
+    _externalImportScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _externalImportScheduled = false;
+      if (!mounted ||
+          _isLoading ||
+          _isBusy ||
+          _isInteracting ||
+          !_externalEpubService.hasPendingFiles) {
+        return;
+      }
+      unawaited(
+        _runOperation(() async {
+          final file = _externalEpubService.takeNext();
+          try {
+            await _pickAndImportEpub(externalFile: file);
+          } finally {
+            await _externalEpubService.release(file);
+          }
+        }),
+      );
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   Future<void> _init() async {
@@ -166,6 +241,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       _showMigrationEntry = showMigrationEntry;
       _isLoading = false;
     });
+    _scheduleExternalImport();
   }
 
   /// Offers re-detection when the user previously abandoned a migration.
@@ -219,7 +295,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     });
   }
 
-  Future<void> _pickAndImportEpub() async {
+  Future<void> _pickAndImportEpub({ExternalEpubFile? externalFile}) async {
     final dataAccess = _dataAccess;
     if (dataAccess == null || _isBusy) return;
 
@@ -230,38 +306,48 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
     setState(() {
       _isBusy = true;
       _status = '正在导入…';
+      _lastImportNotificationText = null;
     });
 
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['epub'],
-        withData: true,
-      );
-      final file = result?.files.firstOrNull;
-      final bytes = file?.bytes;
+      Uint8List? bytes;
+      String? sourceFileName;
+      if (externalFile != null) {
+        bytes = await externalFile.readBytes();
+        sourceFileName = externalFile.name;
+      } else {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: const ['epub'],
+          withData: true,
+        );
+        final file = result?.files.firstOrNull;
+        bytes = file?.bytes;
+        sourceFileName = file?.name;
+      }
+      if (!mounted) return;
 
       if (bytes == null) {
-        if (!mounted) return;
         setState(() => _status = '未选择文件');
         return;
       }
 
       final notifications = ImportNotificationService.instance;
-      final notificationTitle = '正在导入《${file?.name ?? 'EPUB 文件'}》';
+      final notificationTitle = '正在导入《${sourceFileName ?? 'EPUB 文件'}》';
       await notifications.ensurePermission();
       await notifications.showProgress(
         title: notificationTitle,
         text: '导入中请勿退出',
       );
 
-      final imported = await dataAccess.importEpubBytes(
-        bytes: bytes,
-        sourceFileName: file?.name,
-        targetCharsPerCard: targetCharsPerCard,
-        onProgress: (progress) =>
-            _onImportProgress(progress, notificationTitle),
-      );
+      final imported =
+          await (widget.epubImporter ?? dataAccess.importEpubBytes)(
+            bytes: bytes,
+            sourceFileName: sourceFileName,
+            targetCharsPerCard: targetCharsPerCard,
+            onProgress: (progress) =>
+                _onImportProgress(progress, notificationTitle),
+          );
       await notifications.showCompleted(text: '《${imported.bookTitle}》');
       await _reloadBooks();
       if (!mounted) return;
@@ -741,22 +827,30 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                             if (_showMigrationEntry)
                               IconButton(
                                 tooltip: '重新检测旧数据并迁移',
-                                onPressed: _isBusy ? null : _redetectMigration,
+                                onPressed: _isBusy
+                                    ? null
+                                    : () => _runOperation(_redetectMigration),
                                 icon: const Icon(Icons.restore_rounded),
                               ),
                             IconButton(
                               tooltip: '导入 EPUB',
-                              onPressed: _isBusy ? null : _pickAndImportEpub,
+                              onPressed: _isBusy
+                                  ? null
+                                  : () => _runOperation(_pickAndImportEpub),
                               icon: const Icon(Icons.add_rounded),
                             ),
                             IconButton(
                               tooltip: '导出备份',
-                              onPressed: _isBusy ? null : _exportBackup,
+                              onPressed: _isBusy
+                                  ? null
+                                  : () => _runOperation(_exportBackup),
                               icon: const Icon(Icons.ios_share_rounded),
                             ),
                             IconButton(
                               tooltip: '导入备份',
-                              onPressed: _isBusy ? null : _importBackup,
+                              onPressed: _isBusy
+                                  ? null
+                                  : () => _runOperation(_importBackup),
                               icon: const Icon(
                                 Icons.settings_backup_restore_rounded,
                               ),
@@ -909,10 +1003,18 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
                                                       if (!mounted) return;
                                                       switch (value) {
                                                         case 'remark':
-                                                          _editRemark(book);
+                                                          _runOperation(
+                                                            () => _editRemark(
+                                                              book,
+                                                            ),
+                                                          );
                                                           break;
                                                         case 'delete':
-                                                          _deleteBook(book);
+                                                          _runOperation(
+                                                            () => _deleteBook(
+                                                              book,
+                                                            ),
+                                                          );
                                                           break;
                                                       }
                                                     });
