@@ -85,7 +85,7 @@ class RandomCardWidgetSettingsActivity : Activity() {
         configuration = config
         container.removeAllViews()
         container.addView(text("桌面随机卡片", 25f))
-        container.addView(text("展示最多三行正文，点击卡片查看完整内容和上下文。"))
+        container.addView(text("展示最多五行正文，左下角显示书名；点击卡片查看完整内容和上下文。半透明底色跟随系统日夜间模式。"))
         container.addView(text("选取范围", 18f))
         val all = CheckBox(this).apply { text = "全部书籍"; isChecked = config.allBooks }
         container.addView(all)

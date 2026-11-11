@@ -32,13 +32,19 @@ class RandomCardWidgetProvider : AppWidgetProvider() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == ACTION_REFRESH || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+        if (intent.action == ACTION_REFRESH || intent.action == ACTION_SYNC ||
+            intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
             val ids = if (intent.action == ACTION_REFRESH) {
                 intArrayOf(intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1))
             } else widgetIds(context)
             val pending = goAsync()
             executor.execute {
                 try {
+                    if (intent.action == ACTION_SYNC) {
+                        intent.getStringExtra(EXTRA_DATABASE_PATH)?.let {
+                            WidgetStore(context).databasePath = it
+                        }
+                    }
                     for (id in ids) if (ownsWidget(context, id)) {
                         schedule(context, id)
                         update(context, id, rotate = intent.action == ACTION_REFRESH)
@@ -69,6 +75,8 @@ class RandomCardWidgetProvider : AppWidgetProvider() {
 
     companion object {
         private const val ACTION_REFRESH = "com.bird.fluidtext.widget.REFRESH"
+        private const val ACTION_SYNC = "com.bird.fluidtext.widget.SYNC"
+        private const val EXTRA_DATABASE_PATH = "databasePath"
         const val ACTION_OPEN_CARD = "com.bird.fluidtext.widget.OPEN_CARD"
         internal val executor = Executors.newSingleThreadExecutor()
 
@@ -79,14 +87,14 @@ class RandomCardWidgetProvider : AppWidgetProvider() {
             AppWidgetManager.getInstance(context).getAppWidgetInfo(id)?.provider ==
                 ComponentName(context, RandomCardWidgetProvider::class.java)
 
-        internal fun refreshAll(context: Context) {
-            val app = context.applicationContext
-            executor.execute {
-                for (id in widgetIds(app)) {
-                    schedule(app, id)
-                    update(app, id)
-                }
-            }
+        internal fun requestRefresh(context: Context, databasePath: String? = null) {
+            // Platform SQLite must not share a process with Flutter's bundled SQLite:
+            // their independent WAL/lock state can invalidate each other's mappings.
+            // The receiver also owns all widget preferences, avoiding cross-process caches.
+            context.sendBroadcast(Intent(context, RandomCardWidgetProvider::class.java).apply {
+                action = ACTION_SYNC
+                if (databasePath != null) putExtra(EXTRA_DATABASE_PATH, databasePath)
+            })
         }
 
         internal fun update(context: Context, id: Int, rotate: Boolean = false) {

@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="widget_background">#252A24</color>
+    <color name="widget_background">#BF252A24</color>
+    <color name="widget_settings_background">#252A24</color>
     <color name="widget_text">#E1E6DB</color>
-    <color name="widget_secondary_text">#B5C1AC</color>
-    <color name="widget_border">#46513F</color>
+    <color name="widget_secondary_text">#CED9C8</color>
+    <color name="widget_border">#66CDDCC4</color>
     <style name="WidgetSettingsTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:colorAccent">#B5CDAA</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowBackground">@color/widget_background</item>
+        <item name="android:windowBackground">@color/widget_settings_background</item>
         <item name="android:fontFamily">sans</item>
     </style>
 </resources>

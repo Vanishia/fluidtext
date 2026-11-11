@@ -30,8 +30,7 @@ class WidgetBridge(private val context: Context, messenger: BinaryMessenger) {
                     if (database == null || !database.path.startsWith(root.path + File.separator) || !database.isFile) {
                         result.error("invalid_database", "Library database is unavailable", null)
                     } else {
-                        WidgetStore(context).databasePath = database.path
-                        refresh()
+                        RandomCardWidgetProvider.requestRefresh(context, database.path)
                         result.success(null)
                     }
                 }
@@ -80,5 +79,5 @@ class WidgetBridge(private val context: Context, messenger: BinaryMessenger) {
         channel.invokeMethod("cardAvailable", null)
     }
 
-    fun refresh() = RandomCardWidgetProvider.refreshAll(context)
+    fun refresh() = RandomCardWidgetProvider.requestRefresh(context)
 }

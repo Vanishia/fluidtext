@@ -1,5 +1,8 @@
 package com.bird.fluidtext.homewidget
 
+import android.content.ComponentName
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import android.database.sqlite.SQLiteDatabase
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
@@ -12,7 +15,29 @@ import java.io.File
 class WidgetLibraryTest {
     private lateinit var file: File
     private var previousPath: String? = null
-    private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+    // Keep test settings separate from the live widget process and its cached preferences.
+    private val context = object : ContextWrapper(InstrumentationRegistry.getInstrumentation().targetContext) {
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
+            super.getSharedPreferences("test_$name", mode)
+    }
+
+    @Test fun platformSqliteComponentsAreIsolatedFromFlutter() {
+        val manager = context.packageManager
+        val process = "${context.packageName}:home_widget"
+        assertNotEquals(context.applicationInfo.processName, process)
+        @Suppress("DEPRECATION")
+        assertEquals(process, manager.getReceiverInfo(
+            ComponentName(context, RandomCardWidgetProvider::class.java), 0,
+        ).processName)
+        @Suppress("DEPRECATION")
+        assertEquals(process, manager.getServiceInfo(
+            ComponentName(context, RandomCardWidgetJob::class.java), 0,
+        ).processName)
+        @Suppress("DEPRECATION")
+        assertEquals(process, manager.getActivityInfo(
+            ComponentName(context, RandomCardWidgetSettingsActivity::class.java), 0,
+        ).processName)
+    }
 
     @Before fun setUp() {
         previousPath = WidgetStore(context).databasePath

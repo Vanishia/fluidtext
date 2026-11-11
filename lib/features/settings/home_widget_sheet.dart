@@ -16,7 +16,7 @@ Future<void> showHomeWidgetSheet(
         children: [
           Text('桌面随机卡片', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 12),
-          const Text('把三行书摘放到桌面，点击即可打开这张卡片的上下文。'),
+          const Text('把五行书摘放到桌面，左下角显示书名，点击即可打开这张卡片的上下文。半透明底色自动跟随系统日夜间模式。'),
           const SizedBox(height: 12),
           const Text('添加时可选择书籍、仅收藏或仅未读，以及自动换卡频率。每个小组件单独设置，也可以点击组件上的设置按钮随时修改。'),
           const SizedBox(height: 20),
