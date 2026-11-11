@@ -8,6 +8,7 @@ import 'package:flutter/gestures.dart';
 
 import 'app_settings.dart';
 import 'features/bookshelf/launch_page.dart';
+import 'features/reader/reader_page.dart';
 import 'features/migration/migration_page.dart';
 import 'features/reader/reader_background_settings.dart';
 import 'features/reader/widgets/reader_background_surface.dart';
@@ -15,6 +16,8 @@ import 'migration/app_bootstrap_coordinator.dart';
 import 'migration/migration_runner.dart';
 import 'repositories/library_data_access.dart';
 import 'services/app_logger.dart';
+import 'services/home_widget_service.dart';
+import 'services/reader_session_service.dart';
 import 'services/update_check_service.dart';
 import 'storage/storage_layout.dart';
 import 'theme/app_theme.dart';
@@ -91,6 +94,12 @@ Future<LaunchState> _initializeNormalSession() async {
   final settingsFuture = initializeAppSettings();
   final launchStateFuture = loadLaunchState();
   await settingsFuture;
+  if (!LibraryDataAccess.forceIsarLibrary &&
+      HomeWidgetService.instance.supported) {
+    await LibraryDataAccess.instance;
+    final layout = await AppStorageResolver.activeRuntimeLayout();
+    await HomeWidgetService.instance.initialize(layout.sqliteDatabaseFile.path);
+  }
   unawaited(UpdateCheckService.instance.checkForUpdate());
   return launchStateFuture;
 }
@@ -121,6 +130,95 @@ void _syncWindowsTitleBar(Brightness brightness) {
 }
 
 class _MyAppState extends State<MyApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  bool _startupReady = false;
+  bool _openingWidgetCard = false;
+
+  @override
+  void initState() {
+    super.initState();
+    HomeWidgetService.instance.addListener(_onWidgetCard);
+    widget.initialization.then(
+      (_) {
+        _startupReady = true;
+        _onWidgetCard();
+      },
+      onError: (Object error, StackTrace stack) {
+        // The launch screen owns startup-error presentation.
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    HomeWidgetService.instance.removeListener(_onWidgetCard);
+    super.dispose();
+  }
+
+  void _onWidgetCard() {
+    if (!mounted ||
+        !_startupReady ||
+        _openingWidgetCard ||
+        !HomeWidgetService.instance.hasPendingCard) {
+      return;
+    }
+    _openingWidgetCard = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        if (!mounted) return;
+        final request = HomeWidgetService.instance.takePendingCard();
+        if (request == null) return;
+        final repository = (await LibraryDataAccess.instance).repository;
+        final cards = await repository.loadCardsByIds([request.cardId]);
+        final books = await repository.loadBooksByIds([request.bookId]);
+        if (!mounted) return;
+        final navigator = _navigatorKey.currentState;
+        if (navigator == null) return;
+        if (cards.isEmpty || books.isEmpty || !request.matches(cards.first)) {
+          ScaffoldMessenger.of(
+            navigator.context,
+          ).showSnackBar(const SnackBar(content: Text('这张卡片已不存在，小组件将重新选取内容。')));
+          await HomeWidgetService.instance.refresh();
+          return;
+        }
+        // Retain the current book selection when it already includes this book.
+        final savedIds = await ReaderSessionService.instance
+            .loadLastOpenedBookIds();
+        final previousBooks = await repository.loadBooksByIds(savedIds);
+        if (!mounted) return;
+        final readerBooks =
+            previousBooks.any((book) => book.id == request.bookId)
+            ? previousBooks
+            : books;
+        // Keep the launch page's external-file listener alive underneath the
+        // reader, and replace any previous widget reader or open modal.
+        navigator.popUntil((route) => route.isFirst);
+        unawaited(
+          navigator.push<void>(
+            MaterialPageRoute(
+              builder: (_) => BookCardsPage(
+                books: readerBooks,
+                initialContextCard: cards.first,
+                onExitReader: () => navigator.pop(),
+              ),
+            ),
+          ),
+        );
+      } catch (error, stackTrace) {
+        AppLogger.instance.warning(
+          'HomeWidget',
+          'Cannot open widget card',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      } finally {
+        _openingWidgetCard = false;
+        _onWidgetCard();
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
   Future<Color>? _seedColorFuture;
   String? _seedColorCacheKey;
 
@@ -161,6 +259,7 @@ class _MyAppState extends State<MyApp> {
                   valueListenable: appFontSetting,
                   builder: (context, fontSettings, _) {
                     return MaterialApp(
+                      navigatorKey: _navigatorKey,
                       title: 'FluidText',
                       scrollBehavior: const _FluidScrollBehavior(),
                       theme: buildAppTheme(

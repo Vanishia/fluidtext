@@ -24,6 +24,7 @@ class ContextSheet extends StatefulWidget {
 class _ContextSheetState extends State<ContextSheet> {
   final ScrollController _scrollController = ScrollController();
   final Map<int, GlobalKey> _cardKeys = <int, GlobalKey>{};
+  int? _lastFocusedId;
 
   @override
   void dispose() {
@@ -71,6 +72,14 @@ class _ContextSheetState extends State<ContextSheet> {
           child: AnimatedBuilder(
             animation: widget.controller,
             builder: (context, _) {
+              if (!widget.controller.isLoading &&
+                  widget.controller.cards.isNotEmpty &&
+                  _lastFocusedId != widget.controller.centerCard.id) {
+                _lastFocusedId = widget.controller.centerCard.id;
+                WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => _ensureCenterVisible(),
+                );
+              }
               final settings = widget.controller.settings;
               return SizedBox(
                 width: double.infinity,
@@ -375,9 +384,7 @@ class _CompactStepperButton extends StatelessWidget {
           child: Icon(
             icon,
             size: 15,
-            color: onTap == null
-                ? cs.onSurface.withValues(alpha: 0.38)
-                : null,
+            color: onTap == null ? cs.onSurface.withValues(alpha: 0.38) : null,
           ),
         ),
       ),

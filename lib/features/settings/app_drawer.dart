@@ -1,13 +1,16 @@
+import 'dart:io' show Platform;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../repositories/library_data_access.dart';
 import '../../services/app_logger.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/shelf_glyph.dart';
 import '../context/context_settings.dart';
 import '../reader/reading_order.dart';
+import 'home_widget_sheet.dart';
 import 'update_notice.dart';
 
 /// 应用菜单面板：默认是贴边常驻侧边栏（桌面端）；[floating] 为 true
@@ -155,6 +158,16 @@ class AppSidePanel extends StatelessWidget {
                 ],
                 const SizedBox(height: 12),
                 const UpdateNoticeBlock(),
+                if (Platform.isAndroid && !LibraryDataAccess.forceIsarLibrary)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.widgets_outlined),
+                    title: const Text('桌面小组件'),
+                    onTap: () {
+                      closeDrawer?.call();
+                      showHomeWidgetSheet(context);
+                    },
+                  ),
                 if (hasContextSettings) ...[
                   const SizedBox(height: 28),
                   _ContextCountStepper(

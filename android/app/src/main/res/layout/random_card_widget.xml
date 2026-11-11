@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="14dp"
+    android:background="@drawable/random_card_widget_background">
+
+    <TextView
+        android:id="@+id/widget_content"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:maxLines="3"
+        android:ellipsize="end"
+        android:text="@string/random_card_widget_preview"
+        android:textSize="16sp"
+        android:textColor="@color/widget_text"
+        android:lineSpacingExtra="3dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/widget_book_title"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="@string/widget_app_name"
+            android:textSize="12sp"
+            android:textColor="@color/widget_secondary_text" />
+
+        <ImageButton
+            android:id="@+id/widget_refresh"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="10dp"
+            android:background="@android:color/transparent"
+            android:src="@drawable/widget_refresh"
+            android:contentDescription="@string/random_card_widget_refresh" />
+
+        <ImageButton
+            android:id="@+id/widget_settings"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="10dp"
+            android:background="@android:color/transparent"
+            android:src="@drawable/widget_settings"
+            android:contentDescription="@string/random_card_widget_settings" />
+    </LinearLayout>
+</LinearLayout>

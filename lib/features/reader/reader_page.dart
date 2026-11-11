@@ -28,11 +28,16 @@ import 'widgets/page_turn_buttons.dart';
 import 'widgets/reader_background_surface.dart';
 
 class BookCardsPage extends StatefulWidget {
-  BookCardsPage({super.key, required List<Book> books, this.onExitReader})
-    : books = List<Book>.unmodifiable(books);
+  BookCardsPage({
+    super.key,
+    required List<Book> books,
+    this.onExitReader,
+    this.initialContextCard,
+  }) : books = List<Book>.unmodifiable(books);
 
   final List<Book> books;
   final VoidCallback? onExitReader;
+  final BookCard? initialContextCard;
 
   List<int> get bookIds => books.map((book) => book.id).toList(growable: false);
 
@@ -145,6 +150,12 @@ class _BookCardsPageState extends State<BookCardsPage> {
         ..addAll(remarks);
     });
     unawaited(_saveCurrentSession());
+    final initialCard = widget.initialContextCard;
+    if (initialCard != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_showContext(initialCard));
+      });
+    }
   }
 
   Future<void> _saveCurrentSession() async {

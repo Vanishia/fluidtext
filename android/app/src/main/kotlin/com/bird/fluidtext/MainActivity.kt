@@ -11,6 +11,7 @@ import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import com.bird.fluidtext.homewidget.WidgetBridge
 
 /**
  * Posts the persistent "importing" notification so an in-flight EPUB import
@@ -38,9 +39,12 @@ class MainActivity : FlutterActivity() {
 
     private var pendingPermissionResult: MethodChannel.Result? = null
     private var externalEpubHandler: ExternalEpubHandler? = null
+    private var widgetBridge: WidgetBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        widgetBridge = WidgetBridge(this, flutterEngine.dartExecutor.binaryMessenger)
+        widgetBridge?.handleIntent(intent)
         externalEpubHandler = ExternalEpubHandler(this, flutterEngine.dartExecutor.binaryMessenger)
         externalEpubHandler?.handleIntent(intent)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_NAME)
@@ -100,7 +104,13 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        widgetBridge?.handleIntent(intent)
         externalEpubHandler?.handleIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        widgetBridge?.refresh()
     }
 
     private fun ensureNotificationPermission(result: MethodChannel.Result) {

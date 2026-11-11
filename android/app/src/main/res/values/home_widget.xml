@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_app_name" translatable="false">FluidText</string>
+    <string name="widget_open_app">打开 FluidText</string>
+    <string name="random_card_widget_label">FluidText 随机卡片</string>
+    <string name="random_card_widget_description">在桌面随机阅读三行书摘，点击查看上下文。</string>
+    <string name="random_card_widget_preview">让书中的一小段，\n成为今天偶然遇见的文字。</string>
+    <string name="random_card_widget_refresh">换一张</string>
+    <string name="random_card_widget_settings">小组件设置</string>
+    <color name="widget_background">#F5F4EC</color>
+    <color name="widget_text">#272C27</color>
+    <color name="widget_secondary_text">#646D60</color>
+    <color name="widget_border">#D9DED1</color>
+    <style name="WidgetSettingsTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:colorAccent">#536B4D</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">@color/widget_background</item>
+        <item name="android:fontFamily">sans</item>
+    </style>
+</resources>

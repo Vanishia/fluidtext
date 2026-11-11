@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- 检查新版本更新（GitHub Releases）。 -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 保留小组件的系统周期任务，重启后由 JobScheduler 恢复。 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 导入 EPUB 时展示常驻通知（Android 13+ 需要运行时请求）。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 数据迁移期间以前台服务（dataSync）保活，防止后台被系统杀死。 -->
@@ -10,6 +12,29 @@
         android:label="${appLabel}"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <receiver
+            android:name=".homewidget.RandomCardWidgetProvider"
+            android:exported="false"
+            android:label="@string/random_card_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/random_card_widget_info" />
+        </receiver>
+        <activity
+            android:name=".homewidget.RandomCardWidgetSettingsActivity"
+            android:exported="true"
+            android:theme="@style/WidgetSettingsTheme"
+            android:label="@string/random_card_widget_settings">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+        <service
+            android:name=".homewidget.RandomCardWidgetJob"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="true" />
         <service
             android:name=".MigrationForegroundService"
             android:exported="false"
