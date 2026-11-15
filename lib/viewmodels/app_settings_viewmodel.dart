@@ -29,6 +29,7 @@ class AppSettingsViewModel {
         defaultReadingAnalysisModuleOrder,
       );
   final showPageTurnButtonsSetting = ValueNotifier(true);
+  final pageTurnButtonOnLeftSetting = ValueNotifier(false);
   final showUpdateNotificationSetting = ValueNotifier(true);
   final readerFontScaleSetting = ValueNotifier(
     AppBehaviorSettings.defaultReaderFontScale,
@@ -49,6 +50,7 @@ class AppSettingsViewModel {
   List<ReadingAnalysisModuleType> get analysisModuleOrder =>
       analysisModuleOrderSetting.value;
   bool get showPageTurnButtons => showPageTurnButtonsSetting.value;
+  bool get pageTurnButtonOnLeft => pageTurnButtonOnLeftSetting.value;
   bool get showUpdateNotification => showUpdateNotificationSetting.value;
   double get readerFontScale => readerFontScaleSetting.value;
   double get readerLineHeight => readerLineHeightSetting.value;
@@ -65,6 +67,7 @@ class AppSettingsViewModel {
       behaviorSettings.analysisModuleOrder,
     );
     showPageTurnButtonsSetting.value = behaviorSettings.showPageTurnButtons;
+    pageTurnButtonOnLeftSetting.value = behaviorSettings.pageTurnButtonOnLeft;
     showUpdateNotificationSetting.value =
         behaviorSettings.showUpdateNotification;
     readerFontScaleSetting.value = behaviorSettings.readerFontScale;
@@ -103,6 +106,11 @@ class AppSettingsViewModel {
 
   void setShowPageTurnButtons(bool value) {
     showPageTurnButtonsSetting.value = value;
+    _scheduleBehaviorSave();
+  }
+
+  void setPageTurnButtonOnLeft(bool value) {
+    pageTurnButtonOnLeftSetting.value = value;
     _scheduleBehaviorSave();
   }
 
@@ -176,6 +184,7 @@ class AppSettingsViewModel {
       contextSettings: contextSettingsSetting.value,
       analysisModuleOrder: analysisModuleOrderSetting.value,
       showPageTurnButtons: showPageTurnButtonsSetting.value,
+      pageTurnButtonOnLeft: pageTurnButtonOnLeftSetting.value,
       showUpdateNotification: showUpdateNotificationSetting.value,
       readerFontScale: readerFontScaleSetting.value,
       readerLineHeight: readerLineHeightSetting.value,

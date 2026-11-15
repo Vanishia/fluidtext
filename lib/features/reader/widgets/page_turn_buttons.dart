@@ -8,11 +8,13 @@ class PageTurnButtons extends StatelessWidget {
     required this.visible,
     required this.onPageUp,
     required this.onPageDown,
+    this.alignLeft = false,
   });
 
   final bool visible;
   final VoidCallback onPageUp;
   final VoidCallback onPageDown;
+  final bool alignLeft;
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +30,7 @@ class PageTurnButtons extends StatelessWidget {
         child: AnimatedSlide(
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOutCubic,
-          offset: visible ? Offset.zero : const Offset(0.25, 0),
+          offset: visible ? Offset.zero : Offset(alignLeft ? -0.25 : 0.25, 0),
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: cs.surface.withValues(alpha: isDark ? 0.72 : 0.68),

@@ -17,6 +17,7 @@ final readerBackgroundSetting = _vm.readerBackgroundSetting;
 final appFontSetting = _vm.appFontSetting;
 final analysisModuleOrderSetting = _vm.analysisModuleOrderSetting;
 final showPageTurnButtonsSetting = _vm.showPageTurnButtonsSetting;
+final pageTurnButtonOnLeftSetting = _vm.pageTurnButtonOnLeftSetting;
 final showUpdateNotificationSetting = _vm.showUpdateNotificationSetting;
 final readerFontScaleSetting = _vm.readerFontScaleSetting;
 final readerLineHeightSetting = _vm.readerLineHeightSetting;
@@ -37,6 +38,9 @@ void saveAnalysisModuleOrderSetting(List<ReadingAnalysisModuleType> order) =>
 
 void saveShowPageTurnButtonsSetting(bool value) =>
     _vm.setShowPageTurnButtons(value);
+
+void savePageTurnButtonOnLeftSetting(bool value) =>
+    _vm.setPageTurnButtonOnLeft(value);
 
 void saveShowUpdateNotificationSetting(bool value) =>
     _vm.setShowUpdateNotification(value);

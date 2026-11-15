@@ -24,6 +24,7 @@ class AppBehaviorSettings {
     this.contextSettings = const ContextSettings(),
     this.analysisModuleOrder = defaultReadingAnalysisModuleOrder,
     this.showPageTurnButtons = true,
+    this.pageTurnButtonOnLeft = false,
     this.readerFontScale = defaultReaderFontScale,
     this.readerLineHeight = defaultReaderLineHeight,
     this.showUpdateNotification = true,
@@ -35,6 +36,7 @@ class AppBehaviorSettings {
   final ContextSettings contextSettings;
   final List<ReadingAnalysisModuleType> analysisModuleOrder;
   final bool showPageTurnButtons;
+  final bool pageTurnButtonOnLeft;
 
   /// 阅读卡片字号缩放（1.0 = 100%）。
   final double readerFontScale;
@@ -52,6 +54,7 @@ class AppBehaviorSettings {
     ContextSettings? contextSettings,
     List<ReadingAnalysisModuleType>? analysisModuleOrder,
     bool? showPageTurnButtons,
+    bool? pageTurnButtonOnLeft,
     double? readerFontScale,
     double? readerLineHeight,
     bool? showUpdateNotification,
@@ -63,6 +66,7 @@ class AppBehaviorSettings {
       contextSettings: contextSettings ?? this.contextSettings,
       analysisModuleOrder: analysisModuleOrder ?? this.analysisModuleOrder,
       showPageTurnButtons: showPageTurnButtons ?? this.showPageTurnButtons,
+      pageTurnButtonOnLeft: pageTurnButtonOnLeft ?? this.pageTurnButtonOnLeft,
       readerFontScale: readerFontScale ?? this.readerFontScale,
       readerLineHeight: readerLineHeight ?? this.readerLineHeight,
       showUpdateNotification:
@@ -98,6 +102,7 @@ class AppBehaviorSettingsService {
           json['analysisModuleOrder'] as List<dynamic>?,
         ),
         showPageTurnButtons: json['showPageTurnButtons'] != false,
+        pageTurnButtonOnLeft: json['pageTurnButtonOnLeft'] == true,
         readerFontScale: _readerFontScaleFromJson(json['readerFontScale']),
         readerLineHeight: _readerLineHeightFromJson(json['readerLineHeight']),
         showUpdateNotification: json['showUpdateNotification'] != false,
@@ -119,6 +124,7 @@ class AppBehaviorSettingsService {
           .map((item) => item.name)
           .toList(growable: false),
       'showPageTurnButtons': settings.showPageTurnButtons,
+      'pageTurnButtonOnLeft': settings.pageTurnButtonOnLeft,
       'readerFontScale': settings.readerFontScale,
       'readerLineHeight': settings.readerLineHeight,
       'showUpdateNotification': settings.showUpdateNotification,
