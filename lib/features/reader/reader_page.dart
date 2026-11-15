@@ -426,6 +426,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
                   : !controller.isLoadingInitial && controller.cards.isEmpty
                   ? _EmptyCardsMessage(
                       showUnreadOnly: controller.showUnreadOnly,
+                      onOpenBookshelf: _openBookshelf,
                     )
                   : BookCardFlow(
                       scrollController: _scrollController,
@@ -487,6 +488,7 @@ class _BookCardsPageState extends State<BookCardsPage> {
                     });
                   },
                   onRequestClose: () => _setSidebarVisible(false),
+                  bookCount: _books.length,
                   floating: floating,
                 );
               }
@@ -524,18 +526,25 @@ class _BookCardsPageState extends State<BookCardsPage> {
                         if (!enabled) {
                           return const SizedBox.shrink();
                         }
-                        return Positioned(
-                          right: 12,
-                          top: 0,
-                          bottom: 0,
-                          child: Align(
-                            alignment: const Alignment(0, 0.35),
-                            child: PageTurnButtons(
-                              visible: _pageTurnButtonsVisible,
-                              onPageUp: () => _pageScroll(-1),
-                              onPageDown: () => _pageScroll(1),
-                            ),
-                          ),
+                        return ValueListenableBuilder<bool>(
+                          valueListenable: pageTurnButtonOnLeftSetting,
+                          builder: (context, onLeft, _) {
+                            return Positioned(
+                              left: onLeft ? 12 : null,
+                              right: onLeft ? null : 12,
+                              top: 0,
+                              bottom: 0,
+                              child: Align(
+                                alignment: const Alignment(0, 0.35),
+                                child: PageTurnButtons(
+                                  visible: _pageTurnButtonsVisible,
+                                  onPageUp: () => _pageScroll(-1),
+                                  onPageDown: () => _pageScroll(1),
+                                  alignLeft: onLeft,
+                                ),
+                              ),
+                            );
+                          },
                         );
                       },
                     ),
@@ -636,15 +645,32 @@ class _BookCardsPageState extends State<BookCardsPage> {
 }
 
 class _EmptyCardsMessage extends StatelessWidget {
-  const _EmptyCardsMessage({required this.showUnreadOnly});
+  const _EmptyCardsMessage({
+    required this.showUnreadOnly,
+    this.onOpenBookshelf,
+  });
 
   final bool showUnreadOnly;
+  final VoidCallback? onOpenBookshelf;
 
   @override
   Widget build(BuildContext context) {
     final text = showUnreadOnly ? '当前书单没有未读卡片' : '当前书单没有可显示的卡片';
     return Center(
-      child: Text(text, style: Theme.of(context).textTheme.bodyLarge),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(text, style: Theme.of(context).textTheme.bodyLarge),
+          if (onOpenBookshelf != null) ...[
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: onOpenBookshelf,
+              icon: const Icon(Icons.library_books_rounded),
+              label: const Text('去选择书目'),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

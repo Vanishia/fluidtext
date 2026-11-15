@@ -35,6 +35,7 @@ class AppSidePanel extends StatelessWidget {
     this.onContextBeforeChanged,
     this.onContextAfterChanged,
     this.onRequestClose,
+    this.bookCount = 0,
     this.floating = false,
   });
 
@@ -59,6 +60,9 @@ class AppSidePanel extends StatelessWidget {
 
   /// 面板内的导航动作触发前调用，用于收起面板（贴边模式）。
   final VoidCallback? onRequestClose;
+
+  /// 移动端仅在书库非空时才显示"添加到桌面"按钮；0 表示无书（显示引导文字）。
+  final int bookCount;
 
   /// true 时渲染为悬浮毛玻璃 [Drawer]（移动端），导航动作前自动 pop 抽屉。
   final bool floating;
@@ -165,7 +169,7 @@ class AppSidePanel extends StatelessWidget {
                     title: const Text('桌面小组件'),
                     onTap: () {
                       closeDrawer?.call();
-                      showHomeWidgetSheet(context);
+                      showHomeWidgetSheet(context, bookCount: bookCount);
                     },
                   ),
                 if (hasContextSettings) ...[

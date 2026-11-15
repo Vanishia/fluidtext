@@ -455,6 +455,36 @@ class _ReaderBackgroundSheetState extends State<_ReaderBackgroundSheet> {
                       },
                     ),
                     ValueListenableBuilder<bool>(
+                      valueListenable: showPageTurnButtonsSetting,
+                      builder: (context, enabled, _) {
+                        if (!enabled) return const SizedBox.shrink();
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Divider(height: 1, indent: 56),
+                            ValueListenableBuilder<bool>(
+                              valueListenable: pageTurnButtonOnLeftSetting,
+                              builder: (context, onLeft, _) {
+                                return SwitchListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 4,
+                                  ),
+                                  secondary: const Icon(
+                                    Icons.swap_horiz_rounded,
+                                  ),
+                                  title: const Text('按钮移至左侧'),
+                                  subtitle: const Text('适合左手操作'),
+                                  value: onLeft,
+                                  onChanged: savePageTurnButtonOnLeftSetting,
+                                );
+                              },
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                    ValueListenableBuilder<bool>(
                       valueListenable: showUpdateNotificationSetting,
                       builder: (context, show, _) {
                         return SwitchListTile(

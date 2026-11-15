@@ -479,7 +479,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
         stackTrace: stackTrace,
       );
       if (!mounted) return;
-      setState(() => _status = '备份导出失败：$error');
+      setState(() => _status = '备份导出失败，请重试');
     } finally {
       if (mounted) {
         setState(() => _isBusy = false);
@@ -717,7 +717,7 @@ class _BookshelfSheetState extends State<BookshelfSheet> {
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _status = '删除失败：$error');
+      setState(() => _status = '删除失败，请重试');
     } finally {
       if (mounted) {
         setState(() => _isBusy = false);
